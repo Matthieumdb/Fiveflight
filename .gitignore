@@ -19,3 +19,6 @@ DerivedData/
 .ffaddrs
 mainfuncs.json
 mainff.json
+
+# keep asset catalog images
+!Resources/Assets.xcassets/**

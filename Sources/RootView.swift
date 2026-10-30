@@ -1,20 +1,39 @@
 import SwiftUI
+import UIKit
 
 struct RootView: View {
     @StateObject private var store = AirportStore()
     @StateObject private var location = LocationManager()
     @StateObject private var model = AppModel()
 
+    init() {
+        // Dark, slightly translucent tab bar that matches the cockpit theme.
+        let tab = UITabBarAppearance()
+        tab.configureWithDefaultBackground()
+        tab.backgroundColor = UIColor(Theme.bgElevated).withAlphaComponent(0.92)
+        UITabBar.appearance().standardAppearance = tab
+        UITabBar.appearance().scrollEdgeAppearance = tab
+
+        let nav = UINavigationBarAppearance()
+        nav.configureWithTransparentBackground()
+        nav.backgroundColor = UIColor(Theme.bg).withAlphaComponent(0.6)
+        nav.titleTextAttributes = [.foregroundColor: UIColor(Theme.textPrimary)]
+        nav.largeTitleTextAttributes = [.foregroundColor: UIColor(Theme.textPrimary)]
+        UINavigationBar.appearance().standardAppearance = nav
+        UINavigationBar.appearance().scrollEdgeAppearance = nav
+    }
+
     var body: some View {
-        Group {
+        ZStack {
+            Theme.background.ignoresSafeArea()
             if store.ready {
                 TabView {
                     MapScreen()
-                        .tabItem { Label("Carte", systemImage: "map") }
+                        .tabItem { Label("Carte", systemImage: "map.fill") }
                     FavoritesScreen()
-                        .tabItem { Label("Favoris", systemImage: "star") }
+                        .tabItem { Label("Favoris", systemImage: "star.fill") }
                     LogbookScreen()
-                        .tabItem { Label("Carnet", systemImage: "book") }
+                        .tabItem { Label("Carnet", systemImage: "book.fill") }
                     ChecklistScreen()
                         .tabItem { Label("Checklist", systemImage: "checklist") }
                 }
@@ -22,6 +41,8 @@ struct RootView: View {
                 LoadingView(progress: store.progress)
             }
         }
+        .tint(Theme.accent)
+        .preferredColorScheme(.dark)
         .environmentObject(store)
         .environmentObject(location)
         .environmentObject(model)
@@ -35,14 +56,29 @@ struct RootView: View {
 struct LoadingView: View {
     let progress: Double
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "airplane.departure").font(.system(size: 44)).foregroundStyle(.tint)
-            Text("Chargement de la base aéronautique").font(.headline)
-            ProgressView(value: progress).progressViewStyle(.linear).frame(width: 240)
-            Text("\(Int(progress * 100)) %")
-                .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
-                .contentTransition(.numericText()).animation(.default, value: progress)
+        ZStack {
+            Theme.background.ignoresSafeArea()
+            VStack(spacing: 22) {
+                ZStack {
+                    Circle().fill(Theme.accentGradient)
+                        .frame(width: 96, height: 96)
+                        .shadow(color: Theme.accent.opacity(0.6), radius: 24)
+                    Image(systemName: "airplane.departure")
+                        .font(.system(size: 42, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                VStack(spacing: 6) {
+                    Text("FIVEFLIGHT").font(.title3.weight(.heavy)).tracking(4)
+                        .foregroundStyle(Theme.textPrimary)
+                    Text("Base aéronautique").font(.footnote).foregroundStyle(Theme.textSecondary)
+                }
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear).tint(Theme.accent)
+                    .frame(width: 220)
+                Text("\(Int(progress * 100)) %")
+                    .font(.subheadline.monospacedDigit()).foregroundStyle(Theme.textSecondary)
+                    .contentTransition(.numericText()).animation(.default, value: progress)
+            }
         }
-        .padding()
     }
 }

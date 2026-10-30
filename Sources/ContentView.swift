@@ -106,8 +106,9 @@ struct MapScreen: View {
                 Text(routeError).font(.caption).foregroundStyle(.red)
             }
         }
-        .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(.bar)
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .background(Theme.bgElevated)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.stroke).frame(height: 1) }
     }
 
     private func field(_ title: String, text: Binding<String>) -> some View {
@@ -161,25 +162,40 @@ struct MapScreen: View {
 
     private var list: some View {
         List(nearest) { a in
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(a.id).font(.headline)
-                    Text(a.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer()
-                if let c = location.coordinate {
-                    Text("\(Int(a.distanceNM(to: c).rounded())) NM")
-                        .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
-                }
-                Button { addWaypoint(a) } label: { Image(systemName: "plus.circle") }
-                    .buttonStyle(.borderless).tint(.blue)
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { selected = a }
+            row(a)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 3, leading: 12, bottom: 3, trailing: 12))
         }
         .listStyle(.plain)
-        .frame(height: 180)
+        .scrollContentBackground(.hidden)
+        .background(Theme.bg)
+        .frame(height: 196)
+    }
+
+    private func row(_ a: Airport) -> some View {
+        HStack(spacing: 12) {
+            Circle().fill(tint(for: a.type)).frame(width: 10, height: 10)
+                .shadow(color: tint(for: a.type).opacity(0.7), radius: 3)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(a.id).font(.headline).foregroundStyle(Theme.textPrimary)
+                Text(a.name).font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+            }
+            Spacer()
+            if let c = location.coordinate {
+                Text("\(Int(a.distanceNM(to: c).rounded())) NM")
+                    .font(.subheadline.monospacedDigit().weight(.medium))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            Button { addWaypoint(a) } label: {
+                Image(systemName: "plus.circle.fill").font(.title3)
+            }
+            .buttonStyle(.borderless).tint(Theme.accent)
+        }
+        .padding(.vertical, 11).padding(.horizontal, 14)
+        .card(radius: Theme.cornerSmall)
+        .contentShape(Rectangle())
+        .onTapGesture { selected = a }
     }
 
     // MARK: - Actions
@@ -237,5 +253,13 @@ struct MapScreen: View {
             span: .init(latitudeDelta: max((maxLat - minLat) * 1.4, 0.2),
                         longitudeDelta: max((maxLon - minLon) * 1.4, 0.2)))
         regionVersion += 1
+    }
+
+    private func tint(for type: String) -> Color {
+        switch type {
+        case "large_airport":  return Theme.accent
+        case "medium_airport": return Color(.sRGB, red: 0.28, green: 0.80, blue: 0.75)
+        default:               return Theme.textTertiary
+        }
     }
 }

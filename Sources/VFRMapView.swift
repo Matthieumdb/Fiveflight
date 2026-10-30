@@ -41,6 +41,9 @@ struct VFRMapView: UIViewRepresentable {
         mv.delegate = context.coordinator
         mv.showsUserLocation = true
         mv.pointOfInterestFilter = .excludingAll
+        // VFR sectionals are light charts; keep the map base light for legibility and
+        // to avoid a dark-trait tile-render glitch, while the app chrome stays dark.
+        mv.overrideUserInterfaceStyle = .light
         mv.setRegion(region, animated: false)
         context.coordinator.lastVersion = regionVersion
         return mv

@@ -8,6 +8,7 @@ struct MapScreen: View {
     @EnvironmentObject private var model: AppModel
 
     @State private var nearest: [Airport] = []
+    @State private var categories: [String: String] = [:]   // ICAO -> flight category
     @State private var selected: Airport?
 
     @State private var waypoints: [Airport] = []
@@ -33,7 +34,7 @@ struct MapScreen: View {
             routeBar
             ZStack(alignment: .topTrailing) {
                 VFRMapView(showSectional: showSectional, showWeather: showWeather,
-                           nearest: nearest, waypoints: waypoints,
+                           nearest: nearest, waypoints: waypoints, categories: categories,
                            region: region, regionVersion: regionVersion,
                            onSelect: { selected = $0 })
                     .ignoresSafeArea(edges: .horizontal)
@@ -44,6 +45,7 @@ struct MapScreen: View {
                             .background(.regularMaterial, in: Capsule())
                             .padding(.bottom, 6)
                     }
+                    .overlay(alignment: .bottomLeading) { if !categories.isEmpty { legend } }
                 layerControls.padding(10)
             }
             .frame(maxHeight: .infinity)
@@ -51,6 +53,7 @@ struct MapScreen: View {
         }
         .onAppear(perform: recompute)
         .onChange(of: location.coordinate?.latitude) { recompute() }
+        .onChange(of: model.directTo) { handleDirectTo() }
         .sheet(item: $selected) { a in
             AirportDetailView(airport: a,
                               runways: store.runways(for: a),
@@ -175,8 +178,8 @@ struct MapScreen: View {
 
     private func row(_ a: Airport) -> some View {
         HStack(spacing: 12) {
-            Circle().fill(tint(for: a.type)).frame(width: 10, height: 10)
-                .shadow(color: tint(for: a.type).opacity(0.7), radius: 3)
+            Circle().fill(dotColor(a)).frame(width: 10, height: 10)
+                .shadow(color: dotColor(a).opacity(0.7), radius: 3)
             VStack(alignment: .leading, spacing: 2) {
                 Text(a.id).font(.headline).foregroundStyle(Theme.textPrimary)
                 Text(a.name).font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
@@ -226,6 +229,20 @@ struct MapScreen: View {
         fitNearby()
     }
 
+    /// "Direct to" from a detail sheet: route from the nearest field to the chosen airport.
+    private func handleDirectTo() {
+        guard let id = model.directTo, let dest = store.airport(id) else { return }
+        model.directTo = nil
+        logged = false
+        if let dep = nearest.first, dep.id != dest.id {
+            waypoints = [dep, dest]; fromText = dep.id
+        } else {
+            waypoints = [dest]
+        }
+        toText = dest.id
+        fit(waypoints.map(\.coordinate))
+    }
+
     // MARK: - Helpers
 
     private func recompute() {
@@ -233,6 +250,29 @@ struct MapScreen: View {
         nearest = store.nearest(to: c, limit: 10, matching: types)
         if fromText.isEmpty, let f = nearest.first { fromText = f.id }
         if waypoints.isEmpty { fitNearby() }
+        let ids = nearest.map(\.id)
+        Task { categories = await WeatherService.categories(for: ids) }
+    }
+
+    /// Dot colour: live flight category when the field reports weather, else by size.
+    private func dotColor(_ a: Airport) -> Color {
+        if let cat = categories[a.id] { return Theme.category(cat) }
+        return tint(for: a.type)
+    }
+
+    private var legend: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(["VFR", "MVFR", "IFR", "LIFR"], id: \.self) { c in
+                HStack(spacing: 6) {
+                    Circle().fill(Theme.category(c)).frame(width: 9, height: 9)
+                    Text(c).font(.caption.monospaced()).foregroundStyle(Theme.textSecondary)
+                }
+            }
+        }
+        .padding(8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.stroke))
+        .padding(10)
     }
 
     private func fitNearby() {

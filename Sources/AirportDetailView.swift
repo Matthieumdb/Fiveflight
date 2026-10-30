@@ -6,6 +6,8 @@ struct AirportDetailView: View {
     let frequencies: [Frequency]
 
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var location: LocationManager
+    @Environment(\.dismiss) private var dismiss
     @State private var wx: AirportWeather?
     @State private var wxLoading = true
 
@@ -15,10 +17,25 @@ struct AirportDetailView: View {
                 weatherSection
 
                 Section {
+                    Button {
+                        model.directTo = airport.id
+                        dismiss()
+                    } label: {
+                        Label("Direct to — mettre au plan", systemImage: "location.north.line.fill")
+                    }
+                }
+
+                Section {
                     LabeledContent("Identifiant", value: airport.id)
                     if let iata = airport.iata { LabeledContent("IATA", value: iata) }
                     if let m = airport.municipality { LabeledContent("Ville", value: m) }
                     if let e = airport.elevationFt { LabeledContent("Élévation", value: "\(e) ft") }
+                    if let c = location.coordinate {
+                        let nm = Int(airport.distanceNM(to: c).rounded())
+                        let crs = Haversine.trueCourse(c, airport.coordinate)
+                        LabeledContent("Depuis ta position",
+                                       value: "\(nm) NM · \(String(format: "%03d", crs))°T")
+                    }
                     LabeledContent("Type", value: airport.type.replacingOccurrences(of: "_", with: " "))
                 }
 
@@ -94,6 +111,9 @@ struct AirportDetailView: View {
                         if let t = wx.tempC, let d = wx.dewpC {
                             Text("\(t)°/\(d)°C").foregroundStyle(.secondary)
                         }
+                    }
+                    if let age = wx.ageText {
+                        Text("Observé \(age)").font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 if let w = wx.windText { LabeledContent("Vent", value: w) }

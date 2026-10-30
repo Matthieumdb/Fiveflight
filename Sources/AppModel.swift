@@ -27,6 +27,7 @@ final class AppModel: ObservableObject {
     @Published var favorites: Set<String> = []
     @Published var logbook: [LogEntry] = []
     @Published var checklists: [Checklist] = []
+    @Published var directTo: String?   // ICAO requested as route destination from a detail sheet
 
     private let defaults = UserDefaults.standard
 

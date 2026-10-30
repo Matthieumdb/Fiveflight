@@ -23,6 +23,7 @@ struct VFRMapView: UIViewRepresentable {
     var showWeather: Bool
     var nearest: [Airport]
     var waypoints: [Airport]
+    var categories: [String: String]
     var region: MKCoordinateRegion
     var regionVersion: Int
     var onSelect: (Airport) -> Void
@@ -119,9 +120,10 @@ struct VFRMapView: UIViewRepresentable {
                 v.glyphImage = UIImage(systemName: "mappin")
                 v.displayPriority = .required
             case .nearest:
-                v.markerTintColor = a.airport.type == "large_airport" ? .systemBlue : .systemTeal
+                v.markerTintColor = Self.categoryColor(parent.categories[a.airport.id])
+                    ?? (a.airport.type == "large_airport" ? .systemBlue : .systemTeal)
                 v.glyphImage = UIImage(systemName: "airplane")
-                v.displayPriority = .defaultLow
+                v.displayPriority = parent.categories[a.airport.id] != nil ? .required : .defaultLow
             }
             return v
         }
@@ -129,6 +131,16 @@ struct VFRMapView: UIViewRepresentable {
         func mapView(_ mv: MKMapView, annotationView view: MKAnnotationView,
                      calloutAccessoryControlTapped control: UIControl) {
             if let a = view.annotation as? AirportAnnotation { parent.onSelect(a.airport) }
+        }
+
+        static func categoryColor(_ cat: String?) -> UIColor? {
+            switch cat {
+            case "VFR":  return UIColor(red: 0.19, green: 0.82, blue: 0.35, alpha: 1)
+            case "MVFR": return UIColor(red: 0.18, green: 0.63, blue: 1.0, alpha: 1)
+            case "IFR":  return UIColor(red: 1.0, green: 0.27, blue: 0.23, alpha: 1)
+            case "LIFR": return UIColor(red: 0.75, green: 0.35, blue: 0.95, alpha: 1)
+            default:     return nil
+            }
         }
     }
 }

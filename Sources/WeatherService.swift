@@ -9,6 +9,16 @@ struct AirportWeather: Sendable {
     let altimInHg: String?    // US altimeter setting
     let tempC: Int?
     let dewpC: Int?
+    let obsTime: Date?        // observation time (for freshness)
+
+    /// Human relative age, e.g. "il y a 12 min".
+    var ageText: String? {
+        guard let obsTime else { return nil }
+        let mins = Int(max(0, Date().timeIntervalSince(obsTime)) / 60)
+        if mins < 1 { return "à l'instant" }
+        if mins < 60 { return "il y a \(mins) min" }
+        return "il y a \(mins / 60) h \(mins % 60) min"
+    }
 }
 
 /// Fetches METAR/TAF from aviationweather.gov (NOAA, free, no key).
@@ -26,7 +36,20 @@ enum WeatherService {
             visib: metar?.visib.map { "\($0.string) SM" },
             altimInHg: metar?.altim.map { String(format: "%.2f inHg", $0 * 0.0295300) },
             tempC: metar?.temp.map { Int($0.rounded()) },
-            dewpC: metar?.dewp.map { Int($0.rounded()) })
+            dewpC: metar?.dewp.map { Int($0.rounded()) },
+            obsTime: metar?.obsTime.map { Date(timeIntervalSince1970: $0) })
+    }
+
+    /// Flight category per ICAO, in one batched request. Airports without a
+    /// reporting station simply won't appear in the result.
+    static func categories(for icaos: [String]) async -> [String: String] {
+        let ids = icaos.prefix(40).joined(separator: ",")
+        guard !ids.isEmpty,
+              let arr = await get("https://aviationweather.gov/api/data/metar?ids=\(ids)&format=json",
+                                  as: [MetarDTO].self) else { return [:] }
+        var out: [String: String] = [:]
+        for m in arr { if let id = m.icaoId, let cat = m.fltCat { out[id] = cat } }
+        return out
     }
 
     private static func windText(_ m: MetarDTO) -> String? {
@@ -59,6 +82,7 @@ enum WeatherService {
 // MARK: - DTOs (aviationweather.gov sends wdir/visib as String or number)
 
 private struct MetarDTO: Decodable {
+    let icaoId: String?
     let rawOb: String?
     let fltCat: String?
     let wdir: Flex?
@@ -68,6 +92,7 @@ private struct MetarDTO: Decodable {
     let altim: Double?     // hPa
     let temp: Double?
     let dewp: Double?
+    let obsTime: Double?    // epoch seconds
 }
 
 private struct TafDTO: Decodable { let rawTAF: String? }

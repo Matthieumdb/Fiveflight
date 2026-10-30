@@ -1,0 +1,21 @@
+# Xcode / build
+build/
+build-ios/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+.DS_Store
+# XcodeGen generates the project from project.yml
+
+# Local artifacts / scratch
+*.ipa
+*.png
+*.log
+.simudid
+.build_start
+.tick
+.fwprog
+.ffnames
+.ffaddrs
+mainfuncs.json
+mainff.json

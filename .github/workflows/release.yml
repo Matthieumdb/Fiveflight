@@ -48,15 +48,24 @@ jobs:
       - name: Debug Archive Contents
         run: |
           echo "=== Archive structure ==="
-          find build/${PROJECT_NAME}.xcarchive -type f -name "*.app" | head -5
+          find build/${PROJECT_NAME}.xcarchive -type d -name "*.app" | head -5
           ls -la build/${PROJECT_NAME}.xcarchive/Products/Applications/ 2>/dev/null || echo "No Products/Applications"
           ls -la build/${PROJECT_NAME}.xcarchive/Products/ 2>/dev/null || echo "No Products"
       - name: Create Unsigned IPA
         run: |
-          APP_PATH=$(find build/${PROJECT_NAME}.xcarchive -name "*.app" -type d | head -1)
+          set -euo pipefail
+          APP_PATH=$(find build/${PROJECT_NAME}.xcarchive -type d -name "*.app" | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app found in archive"
+            exit 1
+          fi
           echo "Found app at: $APP_PATH"
+          echo "App contents:"
+          ls -la "$APP_PATH"
           mkdir -p build/ipa/Payload
           cp -R "$APP_PATH" build/ipa/Payload/
+          echo "Payload contents:"
+          ls -la build/ipa/Payload/
           cd build/ipa
           zip -r ${PROJECT_NAME}.ipa Payload/
           echo "IPA size: $(ls -lh ${PROJECT_NAME}.ipa | awk '{print $5}')"

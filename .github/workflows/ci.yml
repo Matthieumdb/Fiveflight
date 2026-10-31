@@ -13,7 +13,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install xcodegen
-        run: brew install xcodegen@2.45 && brew link --overwrite xcodegen@2.45
+        run: |
+          curl -L https://github.com/yonaskolb/XcodeGen/releases/download/2.45.0/xcodegen.zip -o xcodegen.zip
+          unzip xcodegen.zip -d /usr/local/bin
+          chmod +x /usr/local/bin/xcodegen
 
       - name: Generate project
         run: xcodegen generate

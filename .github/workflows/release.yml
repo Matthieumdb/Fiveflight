@@ -9,15 +9,14 @@ permissions:
   contents: write
 
 env:
-  DEVELOPER_DIR: /Applications/Xcode_15.4.app/Contents/Developer
-  XCODE_VERSION: "15.4"
+  XCODE_VERSION: "16"
   PROJECT_NAME: Fiveflight
   SCHEME_NAME: Fiveflight
 
 jobs:
   build-and-release:
     name: Build & Release IPA
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
 
     steps:
@@ -26,22 +25,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Select Xcode
-        run: |
-          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
-          xcodebuild -version
+      - name: Show Xcode Version
+        run: xcodebuild -version
 
       - name: Install xcodegen
         run: |
           if ! command -v xcodegen &> /dev/null; then
-            ARCH=$(uname -m)
-            if [ "$ARCH" = "arm64" ]; then
-              curl -L -o xcodegen.zip "https://github.com/xcodegen/xcodegen/releases/download/2.45.0/xcodegen-2.45.0-macos-arm64.zip"
-            else
-              curl -L -o xcodegen.zip "https://github.com/xcodegen/xcodegen/releases/download/2.45.0/xcodegen-2.45.0-macos-x86_64.zip"
-            fi
-            unzip -o xcodegen.zip -d $RUNNER_TEMP
-            sudo mv $RUNNER_TEMP/xcodegen /usr/local/bin/
+            brew install xcodegen
           fi
           xcodegen --version
 
@@ -58,7 +48,6 @@ jobs:
       - name: Update Build Number
         run: |
           BUILD_NUMBER=$(git rev-list --count HEAD)
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" Fiveflight.xcodeproj/project.pbxproj 2>/dev/null || true
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
 
       - name: Build Archive
@@ -80,29 +69,29 @@ jobs:
 
           # Create export options for ad-hoc distribution
           cat > build/ExportOptions.plist << EOF
-  <?xml version="1.0" encoding="UTF-8"?>
-  <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-  <plist version="1.0">
-  <dict>
-      <key>method</key>
-      <string>ad-hoc</string>
-      <key>teamID</key>
-      <string></string>
-      <key>compileBitcode</key>
-      <false/>
-      <key>stripSwiftSymbols</key>
-      <true/>
-      <key>thinning</key>
-      <string><none></string>
-      <key>signingStyle</key>
-      <string>manual</string>
-      <key>signingCertificate</key>
-      <string>Apple Development</string>
-      <key>provisioningProfiles</key>
-      <dict/>
-  </dict>
-  </plist>
-  EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>method</key>
+    <string>ad-hoc</string>
+    <key>teamID</key>
+    <string></string>
+    <key>compileBitcode</key>
+    <false/>
+    <key>stripSwiftSymbols</key>
+    <true/>
+    <key>thinning</key>
+    <string><none></string>
+    <key>signingStyle</key>
+    <string>manual</string>
+    <key>signingCertificate</key>
+    <string>Apple Development</string>
+    <key>provisioningProfiles</key>
+    <dict/>
+</dict>
+</plist>
+EOF
 
           # Export IPA
           xcodebuild \

@@ -46,7 +46,27 @@ struct LogbookScreen: View {
                 }
             }
             .navigationTitle("Carnet de vol")
-            .toolbar { if !model.logbook.isEmpty { EditButton() } }
+            .toolbar {
+                if !model.logbook.isEmpty {
+                    ToolbarItem(placement: .topBarLeading) { EditButton() }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        if let url = csvURL() {
+                            ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    /// Write the logbook to a CSV in the temp dir for sharing.
+    private func csvURL() -> URL? {
+        let iso = ISO8601DateFormatter()
+        var csv = "date,from,to,nm,minutes\n"
+        for e in model.logbook.reversed() {
+            csv += "\(iso.string(from: e.date)),\(e.from),\(e.to),\(e.nm),\(e.eteMinutes)\n"
+        }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("carnet-fiveflight.csv")
+        do { try csv.write(to: url, atomically: true, encoding: .utf8); return url } catch { return nil }
     }
 }

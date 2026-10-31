@@ -33,9 +33,9 @@ struct ICAOFlightPlan: Codable {
     }
 }
 
-// MARK: - Airspace (simplified)
+// MARK: - Airspace Info (for flight plan context)
 
-struct Airspace: Identifiable, Codable {
+struct AirspaceInfo: Identifiable, Codable {
     let id = UUID()
     let name: String
     let type: String  // Class A/B/C/D/E/G, MOA, Restricted, etc.

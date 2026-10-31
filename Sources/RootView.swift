@@ -36,6 +36,8 @@ struct RootView: View {
                         .tabItem { Label("Carnet", systemImage: "book.fill") }
                     ChecklistScreen()
                         .tabItem { Label("Checklist", systemImage: "checklist") }
+                    AirspaceScreen()
+                        .tabItem { Label("Espace", systemImage: "airplane.circle.fill") }
                     CalculatorsScreen()
                         .tabItem { Label("Calcul", systemImage: "function") }
                     NotamScreen()

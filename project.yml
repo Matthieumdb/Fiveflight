@@ -11,6 +11,8 @@ targets:
       - Sources/Airport.swift
       - Sources/AirportDetailView.swift
       - Sources/AirportStore.swift
+      - Sources/Airspace.swift
+      - Sources/AirspaceScreen.swift
       - Sources/AppModel.swift
       - Sources/CSV.swift
       - Sources/Calculators.swift

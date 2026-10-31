@@ -42,6 +42,10 @@ jobs:
             -destination "generic/platform=iOS" \
             archive \
             | xcpretty --color --simple
+      - name: Debug Build Output
+        run: |
+          ls -la build/
+          ls -la build/${PROJECT_NAME}.xcarchive/ 2>/dev/null || echo "Archive not found"
       - name: Zip Archive
         run: |
           cd build

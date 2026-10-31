@@ -1,55 +1,95 @@
 import SwiftUI
+import CoreLocation
 
-/// Search any US airport by ICAO / IATA / name. Empty query shows favourites + nearby.
+// MARK: - Search Sheet
+
 struct SearchSheet: View {
-    @EnvironmentObject private var store: AirportStore
+    let nearest: [Airport]
     @EnvironmentObject private var model: AppModel
-    var nearest: [Airport]
-    @State private var query = ""
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+    @State private var selectedTab = 0 // 0 = Nearby, 1 = Search
 
-    private var results: [Airport] {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        if q.isEmpty {
-            var seen = Set<String>()
-            var out: [Airport] = []
-            let recents = model.recents.compactMap { store.airport($0) }
-            let favs = model.favorites.compactMap { store.airport($0) }
-            for a in recents + favs + nearest where seen.insert(a.id).inserted { out.append(a) }
-            return Array(out.prefix(30))
+    private var filteredAirports: [Airport] {
+        if searchText.isEmpty { return nearest }
+        return nearest.filter { airport in
+            airport.id.localizedCaseInsensitiveContains(searchText) ||
+            airport.name.localizedCaseInsensitiveContains(searchText) ||
+            airport.municipality?.localizedCaseInsensitiveContains(searchText) ?? false
         }
-        var out: [Airport] = []
-        for a in store.airports {
-            if a.id.uppercased().contains(q)
-                || (a.iata?.uppercased().contains(q) ?? false)
-                || a.name.uppercased().contains(q) {
-                out.append(a)
-                if out.count >= 50 { break }
-            }
-        }
-        // ICAO/IATA exact-ish matches first.
-        return out.sorted { lhs, _ in lhs.id.uppercased().hasPrefix(q) || lhs.iata?.uppercased() == q }
     }
 
     var body: some View {
         NavigationStack {
-            List(results) { airport in
-                NavigationLink {
-                    AirportDetailView(
-                        airport: airport,
-                        runways: store.runways(for: airport),
-                        frequencies: store.frequencies(for: airport)
-                    )
-                } label: {
-                    SearchResultRow(airport: airport)
+            VStack(spacing: 0) {
+                // Search field
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(ColorToken.textTertiary)
+                    TextField("Search airports (ICAO, name, city)", text: $searchText)
+                        .font(TypographyToken.bodyMedium)
+                        .foregroundStyle(ColorToken.textPrimary)
                 }
+                .padding(SpacingToken.space3)
+                .background(ColorToken.surfaceCard, in: RoundedRectangle(cornerRadius: RadiusToken.md))
+                .padding(.horizontal, SpacingToken.insetMedium)
+                .padding(.vertical, SpacingToken.space3)
+
+                // Tab picker
+                HStack(spacing: SpacingToken.space2) {
+                    ForEach(["Nearby", "All"].indices, id: \.self) { index in
+                        Button {
+                            selectedTab = index
+                        } label: {
+                            Text(["Nearby", "All"][index])
+                                .font(TypographyToken.labelMedium)
+                                .foregroundStyle(selectedTab == index ? ColorToken.textOnBrand : ColorToken.textTertiary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, SpacingToken.space2)
+                                .background(
+                                    selectedTab == index ? ColorToken.brandPrimary : ColorToken.surfaceCard,
+                                    in: Capsule()
+                                )
+                        }
+                    }
+                }
+                .padding(.horizontal, SpacingToken.insetMedium)
+                .padding(.bottom, SpacingToken.space3)
+
+                // Results
+                ScrollView {
+                    LazyVStack(spacing: SpacingToken.space1, pinnedViews: [.sectionHeaders]) {
+                        Section {
+                            ForEach(selectedTab == 0 ? nearest : filteredAirports) { airport in
+                                SearchResultRow(airport: airport) {
+                                    model.addWaypoint(airport)
+                                    dismiss()
+                                }
+                            }
+                        } header: {
+                            HStack {
+                                Text(selectedTab == 0 ? "Nearby Airports" : "Search Results")
+                                    .font(TypographyToken.labelSmall)
+                                    .foregroundStyle(ColorToken.textTertiary)
+                                    .textCase(.uppercase)
+                                Spacer()
+                            }
+                            .padding(.vertical, SpacingToken.space2)
+                            .background(ColorToken.surfaceBase)
+                        }
+                    }
+                    .padding(.horizontal, SpacingToken.insetMedium)
+                    .padding(.bottom, SpacingToken.space8)
+                }
+                .background(ColorToken.surfaceBase)
             }
-            .navigationTitle("Recherche")
+            .background(ColorToken.surfaceBase)
+            .navigationTitle("Add Waypoint")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, prompt: "Code OACI, IATA ou nom")
-            .textInputAutocapitalization(.characters)
-            .overlay {
-                if !query.isEmpty && results.isEmpty {
-                    ContentUnavailableView.search(text: query)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Cancel") { dismiss() }
+                        .font(TypographyToken.labelMedium)
                 }
             }
         }
@@ -58,32 +98,65 @@ struct SearchSheet: View {
 
 struct SearchResultRow: View {
     let airport: Airport
+    let action: () -> Void
 
     var body: some View {
-        HStack(spacing: Theme.spacingM) {
-            Image(systemName: "airplane.circle.fill")
-                .font(.title3)
-                .foregroundStyle(Theme.accent)
+        Button(action: action) {
+            HStack(spacing: SpacingToken.space3) {
+                // Airport type indicator
+                ZStack {
+                    Circle()
+                        .fill(airportColor)
+                        .frame(width: 40, height: 40)
+                    Image(systemName: airportIcon)
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(ColorToken.textOnBrand)
+                }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(airport.id)
-                    .font(.headline.monospaced())
-                    .foregroundStyle(Theme.textPrimary)
-                Text(airport.name)
-                    .font(.caption)
-                    .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(1)
+                // Airport info
+                VStack(alignment: .leading, spacing: SpacingToken.space0) {
+                    Text(airport.id)
+                        .font(TypographyToken.monoMedium)
+                        .foregroundStyle(ColorToken.textPrimary)
+                    Text(airport.name)
+                        .font(TypographyToken.bodySmall)
+                        .foregroundStyle(ColorToken.textSecondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                // Distance
+                VStack(alignment: .trailing, spacing: SpacingToken.space0) {
+                    Text(airport.type.capitalized)
+                        .font(TypographyToken.labelXSmall)
+                        .foregroundStyle(ColorToken.textTertiary)
+                }
             }
-
-            Spacer()
-
-            if let municipality = airport.municipality {
-                Text(municipality)
-                    .font(.caption)
-                    .foregroundStyle(Theme.textTertiary)
-                    .lineLimit(1)
-            }
+            .padding(.vertical, SpacingToken.space2)
+            .padding(.horizontal, SpacingToken.space3)
+            .background(ColorToken.surfaceCard, in: RoundedRectangle(cornerRadius: RadiusToken.md))
         }
-        .padding(.vertical, Theme.spacingXS)
+        .buttonStyle(.plain)
+    }
+
+    private var airportColor: Color {
+        switch airport.type {
+        case "large_airport": return ColorToken.brandPrimary
+        case "medium_airport": return ColorToken.info
+        case "small_airport": return ColorToken.success
+        case "heliport": return ColorToken.warning
+        default: return ColorToken.textTertiary
+        }
+    }
+
+    private var airportIcon: String {
+        switch airport.type {
+        case "large_airport": return "airplane"
+        case "medium_airport": return "airplane"
+        case "small_airport": return "airplane"
+        case "heliport": return "helmet"
+        default: return "circle"
+        }
     }
 }

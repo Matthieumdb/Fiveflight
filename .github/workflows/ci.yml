@@ -2,33 +2,82 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_15.4.app/Contents/Developer
+  XCODE_VERSION: "15.4"
+  IOS_SIMULATOR: "iPhone 16"
 
 jobs:
   build-and-test:
-    runs-on: macos-latest
+    name: Build & Test
+    runs-on: macos-14
+    timeout-minutes: 30
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+          xcodebuild -version
 
       - name: Install xcodegen
         run: |
-          curl -L https://github.com/yonaskolb/XcodeGen/releases/download/2.45.0/xcodegen.zip -o xcodegen.zip
-          unzip xcodegen.zip -d $RUNNER_TEMP/xcodegen
-          chmod +x $RUNNER_TEMP/xcodegen/xcodegen/bin/xcodegen
-          echo "$RUNNER_TEMP/xcodegen/xcodegen/bin" >> $GITHUB_PATH
+          if ! command -v xcodegen &> /dev/null; then
+            ARCH=$(uname -m)
+            if [ "$ARCH" = "arm64" ]; then
+              curl -L -o xcodegen.zip "https://github.com/xcodegen/xcodegen/releases/download/2.45.0/xcodegen-2.45.0-macos-arm64.zip"
+            else
+              curl -L -o xcodegen.zip "https://github.com/xcodegen/xcodegen/releases/download/2.45.0/xcodegen-2.45.0-macos-x86_64.zip"
+            fi
+            unzip -o xcodegen.zip -d $RUNNER_TEMP
+            sudo mv $RUNNER_TEMP/xcodegen /usr/local/bin/
+          fi
+          xcodegen --version
 
-      - name: Generate project
+      - name: Generate Xcode Project
         run: xcodegen generate
 
       - name: Build and Test
         run: |
-          xcodebuild -project EFB.xcodeproj \
-            -scheme EFB \
-            -destination 'platform=iOS Simulator,name=iPhone 17' \
+          xcodebuild \
+            -scheme Fiveflight \
+            -destination "platform=iOS Simulator,name=${IOS_SIMULATOR},OS=latest" \
             -configuration Debug \
             build test \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty --color --simple
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            **/test-results/*.xcresult
+          retention-days: 7
+
+  lint:
+    name: SwiftLint
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install SwiftLint
+        run: |
+          if ! command -v swiftlint &> /dev/null; then
+            brew install swiftlint
+          fi
+
+      - name: Run SwiftLint
+        run: swiftlint lint --strict --path Sources

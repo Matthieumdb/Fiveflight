@@ -79,8 +79,9 @@ struct Crosswind {
         let diff = abs((windDir - runwayHeading + 180) % 360 - 180)
         let rad = Double(diff) * .pi / 180
         let hw = Int((Double(windSpeed) * cos(rad)).rounded())
-        let cw = Int((Double(windSpeed) * sin(rad)).rounded())
-        let side = (windDir - runwayHeading + 360) % 360 < 180 ? "L" : "R"
+        let cw = Int(abs(Double(windSpeed) * sin(rad)).rounded())
+        let angle = (windDir - runwayHeading + 360) % 360
+        let side = angle < 180 ? "R" : "L"
         return (hw, cw, side)
     }
 }

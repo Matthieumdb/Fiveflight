@@ -303,7 +303,6 @@ struct LargeWidgetView: View {
 }
 
 // MARK: - Widget bundle
-@main
 struct FiveflightWidgetBundle: WidgetBundle {
     var body: some Widget {
         FiveflightSmallWidget()

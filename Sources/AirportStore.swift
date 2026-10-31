@@ -1,119 +1,299 @@
 import Foundation
 import CoreLocation
 
-/// Loads the bundled OurAirports datasets off the main thread and publishes
-/// a real-time loading progress (0…1) plus a `ready` flag.
+// MARK: - Airport Store
+
 @MainActor
 final class AirportStore: ObservableObject {
-    @Published private(set) var progress: Double = 0
-    @Published private(set) var ready = false
+    @Published var airports: [Airport] = []
+    @Published var runways: [String: [Runway]] = [:]
+    @Published var frequencies: [String: [Frequency]] = [:]
+    @Published var isLoading = false
+    @Published var loadProgress: Double = 0
+    @Published var error: String?
 
-    private(set) var airports: [Airport] = []
-    private var byId: [String: Airport] = [:]
-    private var runwaysByIdent: [String: [Runway]] = [:]
-    private var freqsByIdent: [String: [Frequency]] = [:]
+    private let dataLoader = DataLoader()
 
-    func runways(for airport: Airport) -> [Runway] { runwaysByIdent[airport.id] ?? [] }
-    func frequencies(for airport: Airport) -> [Frequency] { freqsByIdent[airport.id] ?? [] }
+    func loadData() async {
+        guard airports.isEmpty else { return }
 
-    /// Look up an airport by its identifier (ICAO), case-insensitive.
-    func airport(_ ident: String) -> Airport? { byId[ident.uppercased()] }
+        isLoading = true
+        error = nil
+        defer { isLoading = false }
 
-    func load() async {
-        guard !ready else { return }
-        let (stream, cont) = AsyncStream<Double>.makeStream()
-        let task = Task.detached(priority: .userInitiated) { () -> Parsed in
-            defer { cont.finish() }
-            return Parser.parseAll { cont.yield($0) }
+        do {
+            // Load airports
+            airports = try await dataLoader.loadAirports { progress in
+                self.loadProgress = progress
+            }
+
+            // Load runways
+            runways = try await dataLoader.loadRunways()
+
+            // Load frequencies
+            frequencies = try await dataLoader.loadFrequencies()
+
+            print("Loaded \(airports.count) airports, \(runways.values.reduce(0) { $0 + $1.count }) runways, \(frequencies.values.reduce(0) { $0 + $1.count }) frequencies")
+        } catch {
+            self.error = error.localizedDescription
+            print("Data loading error: \(error)")
         }
-        // Each step maps to real parsed rows; we reveal them at a watchable pace
-        // (the parse itself runs ahead in the detached task and buffers its ticks).
-        for await p in stream {
-            progress = p
-            try? await Task.sleep(for: .milliseconds(45))
-        }
-        let parsed = await task.value
-        airports = parsed.airports
-        byId = Dictionary(parsed.airports.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        runwaysByIdent = parsed.runways
-        freqsByIdent = parsed.freqs
-        progress = 1
-        ready = true
     }
 
-    /// The `limit` closest airports to `c`, nearest first.
-    func nearest(to c: CLLocationCoordinate2D, limit: Int = 10,
-                 matching types: Set<String>? = nil) -> [Airport] {
-        var pool = airports
-        if let types { pool = pool.filter { types.contains($0.type) } }
-        return pool
-            .map { ($0, $0.distanceNM(to: c)) }
+    func airport(_ ident: String) -> Airport? {
+        airports.first { $0.id == ident }
+    }
+
+    func runways(for airport: Airport) -> [Runway] {
+        runways[airport.id] ?? []
+    }
+
+    func frequencies(for airport: Airport) -> [Frequency] {
+        frequencies[airport.id] ?? []
+    }
+
+    func nearest(to coordinate: CLLocationCoordinate2D, maxCount: Int = 10) -> [Airport] {
+        airports
+            .map { ($0, $0.distanceNM(from: coordinate)) }
             .sorted { $0.1 < $1.1 }
-            .prefix(limit)
+            .prefix(maxCount)
             .map { $0.0 }
     }
+
+    func search(_ query: String, limit: Int = 50) -> [Airport] {
+        let q = query.uppercased()
+        return airports.filter {
+            $0.id.uppercased().contains(q) ||
+            ($0.iata?.uppercased().contains(q) ?? false) ||
+            $0.name.uppercased().contains(q) ||
+            ($0.municipality?.uppercased().contains(q) ?? false)
+        }
+        .prefix(limit)
+        .map { $0 }
+    }
 }
 
-struct Parsed: Sendable {
-    var airports: [Airport]
-    var runways: [String: [Runway]]
-    var freqs: [String: [Frequency]]
-}
+// MARK: - Data Models
 
-/// Pure parsing, safe to run off-actor. Reports fractional progress across all files.
-enum Parser {
-    private enum Col { static let ident = 1, type = 2, name = 3, lat = 4, lon = 5,
-                              elev = 6, country = 8, municipality = 10, icao = 12, iata = 13 }
+struct Airport: Identifiable, Codable, Hashable {
+    let id: String
+    let iata: String?
+    let name: String
+    let type: String
+    let latitude: Double
+    let longitude: Double
+    let elevation: Int
+    let municipality: String?
+    let state: String?
+    let country: String
 
-    private static func lines(_ name: String) -> [Substring] {
-        guard let url = Bundle.main.url(forResource: name, withExtension: "csv"),
-              let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
-        return Array(text.split(separator: "\n", omittingEmptySubsequences: true).dropFirst())
+    var coordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
 
-    static func parseAll(progress: @Sendable (Double) -> Void) -> Parsed {
-        let aptLines = lines("airports")
-        let rwyLines = lines("runways")
-        let frqLines = lines("airport-frequencies")
-        let total = max(1, aptLines.count + rwyLines.count + frqLines.count)
-        var done = 0
-        func tick() { done += 1; if done % 3000 == 0 { progress(Double(done) / Double(total)) } }
+    func distanceNM(from coordinate: CLLocationCoordinate2D) -> Double {
+        Haversine.nauticalMiles(self.coordinate, coordinate)
+    }
+}
 
-        var airports: [Airport] = []; airports.reserveCapacity(aptLines.count)
-        for line in aptLines {
-            tick()
-            let f = CSV.parseLine(line)
-            guard f.count > Col.iata,
-                  f[Col.country] == "US",          // US-only (user flies only in the US)
-                  let lat = Double(f[Col.lat]), let lon = Double(f[Col.lon]),
-                  lat != 0 || lon != 0 else { continue }
-            func opt(_ s: String) -> String? { s.isEmpty ? nil : s }
-            airports.append(Airport(
-                id: f[Col.ident], name: f[Col.name], type: f[Col.type],
-                icao: opt(f[Col.icao]), iata: opt(f[Col.iata]),
-                municipality: opt(f[Col.municipality]), elevationFt: Int(f[Col.elev]),
-                coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon)))
+struct Runway: Identifiable, Codable, Hashable {
+    let id = UUID()
+    let airportIdent: String
+    let designation: String
+    let length: Int
+    let width: Int
+    let surface: String
+    let lighted: Bool
+    let closed: Bool
+    let trueHeading: Int
+    let magneticHeading: Int
+    let leLatitude: Double?
+    let leLongitude: Double?
+    let heLatitude: Double?
+    let heLongitude: Double?
+}
+
+struct Frequency: Identifiable, Codable, Hashable {
+    let id = UUID()
+    let airportIdent: String
+    let type: String
+    let frequencyMHz: Double
+    let description: String
+
+    var displayValue: String {
+        String(format: "%.2f", frequencyMHz)
+    }
+
+    var typeShort: String {
+        let t = type.uppercased()
+        if t.contains("CTAF") || t.contains("UNICOM") || t.contains("MULTICOM") { return "CTAF" }
+        if t.contains("TOWER") || t.contains("TWR") { return "TWR" }
+        if t.contains("GROUND") { return "GND" }
+        if t.contains("APPROACH") || t.contains("APP") || t.contains("DEP") { return "APP" }
+        if t.contains("CENTER") { return "CTR" }
+        if t.contains("ATIS") { return "ATIS" }
+        if t.contains("AWOS") || t.contains("ASOS") || t.contains("AWSS") { return "WX" }
+        if t.contains("CLEARANCE") { return "CLNC" }
+        if t.contains("RADIO") { return "RDO" }
+        return String(t.prefix(4))
+    }
+}
+
+// MARK: - Data Loader
+
+struct DataLoader {
+    private let airportsURL = "https://ourairports.com/data/airports.csv"
+    private let runwaysURL = "https://ourairports.com/data/runways.csv"
+    private let frequenciesURL = "https://ourairports.com/data/airport-frequencies.csv"
+
+    func loadAirports(progress: @escaping (Double) -> Void) async throws -> [Airport] {
+        guard let url = URL(string: airportsURL),
+              let (data, response) = try? await URLSession.shared.data(from: url),
+              let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200,
+              let csv = String(data: data, encoding: .utf8) else {
+            throw NSError(domain: "DataLoader", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to download airports"])
         }
 
-        var runways: [String: [Runway]] = [:]
-        for line in rwyLines {
-            tick()
-            let f = CSV.parseLine(line)
-            guard f.count > 14 else { continue }
-            runways[f[2], default: []].append(Runway(
-                leIdent: f[8], heIdent: f[14], lengthFt: Int(f[3]), widthFt: Int(f[4]),
-                surface: f[5].isEmpty ? nil : f[5], lighted: f[6] == "1", closed: f[7] == "1"))
+        let lines = csv.components(separatedBy: .newlines).dropFirst()
+        let total = lines.count
+        var airports: [Airport] = []
+        airports.reserveCapacity(total)
+
+        for (index, line) in lines.enumerated() {
+            if index % 1000 == 0 {
+                await MainActor.run { progress(Double(index) / Double(total)) }
+            }
+
+            let fields = parseCSV(line)
+            guard fields.count >= 14 else { continue }
+
+            let ident = fields[1].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            guard !ident.isEmpty else { continue }
+
+            // Only US airports
+            guard fields[8].trimmingCharacters(in: CharacterSet(charactersIn: "\"")) == "US" else { continue }
+
+            let type = fields[2].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            guard ["large_airport", "medium_airport", "small_airport", "heliport", "seaplane_base"].contains(type) else { continue }
+
+            let latitude = Double(fields[4].trimmingCharacters(in: CharacterSet(charactersIn: "\""))) ?? 0
+            let longitude = Double(fields[5].trimmingCharacters(in: CharacterSet(charactersIn: "\""))) ?? 0
+            let elevation = Int(fields[6].trimmingCharacters(in: CharacterSet(charactersIn: "\""))) ?? 0
+
+            let iata = fields[13].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            let municipality = fields[10].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            let state = fields[9].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+
+            let airport = Airport(
+                id: ident,
+                iata: iata.isEmpty ? nil : iata,
+                name: fields[3].trimmingCharacters(in: CharacterSet(charactersIn: "\"")),
+                type: type,
+                latitude: latitude,
+                longitude: longitude,
+                elevation: elevation,
+                municipality: municipality.isEmpty ? nil : municipality,
+                state: state.isEmpty ? nil : state,
+                country: "US"
+            )
+            airports.append(airport)
         }
 
-        var freqs: [String: [Frequency]] = [:]
-        for line in frqLines {
-            tick()
-            let f = CSV.parseLine(line)
-            guard f.count > 5 else { continue }
-            freqs[f[2], default: []].append(Frequency(type: f[3], description: f[4], mhz: f[5]))
+        await MainActor.run { progress(1.0) }
+        return airports
+    }
+
+    func loadRunways() async throws -> [String: [Runway]] {
+        guard let url = URL(string: runwaysURL),
+              let (data, _) = try? await URLSession.shared.data(from: url),
+              let csv = String(data: data, encoding: .utf8) else {
+            return [:]
         }
 
-        progress(1)
-        return Parsed(airports: airports, runways: runways, freqs: freqs)
+        var result: [String: [Runway]] = [:]
+        let lines = csv.components(separatedBy: .newlines).dropFirst()
+
+        for line in lines {
+            let fields = parseCSV(line)
+            guard fields.count >= 18,
+                  let airportIdent = fields[1].trimmingCharacters(in: CharacterSet(charactersIn: "\"")).components(separatedBy: ",").first
+            else { continue }
+
+            let runway = Runway(
+                airportIdent: airportIdent,
+                designation: fields[2].trimmingCharacters(in: CharacterSet(charactersIn: "\"")),
+                length: Int(fields[3].trimmingCharacters(in: CharacterSet(charactersIn: "\""))) ?? 0,
+                width: Int(fields[4].trimmingCharacters(in: CharacterSet(charactersIn: "\""))) ?? 0,
+                surface: fields[5].trimmingCharacters(in: CharacterSet(charactersIn: "\"")),
+                lighted: fields[6].trimmingCharacters(in: CharacterSet(charactersIn: "\"")).lowercased() == "yes",
+                closed: fields[7].trimmingCharacters(in: CharacterSet(charactersIn: "\"")).lowercased() == "yes",
+                trueHeading: Int(fields[8].trimmingCharacters(in: CharacterSet(charactersIn: "\""))) ?? 0,
+                magneticHeading: Int(fields[9].trimmingCharacters(in: CharacterSet(charactersIn: "\""))) ?? 0,
+                leLatitude: Double(fields[10].trimmingCharacters(in: CharacterSet(charactersIn: "\""))),
+                leLongitude: Double(fields[11].trimmingCharacters(in: CharacterSet(charactersIn: "\""))),
+                heLatitude: Double(fields[12].trimmingCharacters(in: CharacterSet(charactersIn: "\""))),
+                heLongitude: Double(fields[13].trimmingCharacters(in: CharacterSet(charactersIn: "\"")))
+            )
+            result[airportIdent, default: []].append(runway)
+        }
+
+        return result
+    }
+
+    func loadFrequencies() async throws -> [String: [Frequency]] {
+        guard let url = URL(string: frequenciesURL),
+              let (data, _) = try? await URLSession.shared.data(from: url),
+              let csv = String(data: data, encoding: .utf8) else {
+            return [:]
+        }
+
+        var result: [String: [Frequency]] = [:]
+        let lines = csv.components(separatedBy: .newlines).dropFirst()
+
+        for line in lines {
+            let fields = parseCSV(line)
+            guard fields.count >= 5 else { continue }
+
+            let airportIdent = fields[1].trimmingCharacters(in: CharacterSet(charactersIn: "\"")).components(separatedBy: ",").first ?? ""
+            guard !airportIdent.isEmpty else { continue }
+
+            let type = fields[2].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            guard !type.isEmpty else { continue }
+
+            let freqStr = fields[3].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            guard !freqStr.isEmpty else { continue }
+
+            if let freqMHz = Double(freqStr) {
+                let freq = Frequency(
+                    airportIdent: airportIdent,
+                    type: type,
+                    frequencyMHz: freqMHz,
+                    description: fields.count > 4 ? fields[4].trimmingCharacters(in: CharacterSet(charactersIn: "\"")) : ""
+                )
+                result[airportIdent, default: []].append(freq)
+            }
+        }
+
+        return result
+    }
+
+    private func parseCSV(_ line: String) -> [String] {
+        var fields: [String] = []
+        var current = ""
+        var inQuotes = false
+
+        for char in line {
+            if char == "\"" {
+                inQuotes.toggle()
+            } else if char == "," && !inQuotes {
+                fields.append(current)
+                current = ""
+            } else {
+                current.append(char)
+            }
+        }
+        fields.append(current)
+        return fields
     }
 }

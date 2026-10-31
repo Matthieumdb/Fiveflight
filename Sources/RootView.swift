@@ -1,118 +1,184 @@
 import SwiftUI
-import UIKit
+
+// MARK: - Root View
 
 struct RootView: View {
-    @StateObject private var store = AirportStore()
-    @StateObject private var location = LocationManager()
-    @StateObject private var model = AppModel()
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var store: AirportStore
+    @EnvironmentObject private var airspaceManager: AirspaceDataManager
+    @EnvironmentObject private var weatherService: WeatherService
+    @State private var selectedTab = 0
 
-    init() {
-        // Dark, slightly translucent tab bar that matches the cockpit theme.
-        let tab = UITabBarAppearance()
-        tab.configureWithDefaultBackground()
-        tab.backgroundColor = UIColor(Theme.bgElevated).withAlphaComponent(0.95)
-        tab.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
-        UITabBar.appearance().standardAppearance = tab
-        UITabBar.appearance().scrollEdgeAppearance = tab
-
-        let nav = UINavigationBarAppearance()
-        nav.configureWithTransparentBackground()
-        nav.backgroundColor = UIColor(Theme.bg).withAlphaComponent(0.6)
-        nav.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
-        nav.titleTextAttributes = [.foregroundColor: UIColor(Theme.textPrimary)]
-        nav.largeTitleTextAttributes = [.foregroundColor: UIColor(Theme.textPrimary)]
-        UINavigationBar.appearance().standardAppearance = nav
-        UINavigationBar.appearance().scrollEdgeAppearance = nav
-    }
+    private let tabs = [
+        (title: "Map", icon: "map"),
+        (title: "Flight Plan", icon: "list.bullet"),
+        (title: "Weather", icon: "cloud.sun"),
+        (title: "Airspace", icon: "airplane.departure"),
+        (title: "More", icon: "ellipsis")
+    ]
 
     var body: some View {
-        ZStack {
-            Theme.background.ignoresSafeArea()
-
-            if store.ready {
-                TabView {
-                    MapScreen()
-                        .tabItem { Label("Carte", systemImage: "map.fill") }
-
-                    FavoritesScreen()
-                        .tabItem { Label("Favoris", systemImage: "star.fill") }
-
-                    LogbookScreen()
-                        .tabItem { Label("Carnet", systemImage: "book.fill") }
-
-                    ChecklistScreen()
-                        .tabItem { Label("Checklist", systemImage: "checklist") }
-
-                    AirspaceScreen()
-                        .tabItem { Label("Espace", systemImage: "airplane.circle.fill") }
-
-                    WeatherScreen()
-                        .tabItem { Label("Météo+", systemImage: "cloud.sun.rain.fill") }
-
-                    CalculatorsScreen()
-                        .tabItem { Label("Calcul", systemImage: "function") }
-
-                    NotamScreen()
-                        .tabItem { Label("NOTAMs", systemImage: "exclamationmark.triangle") }
-
-                    FlightPlanFilingScreen()
-                        .tabItem { Label("Plan ICAO", systemImage: "doc.text.fill") }
-
-                    SettingsScreen()
-                        .tabItem { Label("Réglages", systemImage: "gearshape.fill") }
+        TabView(selection: $selectedTab) {
+            // Map Tab
+            MapScreen()
+                .tabItem {
+                    Label(tabs[0].title, systemImage: tabs[0].icon)
                 }
-                .tint(Theme.accent)
-            } else {
-                LoadingView(progress: store.progress)
-            }
+                .tag(0)
+
+            // Flight Plan Tab
+            FlightPlanTabView()
+                .tabItem {
+                    Label(tabs[1].title, systemImage: tabs[1].icon)
+                }
+                .tag(1)
+
+            // Weather Tab
+            WeatherScreen()
+                .tabItem {
+                    Label(tabs[2].title, systemImage: tabs[2].icon)
+                }
+                .tag(2)
+
+            // Airspace Tab
+            AirspaceScreen()
+                .tabItem {
+                    Label(tabs[3].title, systemImage: tabs[3].icon)
+                }
+                .tag(3)
+
+            // More Tab
+            MoreTabView()
+                .tabItem {
+                    Label(tabs[4].title, systemImage: tabs[4].icon)
+                }
+                .tag(4)
         }
-        .colorMultiply(model.nightMode ? Color(red: 1.0, green: 0.30, blue: 0.30) : .white)
-        .animation(.easeInOut, value: model.nightMode)
-        .preferredColorScheme(.dark)
-        .environmentObject(store)
-        .environmentObject(location)
-        .environmentObject(model)
-        .task {
-            location.start()
-            await store.load()
+        .tint(ColorToken.brandPrimary)
+        .onAppear {
+            // Load data on launch
+            Task {
+                await store.loadData()
+                await airspaceManager.refresh()
+            }
         }
     }
 }
 
-struct LoadingView: View {
-    let progress: Double
+// MARK: - Flight Plan Tab View
+
+struct FlightPlanTabView: View {
+    @EnvironmentObject private var model: AppModel
+
     var body: some View {
-        ZStack {
-            Theme.background.ignoresSafeArea()
-            VStack(spacing: Theme.spacingXL) {
-                ZStack {
-                    Circle()
-                        .fill(Theme.accentGradient)
-                        .frame(width: 96, height: 96)
-                        .shadow(color: Theme.accent.opacity(0.6), radius: 24)
-                    Image(systemName: "airplane.departure")
-                        .font(.system(size: 42, weight: .semibold))
-                        .foregroundStyle(.white)
+        NavigationStack {
+            FlightPlanListView()
+                .environmentObject(model)
+        }
+    }
+}
+
+struct FlightPlanListView: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        List {
+            if model.waypoints.isEmpty {
+                ContentUnavailableView(
+                    "No Route",
+                    systemImage: "map",
+                    description: Text("Add waypoints to create a flight plan")
+                )
+                .listRowBackground(ColorToken.surfaceBase)
+            } else {
+                ForEach(model.waypoints.indices, id: \.self) { index in
+                    let airport = model.waypoints[index]
+                    HStack {
+                        Text("\(index + 1)")
+                            .font(TypographyToken.monoMedium)
+                            .foregroundStyle(index == 0 ? ColorToken.success : (index == model.waypoints.count - 1 ? ColorToken.danger : ColorToken.brandPrimary))
+                            .frame(width: 24)
+
+                        VStack(alignment: .leading) {
+                            Text(airport.id)
+                                .font(TypographyToken.monoMedium)
+                            Text(airport.name)
+                                .font(TypographyToken.bodySmall)
+                                .foregroundStyle(ColorToken.textSecondary)
+                        }
+
+                        Spacer()
+
+                        if index > 0 {
+                            let prev = model.waypoints[index - 1]
+                            let dist = Haversine.nauticalMiles(prev.coordinate, airport.coordinate)
+                            Text("\(Int(dist)) NM")
+                                .font(TypographyToken.monoSmall)
+                                .foregroundStyle(ColorToken.textTertiary)
+                        }
+                    }
+                    .padding(.vertical, SpacingToken.space1)
                 }
-                VStack(spacing: Theme.spacingS) {
-                    Text("FIVEFLIGHT")
-                        .font(.title3.weight(.heavy))
-                        .tracking(4)
-                        .foregroundStyle(Theme.textPrimary)
-                    Text("Base aéronautique")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.textSecondary)
+                .onDelete { indexSet in
+                    for index in indexSet {
+                        model.removeWaypoint(at: index)
+                    }
                 }
-                ProgressView(value: progress)
-                    .progressViewStyle(.linear)
-                    .tint(Theme.accent)
-                    .frame(width: 220)
-                Text("\(Int(progress * 100)) %")
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(Theme.textSecondary)
-                    .contentTransition(.numericText())
-                    .animation(.default, value: progress)
+                .onMove { indices, newOffset in
+                    model.waypoints.move(fromOffsets: indices, toOffset: newOffset)
+                }
             }
+        }
+        .navigationTitle("Flight Plan")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    // Would show airport search
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
+            ToolbarItem(placement: .topBarLeading) {
+                EditButton()
+            }
+        }
+    }
+}
+
+// MARK: - More Tab View
+
+struct MoreTabView: View {
+    var body: some View {
+        TabView {
+            FavoritesScreen()
+                .tabItem {
+                    Label("Favorites", systemImage: "star")
+                }
+
+            CalculatorsScreen()
+                .tabItem {
+                    Label("Calculators", systemImage: "function")
+                }
+
+            ChecklistScreen()
+                .tabItem {
+                    Label("Checklists", systemImage: "checklist")
+                }
+
+            LogbookScreen()
+                .tabItem {
+                    Label("Logbook", systemImage: "book")
+                }
+
+            // Settings placeholder
+            Text("Settings")
+                .font(TypographyToken.bodyLarge)
+                .foregroundStyle(ColorToken.textPrimary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(ColorToken.surfaceBase)
+                .tabItem {
+                    Label("Settings", systemImage: "gear")
+                }
         }
     }
 }

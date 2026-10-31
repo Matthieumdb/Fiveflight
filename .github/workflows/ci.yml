@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install xcodegen
-        run: brew install xcodegen
+        run: brew install xcodegen@2.45 && brew link --overwrite xcodegen@2.45
 
       - name: Generate project
         run: xcodegen generate

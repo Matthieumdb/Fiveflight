@@ -44,16 +44,23 @@ struct AirportDetailView: View {
                         Text("Aucune donnée").foregroundStyle(.secondary)
                     }
                     ForEach(runways.filter { !$0.closed }) { r in
-                        HStack {
-                            Text(r.name).font(.headline.monospaced())
-                            Spacer()
-                            VStack(alignment: .trailing, spacing: 2) {
-                                if let l = r.lengthFt {
-                                    Text("\(l) ft").font(.subheadline.monospacedDigit())
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(r.name).font(.headline.monospaced())
+                                Spacer()
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    if let l = r.lengthFt {
+                                        Text("\(l) ft").font(.subheadline.monospacedDigit())
+                                    }
+                                    Text([r.surface, r.lighted ? "balisée" : nil]
+                                            .compactMap { $0 }.joined(separator: " · "))
+                                        .font(.caption).foregroundStyle(.secondary)
                                 }
-                                Text([r.surface, r.lighted ? "balisée" : nil]
-                                        .compactMap { $0 }.joined(separator: " · "))
-                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            if let wc = windComponents(r) {
+                                Label("\(wc.end) · face \(wc.head) kt · travers \(wc.cross) kt \(wc.side)",
+                                      systemImage: "wind")
+                                    .font(.caption).foregroundStyle(Theme.accent)
                             }
                         }
                     }
@@ -135,6 +142,29 @@ struct AirportDetailView: View {
                 Text("Météo indisponible").foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func runwayHeading(_ ident: String) -> Int? {
+        let digits = ident.prefix { $0.isNumber }
+        guard let n = Int(digits) else { return nil }
+        return (n % 36) * 10
+    }
+
+    /// Favourable runway end for the reported wind, with head/crosswind components.
+    private func windComponents(_ r: Runway) -> (end: String, head: Int, cross: Int, side: String)? {
+        guard let wd = wx?.windDirDeg, let ws = wx?.windSpdKt, ws > 0 else { return nil }
+        func comp(_ hdg: Int) -> (head: Double, cross: Double) {
+            let a = Double(wd - hdg) * .pi / 180
+            return (Double(ws) * cos(a), Double(ws) * sin(a))   // cross > 0 = from the right
+        }
+        var best: (end: String, head: Double, cross: Double)?
+        for id in [r.leIdent, r.heIdent] where !id.isEmpty {
+            guard let h = runwayHeading(id) else { continue }
+            let c = comp(h)
+            if best == nil || c.head > best!.head { best = (id, c.head, c.cross) }
+        }
+        guard let b = best else { return nil }
+        return (b.end, Int(b.head.rounded()), Int(abs(b.cross).rounded()), b.cross >= 0 ? "D" : "G")
     }
 
     private func fltColor(_ cat: String) -> Color {

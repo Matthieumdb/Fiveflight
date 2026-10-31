@@ -9,6 +9,8 @@ struct AirportWeather: Sendable {
     let altimInHg: String?    // US altimeter setting
     let tempC: Int?
     let dewpC: Int?
+    let windDirDeg: Int?      // nil when variable (VRB)
+    let windSpdKt: Int?
     let obsTime: Date?        // observation time (for freshness)
 
     /// Human relative age, e.g. "il y a 12 min".
@@ -37,6 +39,8 @@ enum WeatherService {
             altimInHg: metar?.altim.map { String(format: "%.2f inHg", $0 * 0.0295300) },
             tempC: metar?.temp.map { Int($0.rounded()) },
             dewpC: metar?.dewp.map { Int($0.rounded()) },
+            windDirDeg: metar?.wdir.flatMap { Int($0.string) },
+            windSpdKt: metar?.wspd.map { Int($0.rounded()) },
             obsTime: metar?.obsTime.map { Date(timeIntervalSince1970: $0) })
     }
 

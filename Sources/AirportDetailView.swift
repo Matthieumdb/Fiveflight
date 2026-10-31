@@ -97,6 +97,7 @@ struct AirportDetailView: View {
                 }
             }
             .task {
+                model.markViewed(airport.id)
                 wx = await WeatherService.fetch(icao: airport.id)
                 wxLoading = false
             }

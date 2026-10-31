@@ -11,8 +11,9 @@ struct SearchSheet: View {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         if q.isEmpty {
             var seen = Set<String>(); var out: [Airport] = []
-            for a in model.favorites.compactMap({ store.airport($0) }) + nearest
-            where seen.insert(a.id).inserted { out.append(a) }
+            let recents = model.recents.compactMap { store.airport($0) }
+            let favs = model.favorites.compactMap { store.airport($0) }
+            for a in recents + favs + nearest where seen.insert(a.id).inserted { out.append(a) }
             return Array(out.prefix(30))
         }
         var out: [Airport] = []

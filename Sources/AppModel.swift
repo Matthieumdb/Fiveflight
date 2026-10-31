@@ -27,7 +27,15 @@ final class AppModel: ObservableObject {
     @Published var favorites: Set<String> = []
     @Published var logbook: [LogEntry] = []
     @Published var checklists: [Checklist] = []
+    @Published var recents: [String] = []   // recently viewed ICAOs, most recent first
     @Published var directTo: String?   // ICAO requested as route destination from a detail sheet
+
+    func markViewed(_ id: String) {
+        recents.removeAll { $0 == id }
+        recents.insert(id, at: 0)
+        if recents.count > 15 { recents = Array(recents.prefix(15)) }
+        defaults.set(recents, forKey: "recents")
+    }
 
     // Aircraft profile (persisted, shared by the flight computer and plan)
     @Published var cruiseGS = 110.0 { didSet { saveProfile() } }
@@ -77,6 +85,7 @@ final class AppModel: ObservableObject {
         if let d = defaults.data(forKey: "checklists"),
            let v = try? JSONDecoder().decode([Checklist].self, from: d) { checklists = v }
         if checklists.isEmpty { checklists = Self.defaultChecklists }
+        recents = defaults.stringArray(forKey: "recents") ?? []
         if defaults.object(forKey: "cruiseGS") != nil { cruiseGS = defaults.double(forKey: "cruiseGS") }
         if defaults.object(forKey: "fuelBurn") != nil { fuelBurn = defaults.double(forKey: "fuelBurn") }
         if defaults.object(forKey: "reserveMin") != nil { reserveMin = defaults.double(forKey: "reserveMin") }

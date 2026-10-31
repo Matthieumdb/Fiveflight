@@ -23,6 +23,7 @@ targets:
       - Sources/Haptics.swift
       - Sources/LocationManager.swift
       - Sources/LogbookScreen.swift
+      - Sources/NotamScreen.swift
       - Sources/RootView.swift
       - Sources/RunwayFrequency.swift
       - Sources/SearchSheet.swift

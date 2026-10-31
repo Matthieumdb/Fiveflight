@@ -38,6 +38,8 @@ struct RootView: View {
                         .tabItem { Label("Checklist", systemImage: "checklist") }
                     CalculatorsScreen()
                         .tabItem { Label("Calcul", systemImage: "function") }
+                    NotamScreen()
+                        .tabItem { Label("NOTAMs", systemImage: "exclamationmark.triangle") }
                     SettingsScreen()
                         .tabItem { Label("Réglages", systemImage: "gearshape.fill") }
                 }

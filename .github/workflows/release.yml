@@ -44,12 +44,8 @@ jobs:
             | xcpretty --color --simple
       - name: Debug Archive
         run: |
-          echo "=== Debug Archive ==="
           pwd
           ls -la build/
-          echo "Archive exists: $(test -d build/${PROJECT_NAME}.xcarchive && echo YES || echo NO)"
-          echo "Archive type: $(file build/${PROJECT_NAME}.xcarchive 2>/dev/null || echo 'not found')"
-          ls -la build/${PROJECT_NAME}.xcarchive/ 2>/dev/null | head -5
       - name: Create Archive Zip
         run: |
           ditto -ck --sequesterRsrc --keepParent build/${PROJECT_NAME}.xcarchive build/${PROJECT_NAME}.xcarchive.zip

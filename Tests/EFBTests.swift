@@ -41,4 +41,15 @@ final class EFBTests: XCTestCase {
         XCTAssertEqual(d, d.sorted())           // sorted nearest-first
         XCTAssertLessThan(d.first!, 50)         // something within 50 NM of KFPR
     }
+
+    func testSolarSunriseBeforeSunset() {
+        let (sr, ss) = Solar.sunriseSunset(lat: 27.495, lon: -80.368,
+                                           date: Date(timeIntervalSince1970: 1_800_000_000))
+        let sunrise = try? XCTUnwrap(sr); let sunset = try? XCTUnwrap(ss)
+        XCTAssertNotNil(sunrise); XCTAssertNotNil(sunset)
+        if let sunrise, let sunset {
+            XCTAssertLessThan(sunrise, sunset)
+            XCTAssertLessThan(sunset.timeIntervalSince(sunrise), 24 * 3600)
+        }
+    }
 }

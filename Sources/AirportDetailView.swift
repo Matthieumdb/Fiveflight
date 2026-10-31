@@ -36,6 +36,9 @@ struct AirportDetailView: View {
                         LabeledContent("Depuis ta position",
                                        value: "\(nm) NM · \(String(format: "%03d", crs))°T")
                     }
+                    if let sun = sunText {
+                        LabeledContent("Soleil", value: sun)
+                    }
                     LabeledContent("Type", value: airport.type.replacingOccurrences(of: "_", with: " "))
                 }
 
@@ -142,6 +145,14 @@ struct AirportDetailView: View {
                 Text("Météo indisponible").foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var sunText: String? {
+        let (sr, ss) = Solar.sunriseSunset(lat: airport.coordinate.latitude,
+                                           lon: airport.coordinate.longitude)
+        guard let sr, let ss else { return nil }
+        let f = DateFormatter(); f.dateFormat = "HH:mm"
+        return "☀︎ \(f.string(from: sr))  ·  ☾ \(f.string(from: ss))"
     }
 
     private func runwayHeading(_ ident: String) -> Int? {

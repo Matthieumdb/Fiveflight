@@ -73,7 +73,23 @@ struct MapScreen: View {
         VStack(spacing: Theme.mapControlGap) {
             layerButton(on: $showSectional, systemImage: "map.fill", label: "Carte VFR")
             layerButton(on: $showWeather, systemImage: "cloud.rain.fill", label: "Météo radar")
+            recenterButton
         }
+    }
+
+    private var recenterButton: some View {
+        Button {
+            if waypoints.count >= 2 { fit(waypoints.map(\.coordinate)) } else { fitNearby() }
+        } label: {
+            Image(systemName: "location.fill")
+                .font(.system(size: 18))
+                .frame(width: Theme.tapTarget, height: Theme.tapTarget)
+                .foregroundStyle(Theme.accent)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.corner))
+                .overlay(RoundedRectangle(cornerRadius: Theme.corner).stroke(Theme.stroke))
+                .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
+        }
+        .accessibilityLabel("Recentrer")
     }
 
     private func layerButton(on: Binding<Bool>, systemImage: String, label: String) -> some View {

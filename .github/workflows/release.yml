@@ -15,7 +15,7 @@ env:
 
 jobs:
   build-and-release:
-    name: Build & Release IPA
+    name: Build & Release Archive
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
@@ -42,27 +42,6 @@ jobs:
             -destination "generic/platform=iOS" \
             archive \
             | xcpretty --color --simple
-      - name: Create IPA
-        run: |
-          mkdir -p build/ipa
-          cp .github/ExportOptions.plist build/ExportOptions.plist
-          xcodebuild \
-            -exportArchive \
-            -archivePath build/${PROJECT_NAME}.xcarchive \
-            -exportPath build/ipa \
-            -exportOptionsPlist build/ExportOptions.plist \
-            -allowProvisioningUpdates
-      - name: Find IPA
-        id: ipa
-        run: |
-          IPA_PATH=$(find build/ipa -name "*.ipa" | head -1)
-          if [ -z "$IPA_PATH" ]; then
-            echo "No IPA found!"
-            ls -la build/ipa/
-            exit 1
-          fi
-          echo "IPA_PATH=$IPA_PATH" >> $GITHUB_OUTPUT
-          echo "Found IPA: $IPA_PATH"
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -74,23 +53,34 @@ jobs:
             **Build:** ${{ github.run_number }}
             **Date:** $(date -u +"%Y-%m-%d %H:%M UTC")
 
-            ### Installation
-            1. Download the `.ipa` file below
-            2. Install via AltStore, Sideloadly, or Xcode
-            3. Trust the developer certificate in Settings > General > VPN & Device Management
+            ### Download
+            - **XCArchive:** `Fiveflight.xcarchive.zip` (below)
+            - **Source Code:** Source code zip/tar.gz (auto-generated)
+
+            ### Creating IPA Locally
+            1. Download and unzip `Fiveflight.xcarchive.zip`
+            2. Open in Xcode: `open Fiveflight.xcarchive`
+            3. Click "Distribute App" → "Development" or "Ad Hoc"
+            4. Follow the signing wizard with your Apple ID
+            5. Install via AltStore, Sideloadly, or Xcode
 
             ### Requirements
             - iOS 17.0+
             - iPhone or iPad
+            - Apple ID (free) for development signing
           files: |
-            ${{ steps.ipa.outputs.IPA_PATH }}
+            build/${PROJECT_NAME}.xcarchive.zip
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Upload IPA Artifact
+      - name: Zip Archive
+        run: |
+          cd build
+          zip -r ${PROJECT_NAME}.xcarchive.zip ${PROJECT_NAME}.xcarchive
+      - name: Upload Archive Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Fiveflight-${{ github.ref_name }}-ipa
-          path: ${{ steps.ipa.outputs.IPA_PATH }}
+          name: Fiveflight-${{ github.ref_name }}-xcarchive
+          path: build/${PROJECT_NAME}.xcarchive.zip
           retention-days: 30

@@ -51,8 +51,13 @@ jobs:
           find . -name "*.xcarchive" -type d 2>/dev/null | head -5
       - name: Zip Archive
         run: |
+          echo "Current directory: $(pwd)"
+          ls -la build/
           cd build
+          echo "In build directory: $(pwd)"
+          ls -la
           zip -r ${PROJECT_NAME}.xcarchive.zip ${PROJECT_NAME}.xcarchive
+          echo "Zip created: $(ls -la ${PROJECT_NAME}.xcarchive.zip)"
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:

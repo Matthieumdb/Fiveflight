@@ -235,7 +235,7 @@ enum WeatherService {
         let R = 3440.065 // Earth radius in NM
         let dLat = (lat2 - lat1) * .pi / 180
         let dLon = (lon2 - lon1) * .pi / 180
-        let a = sin(dLat/2)*sin(dLat/2) + cos(lat1*.pi/180)*cos(lat2*.pi/180)*sin(dLon/2)*sin(dLon/2)
+        let a = sin(dLat/2)*sin(dLat/2) + cos(lat1 * .pi / 180) * cos(lat2 * .pi / 180) * sin(dLon/2) * sin(dLon/2)
         return 2 * R * asin(sqrt(a))
     }
 }

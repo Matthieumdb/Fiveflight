@@ -132,7 +132,7 @@ struct WeatherScreen: View {
         error = nil
         Task {
             async let winds = WeatherService.windsAloft(for: wps.map(\.id))
-            async let p = WeatherService.pireps(lat: wps.first!.lat, lon: wps.first!.lon)
+            async let p = WeatherService.pireps(lat: wps.first!.coordinate.latitude, lon: wps.first!.coordinate.longitude)
             async let sig = WeatherService.airSigmets()
             let (w, pir, sigm) = await (winds, p, sig)
             windsAloft = w

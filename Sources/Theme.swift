@@ -134,7 +134,7 @@ struct PrimaryButtonStyle: ButtonStyle {
             .frame(height: Theme.tapTarget)
             .foregroundStyle(fill ? .white : Theme.accent)
             .background(
-                fill ? Theme.accentGradient : AnyShapeStyle(.clear),
+                fill ? AnyShapeStyle(Theme.accentGradient) : AnyShapeStyle(.clear),
                 in: RoundedRectangle(cornerRadius: Theme.corner)
             )
             .overlay(

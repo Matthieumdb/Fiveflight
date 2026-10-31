@@ -16,7 +16,7 @@ env:
 jobs:
   build-and-release:
     name: Build & Release IPA
-    runs-on: macos-14
+    runs-on: macos-latest
     timeout-minutes: 45
 
     steps:

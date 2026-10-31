@@ -101,6 +101,9 @@ struct AirportDetailView: View {
                 wx = await WeatherService.fetch(icao: airport.id)
                 wxLoading = false
             }
+            .refreshable {
+                wx = await WeatherService.fetch(icao: airport.id)
+            }
     }
 
     @ViewBuilder private var weatherSection: some View {

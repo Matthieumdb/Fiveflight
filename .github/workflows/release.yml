@@ -11,13 +11,13 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install xcodegen
         run: |
-          curl -L https://github.com/yonaskolb/XcodeGen/releases/download/2.42.0/xcodegen.zip -o xcodegen.zip
+          curl -L https://github.com/yonaskolb/XcodeGen/releases/download/2.45.0/xcodegen.zip -o xcodegen.zip
           unzip xcodegen.zip -d $RUNNER_TEMP/xcodegen
           chmod +x $RUNNER_TEMP/xcodegen/xcodegen/bin/xcodegen
           echo "$RUNNER_TEMP/xcodegen/xcodegen/bin" >> $GITHUB_PATH

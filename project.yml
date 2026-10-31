@@ -8,21 +8,58 @@ targets:
     type: application
     platform: iOS
     sources:
-      - Sources
+      - Sources/Airport.swift
+      - Sources/AirportDetailView.swift
+      - Sources/AirportStore.swift
+      - Sources/AppModel.swift
+      - Sources/CSV.swift
+      - Sources/ChecklistScreen.swift
+      - Sources/ContentView.swift
+      - Sources/EFBApp.swift
+      - Sources/FavoritesScreen.swift
+      - Sources/FlightPlanSheet.swift
+      - Sources/Haptics.swift
+      - Sources/LocationManager.swift
+      - Sources/LogbookScreen.swift
+      - Sources/RootView.swift
+      - Sources/RunwayFrequency.swift
+      - Sources/SearchSheet.swift
+      - Sources/SettingsScreen.swift
+      - Sources/Solar.swift
+      - Sources/Theme.swift
+      - Sources/VFRMapView.swift
+      - Sources/WeatherService.swift
       - Resources
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.example.efb.app
-        MARKETING_VERSION: "0.1"
+        MARKETING_VERSION: "0.4"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Affiche ta position et les aéroports les plus proches."
+  FiveflightWidget:
+    type: framework
+    platform: iOS
+    sources: Sources/Widgets
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.efb.app.widget
+        MARKETING_VERSION: "0.4"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: WIDGET_EXTENSION
+    dependencies:
+      - target: EFB
   EFBTests:
     type: bundle.unit-test
     platform: iOS
     sources:
       - Tests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: EFB

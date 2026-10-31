@@ -37,7 +37,7 @@ struct SettingsScreen: View {
                 }
 
                 Section {
-                    LabeledContent("Version", value: "0.2")
+                    LabeledContent("Version", value: "0.4")
                     LabeledContent("Zone", value: "US · VFR")
                 } header: {
                     Text("À propos")

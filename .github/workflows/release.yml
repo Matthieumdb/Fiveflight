@@ -9,154 +9,17 @@ on:
 permissions:
   contents: write
 
-env:
-  XCODE_VERSION: "16"
-  PROJECT_NAME: Fiveflight
-  SCHEME_NAME: Fiveflight
-
 jobs:
   build-and-release:
     name: Build & Release IPA
     runs-on: macos-latest
     timeout-minutes: 45
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Show Xcode Version
         run: xcodebuild -version
-
-      - name: Install xcodegen
-        run: |
-          if ! command -v xcodegen &> /dev/null; then
-            brew install xcodegen
-          fi
-          xcodegen --version
-
-      - name: Generate Xcode Project
-        run: xcodegen generate
-
-      - name: Extract Version
-        id: version
-        run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          echo "VERSION=${TAG#v}" >> $GITHUB_OUTPUT
-          echo "TAG=$TAG" >> $GITHUB_OUTPUT
-
-      - name: Update Build Number
-        run: |
-          BUILD_NUMBER=$(git rev-list --count HEAD)
-          echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
-
-      - name: Build Archive
-        run: |
-          xcodebuild \
-            -scheme ${SCHEME_NAME} \
-            -configuration Release \
-            -archivePath build/${PROJECT_NAME}.xcarchive \
-            -destination "generic/platform=iOS" \
-            archive \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            | xcpretty --color --simple
-
-      - name: Create IPA
-        run: |
-          mkdir -p build/ipa
-
-          # Create export options for ad-hoc distribution
-          cat > build/ExportOptions.plist << 'PLIST_EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>method</key>
-    <string>ad-hoc</string>
-    <key>teamID</key>
-    <string></string>
-    <key>compileBitcode</key>
-    <false/>
-    <key>stripSwiftSymbols</key>
-    <true/>
-    <key>thinning</key>
-    <string><none></string>
-    <key>signingStyle</key>
-    <string>manual</string>
-    <key>signingCertificate</key>
-    <string>Apple Development</string>
-    <key>provisioningProfiles</key>
-    <dict/>
-</dict>
-</plist>
-PLIST_EOF
-
-          # Export IPA
-          xcodebuild \
-            -exportArchive \
-            -archivePath build/${PROJECT_NAME}.xcarchive \
-            -exportPath build/ipa \
-            -exportOptionsPlist build/ExportOptions.plist \
-            -allowProvisioningUpdates \
-            2>&1 | tail -20
-
-      - name: Find IPA
-        id: ipa
-        run: |
-          IPA_PATH=$(find build/ipa -name "*.ipa" | head -1)
-          if [ -z "$IPA_PATH" ]; then
-            echo "No IPA found!"
-            ls -la build/ipa/
-            exit 1
-          fi
-          echo "IPA_PATH=$IPA_PATH" >> $GITHUB_OUTPUT
-          echo "Found IPA: $IPA_PATH"
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.TAG }}
-          name: Fiveflight ${{ steps.version.outputs.TAG }}
-          body: |
-            ## Fiveflight ${{ steps.version.outputs.TAG }}
-
-            **Build:** ${{ env.BUILD_NUMBER }}
-            **Date:** $(date -u +"%Y-%m-%d %H:%M UTC")
-
-            ### Changes
-            See commit history for details.
-
-            ### Installation
-            1. Download the `.ipa` file below
-            2. Install via AltStore, Sideloadly, or Xcode
-            3. Trust the developer certificate in Settings > General > VPN & Device Management
-
-            ### Requirements
-            - iOS 17.0+
-            - iPhone or iPad
-
-            ### Features
-            - VFR Flight Planning with multi-leg routes
-            - Real-time weather (METAR/TAF/Winds Aloft/PIREPs/AIRMETs)
-            - Live airspace data (Class B/C/D/E, MOA, Restricted, TFR)
-            - Smart routing (Direct or Avoid Controlled Airspace)
-            - FAA Sectional charts + NEXRAD radar
-            - Weight & Balance, Density Altitude, Crosswind calculators
-            - Checklists, Logbook, Favorites
-            - Offline-first with cached data
-          files: |
-            ${{ steps.ipa.outputs.IPA_PATH }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload IPA Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Fiveflight-${{ steps.version.outputs.VERSION }}-ipa
-          path: ${{ steps.ipa.outputs.IPA_PATH }}
-          retention-days: 30
+      - name: Test Step
+        run: echo "Hello from release workflow"

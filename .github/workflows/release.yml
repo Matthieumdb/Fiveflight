@@ -15,7 +15,7 @@ env:
 
 jobs:
   build-and-release:
-    name: Build & Release Archive
+    name: Build & Release Unsigned IPA
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
@@ -33,7 +33,7 @@ jobs:
           xcodegen --version
       - name: Generate Xcode Project
         run: xcodegen generate
-      - name: Build Archive
+      - name: Build Archive (no signing)
         run: |
           xcodebuild \
             -scheme ${SCHEME_NAME} \
@@ -41,40 +41,50 @@ jobs:
             -archivePath build/${PROJECT_NAME}.xcarchive \
             -destination "generic/platform=iOS" \
             archive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
             | xcpretty --color --simple
+      - name: Create Unsigned IPA
+        run: |
+          mkdir -p build/ipa/Payload
+          # Copy .app from archive to Payload
+          cp -R build/${PROJECT_NAME}.xcarchive/Products/Applications/${PROJECT_NAME}.app build/ipa/Payload/
+          # Create IPA (just a zip with Payload/)
+          cd build/ipa
+          zip -r ${PROJECT_NAME}.ipa Payload/
+          echo "IPA size: $(ls -lh ${PROJECT_NAME}.ipa | awk '{print $5}')"
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: Fiveflight ${{ github.ref_name }}
           body: |
-            ## Fiveflight ${{ github.ref_name }}
+            ## Fiveflight ${{ github.ref_name }} (Unsigned IPA for Jailbroken)
 
             **Build:** ${{ github.run_number }}
             **Date:** $(date -u +"%Y-%m-%d %H:%M UTC")
 
-            ### Download
-            - **XCArchive:** Available as [GitHub Actions Artifact](https://github.com/Matthieumdb/Fiveflight/actions/runs/${{ github.run_id }})
-            - **Source Code:** Source code zip/tar.gz (auto-generated)
+            ### ⚠️ Unsigned IPA - Jailbroken Only
+            This IPA has **no code signature**. Only install on jailbroken devices.
 
-            ### Creating IPA Locally
-            1. Download the `Fiveflight.xcarchive` artifact from the Actions tab
-            2. Open in Xcode: `open Fiveflight.xcarchive`
-            3. Click "Distribute App" → "Development" or "Ad Hoc"
-            4. Follow the signing wizard with your Apple ID
-            5. Install via AltStore, Sideloadly, or Xcode
+            ### Installation
+            1. Download `Fiveflight.ipa` below
+            2. Install via Filza, IPA Installer, or SSH to `/var/mobile/Applications/`
+            3. Respring if needed
 
             ### Requirements
-            - iOS 17.0+
+            - Jailbroken iOS 17.0+
             - iPhone or iPad
-            - Apple ID (free) for development signing
+          files: |
+            build/ipa/Fiveflight.ipa
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Upload Archive Artifact
+      - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Fiveflight-${{ github.ref_name }}-xcarchive
-          path: build/${PROJECT_NAME}.xcarchive
+          name: Fiveflight-${{ github.ref_name }}-unsigned-ipa
+          path: build/ipa/Fiveflight.ipa
           retention-days: 30

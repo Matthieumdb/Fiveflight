@@ -21,6 +21,7 @@ struct MapScreen: View {
 
     @State private var showSectional = true
     @State private var showWeather = false
+    @State private var showPlan = false
 
     @State private var region = MKCoordinateRegion(
         center: .init(latitude: 27.5, longitude: -80.4),
@@ -58,6 +59,10 @@ struct MapScreen: View {
             AirportDetailView(airport: a,
                               runways: store.runways(for: a),
                               frequencies: store.frequencies(for: a))
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showPlan) {
+            FlightPlanSheet(waypoints: $waypoints, groundSpeed: $groundSpeed, fuelBurn: $fuelBurn)
                 .presentationDetents([.medium, .large])
         }
     }
@@ -127,10 +132,17 @@ struct MapScreen: View {
     }
 
     private var routeInfo: some View {
-        Text("\(waypoints.map(\.id).joined(separator: " → "))  ·  \(Int(totalNM.rounded())) NM")
-            .font(.subheadline.monospacedDigit().weight(.medium))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .lineLimit(2)
+        Button { showPlan = true } label: {
+            HStack {
+                Text("\(waypoints.map(\.id).joined(separator: " → "))  ·  \(Int(totalNM.rounded())) NM")
+                    .font(.subheadline.monospacedDigit().weight(.medium))
+                    .lineLimit(2)
+                Spacer()
+                Image(systemName: "list.bullet.rectangle").font(.caption)
+            }
+            .contentShape(Rectangle())
+        }
+        .tint(Theme.textPrimary)
     }
 
     private var flightComputer: some View {

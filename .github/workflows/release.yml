@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+env:
+  PROJECT_NAME: Fiveflight
+  SCHEME_NAME: Fiveflight
+
 jobs:
   build-and-release:
     name: Build & Release IPA
@@ -29,3 +33,15 @@ jobs:
           xcodegen --version
       - name: Generate Xcode Project
         run: xcodegen generate
+      - name: Build Archive
+        run: |
+          xcodebuild \
+            -scheme ${SCHEME_NAME} \
+            -configuration Release \
+            -archivePath build/${PROJECT_NAME}.xcarchive \
+            -destination "generic/platform=iOS" \
+            archive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty --color --simple

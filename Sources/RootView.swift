@@ -40,6 +40,8 @@ struct RootView: View {
                         .tabItem { Label("Calcul", systemImage: "function") }
                     NotamScreen()
                         .tabItem { Label("NOTAMs", systemImage: "exclamationmark.triangle") }
+                    FlightPlanFilingScreen()
+                        .tabItem { Label("Plan ICAO", systemImage: "doc.text.fill") }
                     SettingsScreen()
                         .tabItem { Label("Réglages", systemImage: "gearshape.fill") }
                 }

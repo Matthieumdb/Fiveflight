@@ -19,6 +19,8 @@ targets:
       - Sources/ContentView.swift
       - Sources/EFBApp.swift
       - Sources/FavoritesScreen.swift
+      - Sources/FlightPlanFiling.swift
+      - Sources/FlightPlanFilingScreen.swift
       - Sources/FlightPlanSheet.swift
       - Sources/Haptics.swift
       - Sources/LocationManager.swift

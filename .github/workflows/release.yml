@@ -45,12 +45,18 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             | xcpretty --color --simple
+      - name: Debug Archive Contents
+        run: |
+          echo "=== Archive structure ==="
+          find build/${PROJECT_NAME}.xcarchive -type f -name "*.app" | head -5
+          ls -la build/${PROJECT_NAME}.xcarchive/Products/Applications/ 2>/dev/null || echo "No Products/Applications"
+          ls -la build/${PROJECT_NAME}.xcarchive/Products/ 2>/dev/null || echo "No Products"
       - name: Create Unsigned IPA
         run: |
+          APP_PATH=$(find build/${PROJECT_NAME}.xcarchive -name "*.app" -type d | head -1)
+          echo "Found app at: $APP_PATH"
           mkdir -p build/ipa/Payload
-          # Copy .app from archive to Payload
-          cp -R build/${PROJECT_NAME}.xcarchive/Products/Applications/${PROJECT_NAME}.app build/ipa/Payload/
-          # Create IPA (just a zip with Payload/)
+          cp -R "$APP_PATH" build/ipa/Payload/
           cd build/ipa
           zip -r ${PROJECT_NAME}.ipa Payload/
           echo "IPA size: $(ls -lh ${PROJECT_NAME}.ipa | awk '{print $5}')"

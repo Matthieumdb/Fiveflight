@@ -45,12 +45,15 @@ struct MapScreen: View {
                     // Airspace overlays
                     if model.showAirspace {
                         ForEach(airspaceManager.airspaces.filter { $0.isActive }) { airspace in
+                            let color = airspaceColor(airspace)
                             ForEach(Array(airspace.polygons.enumerated()), id: \.offset) { _, polygon in
                                 if polygon.count >= 3 {
                                     let coordinates = polygon.map { $0.clCoordinate }
-                                    MapPolygon(coordinates: coordinates)
-                                        .foregroundStyle(airspaceColor(airspace).opacity(0.15))
-                                        .stroke(airspaceColor(airspace), style: StrokeStyle(lineWidth: 1.5, dash: [8, 4]))
+                                    let polygonView = MapPolygon(coordinates: coordinates)
+                                    polygonView
+                                        .foregroundStyle(color.opacity(0.15))
+                                    polygonView
+                                        .stroke(color, style: StrokeStyle(lineWidth: 1.5, dash: [8, 4]))
                                 }
                             }
                         }
@@ -62,8 +65,10 @@ struct MapScreen: View {
                             ForEach(Array(airspace.polygons.enumerated()), id: \.offset) { _, polygon in
                                 if polygon.count >= 3 {
                                     let coordinates = polygon.map { $0.clCoordinate }
-                                    MapPolygon(coordinates: coordinates)
+                                    let polygonView = MapPolygon(coordinates: coordinates)
+                                    polygonView
                                         .foregroundStyle(ColorToken.tfr.opacity(0.2))
+                                    polygonView
                                         .stroke(ColorToken.tfr, style: StrokeStyle(lineWidth: 2, dash: [4, 4]))
                                 }
                             }

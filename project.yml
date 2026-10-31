@@ -18,16 +18,20 @@ targets:
       - Sources/Calculators.swift
       - Sources/CalculatorsScreen.swift
       - Sources/ChecklistScreen.swift
-      - Sources/ContentView.swift
       - Sources/EFBApp.swift
       - Sources/FavoritesScreen.swift
       - Sources/FlightPlanFiling.swift
       - Sources/FlightPlanFilingScreen.swift
       - Sources/FlightPlanSheet.swift
       - Sources/Haptics.swift
+      - Sources/LayerControlsView.swift
       - Sources/LocationManager.swift
       - Sources/LogbookScreen.swift
+      - Sources/MapLegendView.swift
+      - Sources/MapScreen.swift
+      - Sources/NearbyAirportsListView.swift
       - Sources/NotamScreen.swift
+      - Sources/RouteBarView.swift
       - Sources/RootView.swift
       - Sources/RunwayFrequency.swift
       - Sources/SearchSheet.swift

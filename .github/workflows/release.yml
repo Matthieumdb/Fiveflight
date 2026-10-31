@@ -42,8 +42,8 @@ jobs:
           mkdir -p build/Payload
           cp -R build/DerivedData/Build/Products/Release-iphoneos/EFB.app build/Payload/
           cd build && zip -r EFB.ipa Payload
-          mkdir -p Export
-          mv build/EFB.ipa Export/
+          mkdir -p ../Export
+          mv EFB.ipa ../Export/
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

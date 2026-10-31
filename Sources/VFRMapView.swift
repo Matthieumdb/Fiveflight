@@ -24,6 +24,7 @@ struct VFRMapView: UIViewRepresentable {
     var nearest: [Airport]
     var waypoints: [Airport]
     var categories: [String: String]
+    var userCoord: CLLocationCoordinate2D?
     var region: MKCoordinateRegion
     var regionVersion: Int
     var onSelect: (Airport) -> Void
@@ -69,6 +70,11 @@ struct VFRMapView: UIViewRepresentable {
             let coords = waypoints.map(\.coordinate)
             mv.addOverlay(MKPolyline(coordinates: coords, count: coords.count), level: .aboveLabels)
         }
+        if let uc = userCoord, waypoints.isEmpty {
+            for nm in [10.0, 25.0] {
+                mv.addOverlay(MKCircle(center: uc, radius: nm * 1852), level: .aboveLabels)
+            }
+        }
 
         // Annotations: nearest + waypoints (drop and rebuild).
         mv.removeAnnotations(mv.annotations.filter { !($0 is MKUserLocation) })
@@ -93,6 +99,13 @@ struct VFRMapView: UIViewRepresentable {
                 r.strokeColor = .systemBlue
                 r.lineWidth = 3
                 r.lineDashPattern = [8, 4]
+                return r
+            }
+            if let circle = overlay as? MKCircle {
+                let r = MKCircleRenderer(circle: circle)
+                r.strokeColor = UIColor(red: 0.18, green: 0.63, blue: 1.0, alpha: 0.45)
+                r.lineWidth = 1
+                r.lineDashPattern = [4, 4]
                 return r
             }
             if let weather = overlay as? WeatherTileOverlay {

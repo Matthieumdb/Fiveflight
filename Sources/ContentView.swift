@@ -34,6 +34,7 @@ struct MapScreen: View {
             ZStack(alignment: .topTrailing) {
                 VFRMapView(showSectional: showSectional, showWeather: showWeather,
                            nearest: nearest, waypoints: waypoints, categories: categories,
+                           userCoord: location.coordinate,
                            region: region, regionVersion: regionVersion,
                            onSelect: { selected = $0 })
                     .ignoresSafeArea(edges: .horizontal)

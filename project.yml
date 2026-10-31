@@ -35,6 +35,7 @@ targets:
       - Sources/Solar.swift
       - Sources/Theme.swift
       - Sources/VFRMapView.swift
+      - Sources/WeatherScreen.swift
       - Sources/WeatherService.swift
       - Resources
     settings:

@@ -38,6 +38,8 @@ struct RootView: View {
                         .tabItem { Label("Checklist", systemImage: "checklist") }
                     AirspaceScreen()
                         .tabItem { Label("Espace", systemImage: "airplane.circle.fill") }
+                    WeatherScreen()
+                        .tabItem { Label("Météo+", systemImage: "cloud.sun.rain.fill") }
                     CalculatorsScreen()
                         .tabItem { Label("Calcul", systemImage: "function") }
                     NotamScreen()

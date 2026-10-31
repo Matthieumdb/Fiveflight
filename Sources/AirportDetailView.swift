@@ -12,7 +12,6 @@ struct AirportDetailView: View {
     @State private var wxLoading = true
 
     var body: some View {
-        NavigationStack {
             List {
                 weatherSection
 
@@ -101,7 +100,6 @@ struct AirportDetailView: View {
                 wx = await WeatherService.fetch(icao: airport.id)
                 wxLoading = false
             }
-        }
     }
 
     @ViewBuilder private var weatherSection: some View {

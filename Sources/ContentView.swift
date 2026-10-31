@@ -20,6 +20,7 @@ struct MapScreen: View {
     @State private var showSectional = true
     @State private var showWeather = false
     @State private var showPlan = false
+    @State private var showSearch = false
 
     @State private var region = MKCoordinateRegion(
         center: .init(latitude: 27.5, longitude: -80.4),
@@ -55,14 +56,19 @@ struct MapScreen: View {
         .onChange(of: location.coordinate?.latitude) { recompute() }
         .onChange(of: model.directTo) { handleDirectTo() }
         .sheet(item: $selected) { a in
-            AirportDetailView(airport: a,
-                              runways: store.runways(for: a),
-                              frequencies: store.frequencies(for: a))
-                .presentationDetents([.medium, .large])
+            NavigationStack {
+                AirportDetailView(airport: a,
+                                  runways: store.runways(for: a),
+                                  frequencies: store.frequencies(for: a))
+            }
+            .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showPlan) {
             FlightPlanSheet(waypoints: $waypoints)
                 .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showSearch) {
+            SearchSheet(nearest: nearest)
         }
     }
 
@@ -73,7 +79,21 @@ struct MapScreen: View {
             layerButton(on: $showSectional, systemImage: "map.fill", label: "Carte VFR")
             layerButton(on: $showWeather, systemImage: "cloud.rain.fill", label: "Météo radar")
             recenterButton
+            mapControlButton(systemImage: "magnifyingglass", label: "Rechercher") { showSearch = true }
         }
+    }
+
+    private func mapControlButton(systemImage: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18))
+                .frame(width: Theme.tapTarget, height: Theme.tapTarget)
+                .foregroundStyle(Theme.accent)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.corner))
+                .overlay(RoundedRectangle(cornerRadius: Theme.corner).stroke(Theme.stroke))
+                .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
+        }
+        .accessibilityLabel(label)
     }
 
     private var recenterButton: some View {

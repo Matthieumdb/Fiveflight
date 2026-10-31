@@ -30,10 +30,12 @@ struct FavoritesScreen: View {
             }
             .navigationTitle("Favoris")
             .sheet(item: $selected) { a in
-                AirportDetailView(airport: a,
-                                  runways: store.runways(for: a),
-                                  frequencies: store.frequencies(for: a))
-                    .presentationDetents([.medium, .large])
+                NavigationStack {
+                    AirportDetailView(airport: a,
+                                      runways: store.runways(for: a),
+                                      frequencies: store.frequencies(for: a))
+                }
+                .presentationDetents([.medium, .large])
             }
         }
     }

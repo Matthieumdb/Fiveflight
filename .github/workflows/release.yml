@@ -42,14 +42,10 @@ jobs:
             -destination "generic/platform=iOS" \
             archive \
             | xcpretty --color --simple
-      - name: Debug Archive
-        run: |
-          pwd
-          ls -la build/
       - name: Create Archive Zip
         run: |
-          ditto -ck --sequesterRsrc --keepParent build/${PROJECT_NAME}.xcarchive build/${PROJECT_NAME}.xcarchive.zip
-          echo "Zip size: $(ls -lh build/${PROJECT_NAME}.xcarchive.zip | awk '{print $5}')"
+          tar -czf build/${PROJECT_NAME}.xcarchive.tar.gz -C build ${PROJECT_NAME}.xcarchive
+          echo "Archive size: $(ls -lh build/${PROJECT_NAME}.xcarchive.tar.gz | awk '{print $5}')"
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -62,11 +58,11 @@ jobs:
             **Date:** $(date -u +"%Y-%m-%d %H:%M UTC")
 
             ### Download
-            - **XCArchive:** `Fiveflight.xcarchive.zip` (attached below)
+            - **XCArchive:** `Fiveflight.xcarchive.tar.gz` (attached below)
             - **Source Code:** Source code zip/tar.gz (auto-generated)
 
             ### Creating IPA Locally
-            1. Download and unzip `Fiveflight.xcarchive.zip`
+            1. Download and extract `Fiveflight.xcarchive.tar.gz`
             2. Open in Xcode: `open Fiveflight.xcarchive`
             3. Click "Distribute App" → "Development" or "Ad Hoc"
             4. Follow the signing wizard with your Apple ID
@@ -77,7 +73,7 @@ jobs:
             - iPhone or iPad
             - Apple ID (free) for development signing
           files: |
-            build/${PROJECT_NAME}.xcarchive.zip
+            build/${PROJECT_NAME}.xcarchive.tar.gz
           draft: false
           prerelease: false
         env:
@@ -86,5 +82,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Fiveflight-${{ github.ref_name }}-xcarchive
-          path: build/${PROJECT_NAME}.xcarchive.zip
+          path: build/${PROJECT_NAME}.xcarchive.tar.gz
           retention-days: 30

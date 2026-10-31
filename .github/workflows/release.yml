@@ -44,8 +44,11 @@ jobs:
             | xcpretty --color --simple
       - name: Debug Build Output
         run: |
-          ls -la build/
-          ls -la build/${PROJECT_NAME}.xcarchive/ 2>/dev/null || echo "Archive not found"
+          echo "Current directory: $(pwd)"
+          echo "Build directory contents:"
+          ls -la build/ || echo "build/ not found"
+          echo "Looking for xcarchive:"
+          find . -name "*.xcarchive" -type d 2>/dev/null | head -5
       - name: Zip Archive
         run: |
           cd build

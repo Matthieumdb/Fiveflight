@@ -68,19 +68,3 @@ struct FavoriteRowView: View {
         .padding(.vertical, Theme.spacingS)
     }
 }
-
-struct AirportDetailSheet: View {
-    let airport: Airport
-    let store: AirportStore
-
-    var body: some View {
-        NavigationStack {
-            AirportDetailView(
-                airport: airport,
-                runways: store.runways(for: airport),
-                frequencies: store.frequencies(for: airport)
-            )
-        }
-        .presentationDetents([.medium, .large])
-    }
-}

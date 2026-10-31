@@ -7,62 +7,137 @@ struct FlightPlanFilingScreen: View {
     @State private var loadingWx = false
     @State private var showShare = false
     @State private var exportText = ""
+    @State private var activeTab = 0
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Aéronef") {
-                    TextField("Type (ex: C172)", text: $plan.aircraftType)
-                        .textInputAutocapitalization(.characters)
+                    ProfileTextField(
+                        title: "Type",
+                        text: $plan.aircraftType,
+                        placeholder: "C172",
+                        systemImage: "airplane",
+                        capitalization: .characters
+                    )
+
                     Picker("Catégorie turbulence", selection: $plan.wakeCategory) {
                         Text("L (Light)").tag("L")
                         Text("M (Medium)").tag("M")
                         Text("H (Heavy)").tag("H")
                         Text("J (Super)").tag("J")
                     }
-                    TextField("Vitesse croisière (kt)", text: $plan.cruiseSpeed)
-                        .keyboardType(.numberPad)
+
+                    ProfileTextField(
+                        title: "Vitesse croisière",
+                        text: $plan.cruiseSpeed,
+                        placeholder: "110",
+                        systemImage: "speedometer",
+                        keyboard: .numberPad
+                    )
                 }
 
                 Section("Route") {
-                    TextField("Départ (ICAO)", text: $plan.departure)
-                        .textInputAutocapitalization(.characters)
-                    TextField("Arrivée (ICAO)", text: $plan.destination)
-                        .textInputAutocapitalization(.characters)
-                    TextField("Altitude (ft ou FL)", text: $plan.cruiseAltitude)
-                        .textInputAutocapitalization(.characters)
-                    TextField("Route (ex: KFPR DCT KMIA)", text: $plan.route)
-                        .textInputAutocapitalization(.characters)
-                    TextField("Alternate (ICAO)", text: $plan.alternate)
-                        .textInputAutocapitalization(.characters)
+                    ProfileTextField(
+                        title: "Départ",
+                        text: $plan.departure,
+                        placeholder: "KFPR",
+                        systemImage: "airplane.departure",
+                        capitalization: .characters
+                    )
+
+                    ProfileTextField(
+                        title: "Arrivée",
+                        text: $plan.destination,
+                        placeholder: "KMIA",
+                        systemImage: "airplane.arrival",
+                        capitalization: .characters
+                    )
+
+                    ProfileTextField(
+                        title: "Altitude",
+                        text: $plan.cruiseAltitude,
+                        placeholder: "5000",
+                        systemImage: "altitude",
+                        capitalization: .characters
+                    )
+
+                    ProfileTextField(
+                        title: "Route",
+                        text: $plan.route,
+                        placeholder: "KFPR DCT KMIA",
+                        systemImage: "point.topleft.down.curvedto.point.bottomright.forward",
+                        capitalization: .characters
+                    )
+
+                    ProfileTextField(
+                        title: "Alternate",
+                        text: $plan.alternate,
+                        placeholder: "KTPA",
+                        systemImage: "airplane.circle",
+                        capitalization: .characters
+                    )
                 }
 
                 Section("Temps & Carburant") {
-                    TextField("EET total (HHMM)", text: $plan.totalEET)
-                        .keyboardType(.numberPad)
-                    TextField("Endurance (HHMM)", text: $plan.endurance)
-                        .keyboardType(.numberPad)
+                    ProfileTextField(
+                        title: "EET total",
+                        text: $plan.totalEET,
+                        placeholder: "0230",
+                        systemImage: "clock",
+                        keyboard: .numberPad
+                    )
+
+                    ProfileTextField(
+                        title: "Endurance",
+                        text: $plan.endurance,
+                        placeholder: "0400",
+                        systemImage: "fuelpump",
+                        keyboard: .numberPad
+                    )
+
                     Stepper("Personnes à bord: \(plan.personsOnBoard)", value: $plan.personsOnBoard, in: 1...10)
-                    TextField("Remarques", text: $plan.remarks)
+                        .padding(.vertical, Theme.spacingXS)
+
+                    ProfileTextField(
+                        title: "Remarques",
+                        text: $plan.remarks,
+                        placeholder: "RMK/...",
+                        systemImage: "note.text"
+                    )
                 }
 
                 if let wx = routeWeather {
                     Section("Météo sur la route") {
                         if let worst = wx.worstCategory {
                             HStack {
-                                Text("Pire catégorie")
+                                Label("Pire catégorie", systemImage: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(Theme.textPrimary)
                                 Spacer()
-                                Text(worst).bold().foregroundStyle(fltColor(worst))
+                                Text(worst)
+                                    .font(.headline.monospacedDigit())
+                                    .foregroundStyle(Theme.category(worst))
                             }
+                            .padding(.vertical, Theme.spacingXS)
                         }
-                        ForEach(wx.waypoints) { p in
-                            if let cat = p.category {
+
+                        ForEach(wx.waypoints) { point in
+                            if let cat = point.category {
                                 HStack {
-                                    Text(p.icao).monospaced()
+                                    Text(point.icao)
+                                        .font(.subheadline.monospaced())
+                                        .foregroundStyle(Theme.textPrimary)
                                     Spacer()
-                                    Text(cat).foregroundStyle(fltColor(cat))
-                                    if let w = p.wind { Text(w).font(.caption).foregroundStyle(.secondary) }
+                                    Text(cat)
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(Theme.category(cat))
+                                    if let wind = point.wind {
+                                        Text(wind)
+                                            .font(.caption.monospacedDigit())
+                                            .foregroundStyle(Theme.textSecondary)
+                                    }
                                 }
+                                .padding(.vertical, Theme.spacingXS)
                             }
                         }
                     }
@@ -70,8 +145,19 @@ struct FlightPlanFilingScreen: View {
 
                 Section {
                     Button { loadRouteWeather() } label: {
-                        Label("Charger météo route", systemImage: "cloud.sun")
-                    }.disabled(loadingWx)
+                        Label {
+                            Text("Charger météo route")
+                        } icon: {
+                            if loadingWx {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "cloud.sun")
+                            }
+                        }
+                    }
+                    .disabled(loadingWx)
+
+                    Divider()
 
                     Button { shareICAO() } label: {
                         Label("Partager plan ICAO", systemImage: "square.and.arrow.up")
@@ -116,14 +202,26 @@ struct FlightPlanFilingScreen: View {
         exportText = FPLExport.export(plan: plan)
         showShare = true
     }
+}
 
-    private func fltColor(_ cat: String) -> Color {
-        switch cat {
-        case "VFR": return .green
-        case "MVFR": return .blue
-        case "IFR": return .red
-        case "LIFR": return .purple
-        default: return .gray
+struct ProfileTextField: View {
+    let title: String
+    @Binding var text: String
+    let placeholder: String
+    let systemImage: String
+    var capitalization: TextInputAutocapitalization = .never
+    var keyboard: UIKeyboardType = .default
+
+    var body: some View {
+        LabeledContent {
+            TextField(placeholder, text: $text)
+                .textInputAutocapitalization(capitalization)
+                .keyboardType(keyboard)
+                .multilineTextAlignment(.trailing)
+                .font(.subheadline.monospacedDigit())
+        } label: {
+            Label(title, systemImage: systemImage)
+                .foregroundStyle(Theme.textPrimary)
         }
     }
 }

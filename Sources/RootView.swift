@@ -10,13 +10,15 @@ struct RootView: View {
         // Dark, slightly translucent tab bar that matches the cockpit theme.
         let tab = UITabBarAppearance()
         tab.configureWithDefaultBackground()
-        tab.backgroundColor = UIColor(Theme.bgElevated).withAlphaComponent(0.92)
+        tab.backgroundColor = UIColor(Theme.bgElevated).withAlphaComponent(0.95)
+        tab.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
         UITabBar.appearance().standardAppearance = tab
         UITabBar.appearance().scrollEdgeAppearance = tab
 
         let nav = UINavigationBarAppearance()
         nav.configureWithTransparentBackground()
         nav.backgroundColor = UIColor(Theme.bg).withAlphaComponent(0.6)
+        nav.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
         nav.titleTextAttributes = [.foregroundColor: UIColor(Theme.textPrimary)]
         nav.largeTitleTextAttributes = [.foregroundColor: UIColor(Theme.textPrimary)]
         UINavigationBar.appearance().standardAppearance = nav
@@ -26,36 +28,46 @@ struct RootView: View {
     var body: some View {
         ZStack {
             Theme.background.ignoresSafeArea()
+
             if store.ready {
                 TabView {
                     MapScreen()
                         .tabItem { Label("Carte", systemImage: "map.fill") }
+
                     FavoritesScreen()
                         .tabItem { Label("Favoris", systemImage: "star.fill") }
+
                     LogbookScreen()
                         .tabItem { Label("Carnet", systemImage: "book.fill") }
+
                     ChecklistScreen()
                         .tabItem { Label("Checklist", systemImage: "checklist") }
+
                     AirspaceScreen()
                         .tabItem { Label("Espace", systemImage: "airplane.circle.fill") }
+
                     WeatherScreen()
                         .tabItem { Label("Météo+", systemImage: "cloud.sun.rain.fill") }
+
                     CalculatorsScreen()
                         .tabItem { Label("Calcul", systemImage: "function") }
+
                     NotamScreen()
                         .tabItem { Label("NOTAMs", systemImage: "exclamationmark.triangle") }
+
                     FlightPlanFilingScreen()
                         .tabItem { Label("Plan ICAO", systemImage: "doc.text.fill") }
+
                     SettingsScreen()
                         .tabItem { Label("Réglages", systemImage: "gearshape.fill") }
                 }
+                .tint(Theme.accent)
             } else {
                 LoadingView(progress: store.progress)
             }
         }
         .colorMultiply(model.nightMode ? Color(red: 1.0, green: 0.30, blue: 0.30) : .white)
         .animation(.easeInOut, value: model.nightMode)
-        .tint(Theme.accent)
         .preferredColorScheme(.dark)
         .environmentObject(store)
         .environmentObject(location)
@@ -72,26 +84,34 @@ struct LoadingView: View {
     var body: some View {
         ZStack {
             Theme.background.ignoresSafeArea()
-            VStack(spacing: 22) {
+            VStack(spacing: Theme.spacingXL) {
                 ZStack {
-                    Circle().fill(Theme.accentGradient)
+                    Circle()
+                        .fill(Theme.accentGradient)
                         .frame(width: 96, height: 96)
                         .shadow(color: Theme.accent.opacity(0.6), radius: 24)
                     Image(systemName: "airplane.departure")
                         .font(.system(size: 42, weight: .semibold))
                         .foregroundStyle(.white)
                 }
-                VStack(spacing: 6) {
-                    Text("FIVEFLIGHT").font(.title3.weight(.heavy)).tracking(4)
+                VStack(spacing: Theme.spacingS) {
+                    Text("FIVEFLIGHT")
+                        .font(.title3.weight(.heavy))
+                        .tracking(4)
                         .foregroundStyle(Theme.textPrimary)
-                    Text("Base aéronautique").font(.footnote).foregroundStyle(Theme.textSecondary)
+                    Text("Base aéronautique")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.textSecondary)
                 }
                 ProgressView(value: progress)
-                    .progressViewStyle(.linear).tint(Theme.accent)
+                    .progressViewStyle(.linear)
+                    .tint(Theme.accent)
                     .frame(width: 220)
                 Text("\(Int(progress * 100)) %")
-                    .font(.subheadline.monospacedDigit()).foregroundStyle(Theme.textSecondary)
-                    .contentTransition(.numericText()).animation(.default, value: progress)
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(Theme.textSecondary)
+                    .contentTransition(.numericText())
+                    .animation(.default, value: progress)
             }
         }
     }

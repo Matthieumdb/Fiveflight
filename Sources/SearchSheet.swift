@@ -10,7 +10,8 @@ struct SearchSheet: View {
     private var results: [Airport] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         if q.isEmpty {
-            var seen = Set<String>(); var out: [Airport] = []
+            var seen = Set<String>()
+            var out: [Airport] = []
             let recents = model.recents.compactMap { store.airport($0) }
             let favs = model.favorites.compactMap { store.airport($0) }
             for a in recents + favs + nearest where seen.insert(a.id).inserted { out.append(a) }
@@ -31,24 +32,15 @@ struct SearchSheet: View {
 
     var body: some View {
         NavigationStack {
-            List(results) { a in
+            List(results) { airport in
                 NavigationLink {
-                    AirportDetailView(airport: a,
-                                      runways: store.runways(for: a),
-                                      frequencies: store.frequencies(for: a))
+                    AirportDetailView(
+                        airport: airport,
+                        runways: store.runways(for: airport),
+                        frequencies: store.frequencies(for: airport)
+                    )
                 } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "airplane.circle.fill")
-                            .foregroundStyle(Theme.accent).font(.title3)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(a.id).font(.headline.monospaced())
-                            Text(a.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                        Spacer()
-                        if let m = a.municipality {
-                            Text(m).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
-                        }
-                    }
+                    SearchResultRow(airport: airport)
                 }
             }
             .navigationTitle("Recherche")
@@ -56,8 +48,42 @@ struct SearchSheet: View {
             .searchable(text: $query, prompt: "Code OACI, IATA ou nom")
             .textInputAutocapitalization(.characters)
             .overlay {
-                if !query.isEmpty && results.isEmpty { ContentUnavailableView.search(text: query) }
+                if !query.isEmpty && results.isEmpty {
+                    ContentUnavailableView.search(text: query)
+                }
             }
         }
+    }
+}
+
+struct SearchResultRow: View {
+    let airport: Airport
+
+    var body: some View {
+        HStack(spacing: Theme.spacingM) {
+            Image(systemName: "airplane.circle.fill")
+                .font(.title3)
+                .foregroundStyle(Theme.accent)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(airport.id)
+                    .font(.headline.monospaced())
+                    .foregroundStyle(Theme.textPrimary)
+                Text(airport.name)
+                    .font(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            if let municipality = airport.municipality {
+                Text(municipality)
+                    .font(.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.vertical, Theme.spacingXS)
     }
 }

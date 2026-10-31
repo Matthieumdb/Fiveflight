@@ -12,54 +12,82 @@ struct AirspaceScreen: View {
         NavigationStack {
             List {
                 Section("Altitude de référence") {
-                    Stepper("\(altitude) ft MSL", value: $altitude, in: 0...18000, step: 500)
+                    VStack(alignment: .leading, spacing: Theme.spacingS) {
+                        HStack {
+                            Text("\(altitude) ft MSL")
+                                .font(.title3.monospacedDigit().weight(.semibold))
+                                .foregroundStyle(Theme.textPrimary)
+                            Spacer()
+                        }
+                        Slider(value: Binding(
+                            get: { Double(altitude) },
+                            set: { altitude = Int($0.rounded()) }
+                        ), in: 0...18000, step: 500)
+                        .tint(Theme.accent)
+                    }
+                    .padding(.vertical, Theme.spacingXS)
                 }
 
-                Section("Espace aérien à votre position") {
+                Section {
                     if let loc = location.coordinate {
                         let airspaces = AirspaceChecker.check(
                             coordinate: loc,
                             altitude: altitude
                         )
+
                         if airspaces.isEmpty {
-                            Label("Aucun espace aérien contrôlé", systemImage: "checkmark.circle")
-                                .foregroundStyle(.green)
+                            Label("Aucun espace aérien contrôlé", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(Theme.green)
+                                .font(.subheadline)
+                                .padding(.vertical, Theme.spacingXS)
                         } else {
                             ForEach(airspaces) { airspace in
                                 Button {
                                     selectedAirspace = airspace
                                     showingDetail = true
                                 } label: {
-                                    HStack {
-                                        Circle().fill(Color(hex: airspace.color))
-                                            .frame(width: 12, height: 12)
-                                        VStack(alignment: .leading) {
-                                            Text(airspace.name).foregroundStyle(Theme.textPrimary)
-                                            Text("\(airspace.floor.map { "\($0) ft" } ?? "SFC") - \(airspace.ceiling.map { "\($0) ft" } ?? "UNL")")
-                                                .font(.caption).foregroundStyle(Theme.textSecondary)
-                                        }
-                                    }
+                                    AirspaceRowView(airspace: airspace)
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
                     } else {
                         Label("Localisation non disponible", systemImage: "location.slash")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Theme.orange)
+                            .font(.subheadline)
+                            .padding(.vertical, Theme.spacingXS)
                     }
+                } header: {
+                    Text("Espace aérien à votre position")
+                } footer: {
+                    Text("Basé sur la position GPS actuelle et l'altitude sélectionnée.")
                 }
 
-                Section("Obstacles sur la route (5 NM)") {
+                Section {
                     if obstacles.isEmpty {
-                        Text("Ajoutez un plan de vol pour voir les obstacles").foregroundStyle(.secondary)
+                        ContentUnavailableView(
+                            "Aucun obstacle",
+                            systemImage: "mountain.2",
+                            description: Text("Ajoutez un plan de vol pour voir les obstacles sur la route.")
+                        )
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                     } else {
                         ForEach(obstacles) { obs in
                             HStack {
-                                Text(obs.type.capitalized)
+                                Label(obs.type.capitalized, systemImage: "triangle.fill")
+                                    .font(.subheadline)
+                                    .foregroundStyle(Theme.textPrimary)
                                 Spacer()
-                                Text("\(obs.topElevation) ft AMSL").monospacedDigit()
+                                Text("\(obs.topElevation) ft AMSL")
+                                    .font(.subheadline.monospacedDigit())
+                                    .foregroundStyle(Theme.textSecondary)
                             }
+                            .padding(.vertical, Theme.spacingXS)
                         }
                     }
+                } header: {
+                    Text("Obstacles sur la route (5 NM)")
                 }
             }
             .navigationTitle("Espace Aérien")
@@ -73,8 +101,35 @@ struct AirspaceScreen: View {
     }
 
     private func checkObstacles() {
-        // Would check against current flight plan
         obstacles = []
+    }
+}
+
+struct AirspaceRowView: View {
+    let airspace: Airspace
+
+    var body: some View {
+        HStack(spacing: Theme.spacingM) {
+            Circle()
+                .fill(Color(hex: airspace.color))
+                .frame(width: 12, height: 12)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(airspace.name)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Theme.textPrimary)
+                Text("\(airspace.floor.map { "\($0) ft" } ?? "SFC") – \(airspace.ceiling.map { "\($0) ft" } ?? "UNL")")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(Theme.textSecondary)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.textTertiary)
+        }
+        .padding(.vertical, Theme.spacingXS)
     }
 }
 
@@ -94,7 +149,9 @@ struct AirspaceDetailView: View {
 
                 Section("Exigences VFR") {
                     ForEach(requirements(for: airspace.type), id: \.self) { req in
-                        Text(req)
+                        Label(req, systemImage: "checkmark.circle")
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.textPrimary)
                     }
                 }
             }
@@ -102,9 +159,11 @@ struct AirspaceDetailView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Fermer") { dismiss() }
+                        .primaryButton(fill: false)
                 }
             }
         }
+        .presentationDetents([.medium])
     }
 
     private func requirements(for type: AirspaceType) -> [String] {

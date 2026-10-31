@@ -14,53 +14,135 @@ struct CalculatorsScreen: View {
                 // Weight & Balance
                 Section("Mass & Centrage") {
                     ForEach($wb.items) { $item in
-                        if item.name == "Fuel (gal)" {
-                            HStack {
-                                Text(item.name)
-                                Spacer()
-                                Text("\(Int(item.weight/6)) gal").foregroundStyle(.secondary)
-                                Stepper("", value: Binding(
-                                    get: { item.weight/6 },
-                                    set: { wb.updateFuel(gallons: $0) }
-                                ), in: 0...100, step: 1).labelsHidden()
-                            }
-                        } else {
-                            HStack {
-                                Text(item.name)
-                                Spacer()
-                                Stepper("", value: $item.weight, in: 0...1000, step: 10).labelsHidden()
-                                Text("\(Int(item.weight)) lb").monospacedDigit().frame(width: 60)
-                            }
-                        }
+                        WeightBalanceRow(item: $item, model: wb)
                     }
-                    LabeledContent("Poids total", value: "\(Int(wb.totalWeight)) lb")
-                        .foregroundStyle(wb.totalWeight > wb.maxWeight ? .red : .primary)
-                    LabeledContent("CG", value: String(format: "%.1f in", wb.cg))
-                        .foregroundStyle((wb.cg < wb.cgForward || wb.cg > wb.cgAft) ? .red : .primary)
-                    LabeledContent("Limites CG", value: "\(Int(wb.cgForward))–\(Int(wb.cgAft)) in")
-                    LabeledContent("Charge utile", value: "\(Int(wb.usefulLoad)) lb")
+
+                    Divider()
+
+                    ResultRow(
+                        title: "Poids total",
+                        value: "\(Int(wb.totalWeight)) lb",
+                        color: wb.totalWeight > wb.maxWeight ? Theme.red : Theme.textPrimary
+                    )
+
+                    ResultRow(
+                        title: "CG",
+                        value: String(format: "%.1f in", wb.cg),
+                        color: (wb.cg < wb.cgForward || wb.cg > wb.cgAft) ? Theme.red : Theme.textPrimary
+                    )
+
+                    ResultRow(
+                        title: "Limites CG",
+                        value: "\(Int(wb.cgForward))–\(Int(wb.cgAft)) in"
+                    )
+
+                    ResultRow(
+                        title: "Charge utile",
+                        value: "\(Int(wb.usefulLoad)) lb"
+                    )
                 }
 
                 // Density Altitude
                 Section("Altitude Densité") {
-                    Stepper("Alt. pression: \(Int(daPressure)) ft", value: $daPressure, in: -1000...15000, step: 100)
-                    Stepper("Temp OAT: \(Int(daTemp))°C", value: $daTemp, in: -40...50)
+                    ProfileStepper(title: "Alt. pression", value: $daPressure, range: -1000...15000, step: 100, unit: "ft", icon: "altitude")
+                    ProfileStepper(title: "Temp OAT", value: $daTemp, range: -40...50, step: 1, unit: "°C", icon: "thermometer")
+
                     let da = DensityAltitude.calculate(pressureAltitude: daPressure, tempC: daTemp)
-                    LabeledContent("Altitude densité", value: "\(da) ft")
-                        .foregroundStyle(da > 8000 ? .red : da > 5000 ? .orange : .primary)
+                    ResultRow(
+                        title: "Altitude densité",
+                        value: "\(da) ft",
+                        color: da > 8000 ? Theme.red : (da > 5000 ? Theme.orange : Theme.textPrimary)
+                    )
                 }
 
                 // Crosswind
                 Section("Vent de travers") {
-                    Stepper("Vent: \(cwWindDir)° \(cwWindSpd) kt", value: $cwWindDir, in: 0...359)
-                    Stepper("Force: \(cwWindSpd) kt", value: $cwWindSpd, in: 0...50)
-                    Stepper("Piste QHU: \(String(format: "%03d", cwRwy))", value: $cwRwy, in: 0...359, step: 10)
+                    ProfileStepper(title: "Direction vent", value: Binding(
+                        get: { Double(cwWindDir) },
+                        set: { cwWindDir = Int($0) }
+                    ), range: 0...359, step: 1, unit: "°", icon: "wind")
+
+                    ProfileStepper(title: "Force vent", value: Binding(
+                        get: { Double(cwWindSpd) },
+                        set: { cwWindSpd = Int($0) }
+                    ), range: 0...50, step: 1, unit: "kt", icon: "wind")
+
+                    ProfileStepper(title: "Piste QHU", value: Binding(
+                        get: { Double(cwRwy) },
+                        set: { cwRwy = Int($0) }
+                    ), range: 0...359, step: 10, unit: "°", icon: "number")
+
                     let (hw, cw, side) = Crosswind.components(windDir: cwWindDir, windSpeed: cwWindSpd, runwayHeading: cwRwy)
-                    LabeledContent("Face", value: "\(hw) kt").foregroundStyle(hw >= 0 ? .green : .red)
-                    LabeledContent("Travers", value: "\(cw) kt \(side)").foregroundStyle(cw > 15 ? .red : cw > 10 ? .orange : .primary)
+
+                    ResultRow(
+                        title: "Vent de face",
+                        value: "\(hw) kt",
+                        color: hw >= 0 ? Theme.green : Theme.red
+                    )
+
+                    ResultRow(
+                        title: "Vent de travers",
+                        value: "\(cw) kt \(side)",
+                        color: cw > 15 ? Theme.red : (cw > 10 ? Theme.orange : Theme.textPrimary)
+                    )
                 }
             }
             .navigationTitle("Calculateurs")
         }
+    }
+}
+
+struct WeightBalanceRow: View {
+    @Binding var item: WeightBalanceItem
+    @ObservedObject var model: WeightBalanceModel
+
+    var body: some View {
+        if item.name == "Fuel (gal)" {
+            HStack {
+                Label(item.name, systemImage: "fuelpump")
+                    .foregroundStyle(Theme.textPrimary)
+                Spacer()
+                Text("\(Int(item.weight/6)) gal")
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(Theme.textSecondary)
+                Stepper("", value: Binding(
+                    get: { item.weight/6 },
+                    set: { model.updateFuel(gallons: $0) }
+                ), in: 0...100, step: 1)
+                    .labelsHidden()
+            }
+            .padding(.vertical, Theme.spacingXS)
+        } else {
+            HStack {
+                Label(item.name, systemImage: "person")
+                    .foregroundStyle(Theme.textPrimary)
+                Spacer()
+                Stepper("", value: $item.weight, in: 0...1000, step: 10)
+                    .labelsHidden()
+                Text("\(Int(item.weight)) lb")
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(Theme.textPrimary)
+                    .frame(width: 60, alignment: .trailing)
+            }
+            .padding(.vertical, Theme.spacingXS)
+        }
+    }
+}
+
+struct ResultRow: View {
+    let title: String
+    let value: String
+    var color: Color = Theme.textPrimary
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .foregroundStyle(Theme.textSecondary)
+            Spacer()
+            Text(value)
+                .font(.subheadline.monospacedDigit().weight(.medium))
+                .foregroundStyle(color)
+        }
+        .padding(.vertical, Theme.spacingXS)
     }
 }

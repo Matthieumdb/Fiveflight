@@ -10,28 +10,28 @@ struct NotamScreen: View {
         NavigationStack {
             Group {
                 if notams.isEmpty && !loading {
-                    ContentUnavailableView("Aucun NOTAM",
+                    ContentUnavailableView(
+                        "Aucun NOTAM",
                         systemImage: "exclamationmark.triangle",
-                        description: Text("Ajoute des waypoints au plan de vol pour voir les NOTAMs."))
+                        description: Text("Ajoute des waypoints au plan de vol pour voir les NOTAMs.")
+                    )
                 } else {
                     List {
-                        ForEach(waypoints) { apt in
-                            Section(apt.id) {
-                                if let n = notams[apt.id], !n.isEmpty {
+                        ForEach(waypoints) { airport in
+                            Section(airport.id) {
+                                if let n = notams[airport.id], !n.isEmpty {
                                     ForEach(n.filter(\.isActive)) { notam in
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(notam.text).font(.caption).foregroundStyle(.primary)
-                                            if let s = notam.start {
-                                                Text("Depuis: \(s.formatted(date: .abbreviated, time: .shortened))")
-                                                    .font(.caption2).foregroundStyle(.secondary)
-                                            }
-                                        }
-                                        .padding(.vertical, 2)
+                                        NotamRowView(notam: notam)
                                     }
-                                } else if notams[apt.id] != nil {
-                                    Text("Aucun NOTAM actif").font(.caption).foregroundStyle(.secondary)
+                                } else if notams[airport.id] != nil {
+                                    Text("Aucun NOTAM actif")
+                                        .font(.caption)
+                                        .foregroundStyle(Theme.textTertiary)
+                                        .padding(.vertical, Theme.spacingXS)
                                 } else {
-                                    ProgressView().frame(maxWidth: .infinity, alignment: .center)
+                                    ProgressView()
+                                        .frame(maxWidth: .infinity, alignment: .center)
+                                        .padding(.vertical, Theme.spacingM)
                                 }
                             }
                         }
@@ -41,11 +41,14 @@ struct NotamScreen: View {
             .navigationTitle("NOTAMs")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { load() } label: { Image(systemName: "arrow.clockwise") }.disabled(loading)
+                    Button { load() } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .disabled(loading)
                 }
             }
             .task { load() }
-            .onChange(of: model.directTo) { _ in load() }
+            .onChange(of: model.directTo) { _, _ in load() }
         }
     }
 
@@ -64,5 +67,24 @@ struct NotamScreen: View {
             notams = n
             loading = false
         }
+    }
+}
+
+struct NotamRowView: View {
+    let notam: Notam
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.spacingXS) {
+            Text(notam.text)
+                .font(.caption)
+                .foregroundStyle(Theme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let start = notam.start {
+                Text("Depuis: \(start.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.textTertiary)
+            }
+        }
+        .padding(.vertical, Theme.spacingXS)
     }
 }

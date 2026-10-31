@@ -8,7 +8,6 @@ struct Leg: Identifiable {
     var course: Int { Haversine.trueCourse(from.coordinate, to.coordinate) }
 }
 
-/// Full flight plan: editable waypoints, per-leg table, performance + fuel with reserve.
 struct FlightPlanSheet: View {
     @Binding var waypoints: [Airport]
     @EnvironmentObject private var model: AppModel
@@ -22,6 +21,7 @@ struct FlightPlanSheet: View {
     private var enrouteMin: Int { Int((hours * 60).rounded()) }
     private var fuelEnroute: Double { hours * model.fuelBurn }
     private var fuelReserve: Double { model.reserveMin / 60 * model.fuelBurn }
+    private var totalFuel: Double { fuelEnroute + fuelReserve }
 
     private func hm(_ minutes: Int) -> String { "\(minutes / 60)h\(String(format: "%02d", minutes % 60))" }
 
@@ -31,11 +31,14 @@ struct FlightPlanSheet: View {
                 Section("Trajet") {
                     ForEach(waypoints) { wp in
                         Label {
-                            VStack(alignment: .leading, spacing: 1) {
+                            VStack(alignment: .leading, spacing: Theme.spacingXS) {
                                 Text(wp.id).font(.headline.monospaced())
-                                Text(wp.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                Text(wp.name).font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
                             }
-                        } icon: { Image(systemName: "mappin.circle.fill").foregroundStyle(Theme.accent) }
+                        } icon: {
+                            Image(systemName: "mappin.circle.fill")
+                                .foregroundStyle(Theme.accent)
+                        }
                     }
                     .onDelete { waypoints.remove(atOffsets: $0) }
                     .onMove { waypoints.move(fromOffsets: $0, toOffset: $1) }
@@ -44,29 +47,15 @@ struct FlightPlanSheet: View {
                 if !legs.isEmpty {
                     Section("Segments") {
                         ForEach(legs) { leg in
-                            HStack {
-                                Text("\(leg.from.id) → \(leg.to.id)").font(.subheadline.monospaced())
-                                Spacer()
-                                Text("\(Int(leg.nm.rounded())) NM").monospacedDigit()
-                                Text("\(String(format: "%03d", leg.course))°")
-                                    .monospacedDigit().foregroundStyle(.secondary)
-                                    .frame(width: 54, alignment: .trailing)
-                            }
-                            .font(.subheadline)
+                            LegRowView(leg: leg)
                         }
                     }
                 }
 
                 Section("Performance") {
-                    Stepper(value: $model.cruiseGS, in: 40.0...500.0, step: 5.0) {
-                        Text("Vitesse sol : \(Int(model.cruiseGS)) kt")
-                    }
-                    Stepper(value: $model.fuelBurn, in: 1.0...100.0, step: 1.0) {
-                        Text("Conso : \(Int(model.fuelBurn)) gal/h")
-                    }
-                    Stepper(value: $model.reserveMin, in: 0.0...120.0, step: 5.0) {
-                        Text("Réserve : \(Int(model.reserveMin)) min")
-                    }
+                    ProfileStepper(title: "Vitesse sol", value: $model.cruiseGS, range: 40...500, step: 5, unit: "kt", icon: "speedometer")
+                    ProfileStepper(title: "Consommation", value: $model.fuelBurn, range: 1...100, step: 1, unit: "gal/h", icon: "fuelpump")
+                    ProfileStepper(title: "Réserve", value: $model.reserveMin, range: 0...120, step: 5, unit: "min", icon: "timer")
                 }
 
                 Section("Totaux") {
@@ -75,9 +64,13 @@ struct FlightPlanSheet: View {
                     LabeledContent("Carburant en route", value: String(format: "%.1f gal", fuelEnroute))
                     LabeledContent("Réserve", value: String(format: "%.1f gal", fuelReserve))
                     LabeledContent {
-                        Text(String(format: "%.1f gal", fuelEnroute + fuelReserve))
-                            .bold().foregroundStyle(Theme.accent)
-                    } label: { Text("Carburant requis").bold() }
+                        Text(String(format: "%.1f gal", totalFuel))
+                            .font(.headline.monospacedDigit().weight(.bold))
+                            .foregroundStyle(Theme.accent)
+                    } label: {
+                        Text("Carburant requis")
+                            .font(.headline.weight(.semibold))
+                    }
                 }
 
                 if waypoints.count >= 2 {
@@ -86,7 +79,11 @@ struct FlightPlanSheet: View {
                             model.logFlight(from: waypoints.first!.id, to: waypoints.last!.id,
                                             nm: Int(totalNM.rounded()), eteMinutes: enrouteMin)
                             dismiss()
-                        } label: { Label("Enregistrer au carnet", systemImage: "book.fill") }
+                        } label: {
+                            Label("Enregistrer au carnet", systemImage: "book.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .primaryButton()
                     }
                 }
             }
@@ -94,8 +91,64 @@ struct FlightPlanSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { EditButton() }
-                ToolbarItem(placement: .topBarTrailing) { Button("OK") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("OK") { dismiss() }
+                        .primaryButton(fill: false)
+                }
             }
         }
+    }
+}
+
+struct LegRowView: View {
+    let leg: Leg
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: Theme.spacingXS) {
+                Text("\(leg.from.id) → \(leg.to.id)")
+                    .font(.subheadline.monospaced())
+                    .foregroundStyle(Theme.textPrimary)
+                HStack(spacing: Theme.spacingS) {
+                    Label("\(Int(leg.nm.rounded())) NM", systemImage: "point.topleft.down.curvedto.point.bottomright.forward")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(Theme.textSecondary)
+                    Label("\(String(format: "%03d", leg.course))°", systemImage: "safari")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+            Spacer()
+        }
+        .padding(.vertical, Theme.spacingXS)
+    }
+}
+
+struct ProfileStepper: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let unit: String
+    let icon: String
+
+    var body: some View {
+        HStack {
+            Image(systemName: icon)
+                .font(.body)
+                .foregroundStyle(Theme.accent)
+                .frame(width: 24)
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(Theme.textPrimary)
+            Spacer()
+            Stepper("", value: $value, in: range, step: step)
+                .labelsHidden()
+            Text("\(Int(value)) \(unit)")
+                .font(.subheadline.monospacedDigit().weight(.medium))
+                .foregroundStyle(Theme.textPrimary)
+                .frame(width: 80, alignment: .trailing)
+        }
+        .padding(.vertical, Theme.spacingXS)
     }
 }

@@ -42,6 +42,10 @@ jobs:
             -destination "generic/platform=iOS" \
             archive \
             | xcpretty --color --simple
+      - name: Zip Archive
+        run: |
+          cd build
+          zip -r ${PROJECT_NAME}.xcarchive.zip ${PROJECT_NAME}.xcarchive
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -74,10 +78,6 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Zip Archive
-        run: |
-          cd build
-          zip -r ${PROJECT_NAME}.xcarchive.zip ${PROJECT_NAME}.xcarchive
       - name: Upload Archive Artifact
         uses: actions/upload-artifact@v4
         with:

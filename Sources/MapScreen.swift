@@ -29,7 +29,7 @@ struct MapScreen: View {
     var body: some View {
         ZStack(alignment: .top) {
             // MARK: - Full Screen Map
-            MapReader { proxy in
+            MapReader { _ in
                 Map(position: $cameraPosition, interactionModes: .all) {
                     // User location
                     if model.showUserLocation, let loc = locationManager.location {
@@ -503,7 +503,7 @@ struct TabButton: View {
     let selectedIcon: String
     let label: String
     var isSelected: Bool = false
-    var badge: String? = nil
+    var badge: String?
     let action: () -> Void
 
     var body: some View {

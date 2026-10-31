@@ -104,8 +104,7 @@ struct METAR: Identifiable, Codable, Hashable {
 
         // Build visibility string
         if let vis = decodedData.visibility {
-            if vis >= 10 { decodedData.visibilityStr = "10+" }
-            else { decodedData.visibilityStr = String(format: "%.1f", vis) }
+            if vis >= 10 { decodedData.visibilityStr = "10+" } else { decodedData.visibilityStr = String(format: "%.1f", vis) }
         }
 
         // Build ceiling string

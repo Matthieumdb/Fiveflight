@@ -128,7 +128,7 @@ enum ChecklistCategory: String, CaseIterable, Identifiable {
             ChecklistItem(text: "Tires & brakes", isChecked: false),
             ChecklistItem(text: "Lights operational", isChecked: false),
             ChecklistItem(text: "Static ports clear", isChecked: false),
-            ChecklistItem(text: "Pitot tube cover removed", isChecked: false),
+            ChecklistItem(text: "Pitot tube cover removed", isChecked: false)
         ],
         .beforeStart: [
             ChecklistItem(text: "Seat belts fastened", isChecked: false),
@@ -137,7 +137,7 @@ enum ChecklistCategory: String, CaseIterable, Identifiable {
             ChecklistItem(text: "Mixture RICH", isChecked: false),
             ChecklistItem(text: "Carb heat COLD", isChecked: false),
             ChecklistItem(text: "Master switch ON", isChecked: false),
-            ChecklistItem(text: "Beacon ON", isChecked: false),
+            ChecklistItem(text: "Beacon ON", isChecked: false)
         ],
         .afterStart: [
             ChecklistItem(text: "Oil pressure GREEN", isChecked: false),
@@ -145,13 +145,13 @@ enum ChecklistCategory: String, CaseIterable, Identifiable {
             ChecklistItem(text: "Vacuum in green", isChecked: false),
             ChecklistItem(text: "Avionics ON", isChecked: false),
             ChecklistItem(text: "ATIS/AWOS copied", isChecked: false),
-            ChecklistItem(text: "Clearance obtained", isChecked: false),
+            ChecklistItem(text: "Clearance obtained", isChecked: false)
         ],
         .taxi: [
             ChecklistItem(text: "Brakes tested", isChecked: false),
             ChecklistItem(text: "Instruments checked", isChecked: false),
             ChecklistItem(text: "Flight controls free", isChecked: false),
-            ChecklistItem(text: "Runway assignment", isChecked: false),
+            ChecklistItem(text: "Runway assignment", isChecked: false)
         ],
         .beforeTakeoff: [
             ChecklistItem(text: "Flight controls FREE & CORRECT", isChecked: false),
@@ -165,13 +165,13 @@ enum ChecklistCategory: String, CaseIterable, Identifiable {
             ChecklistItem(text: "Transponder ALT", isChecked: false),
             ChecklistItem(text: "Lights AS REQUIRED", isChecked: false),
             ChecklistItem(text: "Runway CLEAR", isChecked: false),
-            ChecklistItem(text: "Line up & wait / Takeoff clearance", isChecked: false),
+            ChecklistItem(text: "Line up & wait / Takeoff clearance", isChecked: false)
         ],
         .afterTakeoff: [
             ChecklistItem(text: "Gear UP (if retractable)", isChecked: false),
             ChecklistItem(text: "Flaps UP", isChecked: false),
             ChecklistItem(text: "Fuel pump OFF", isChecked: false),
-            ChecklistItem(text: "Climb power SET", isChecked: false),
+            ChecklistItem(text: "Climb power SET", isChecked: false)
         ],
         .cruise: [
             ChecklistItem(text: "Power SET per POH", isChecked: false),
@@ -179,7 +179,7 @@ enum ChecklistCategory: String, CaseIterable, Identifiable {
             ChecklistItem(text: "Fuel quantity MONITORED", isChecked: false),
             ChecklistItem(text: "Engine instruments GREEN", isChecked: false),
             ChecklistItem(text: "Navigation CONFIRMED", isChecked: false),
-            ChecklistItem(text: "Weather MONITORED", isChecked: false),
+            ChecklistItem(text: "Weather MONITORED", isChecked: false)
         ],
         .descent: [
             ChecklistItem(text: "ATIS/AWOS copied", isChecked: false),
@@ -187,7 +187,7 @@ enum ChecklistCategory: String, CaseIterable, Identifiable {
             ChecklistItem(text: "Mixture RICH", isChecked: false),
             ChecklistItem(text: "Carb heat AS REQUIRED", isChecked: false),
             ChecklistItem(text: "Fuel pump ON", isChecked: false),
-            ChecklistItem(text: "Lights ON", isChecked: false),
+            ChecklistItem(text: "Lights ON", isChecked: false)
         ],
         .beforeLanding: [
             ChecklistItem(text: "Seat belts FASTENED", isChecked: false),
@@ -198,14 +198,14 @@ enum ChecklistCategory: String, CaseIterable, Identifiable {
             ChecklistItem(text: "Gear DOWN (if retractable)", isChecked: false),
             ChecklistItem(text: "Flaps AS REQUIRED", isChecked: false),
             ChecklistItem(text: "Lights ON", isChecked: false),
-            ChecklistItem(text: "Final approach FIXED", isChecked: false),
+            ChecklistItem(text: "Final approach FIXED", isChecked: false)
         ],
         .afterLanding: [
             ChecklistItem(text: "Flaps UP", isChecked: false),
             ChecklistItem(text: "Carb heat COLD", isChecked: false),
             ChecklistItem(text: "Fuel pump OFF", isChecked: false),
             ChecklistItem(text: "Transponder STBY", isChecked: false),
-            ChecklistItem(text: "Lights AS REQUIRED", isChecked: false),
+            ChecklistItem(text: "Lights AS REQUIRED", isChecked: false)
         ],
         .shutdown: [
             ChecklistItem(text: "Avionics OFF", isChecked: false),
@@ -214,7 +214,7 @@ enum ChecklistCategory: String, CaseIterable, Identifiable {
             ChecklistItem(text: "Master OFF", isChecked: false),
             ChecklistItem(text: "Control lock INSTALLED", isChecked: false),
             ChecklistItem(text: "Chocks/Tie-downs SET", isChecked: false),
-            ChecklistItem(text: "Hobbs/Tach RECORDED", isChecked: false),
+            ChecklistItem(text: "Hobbs/Tach RECORDED", isChecked: false)
         ],
         .emergency: [
             ChecklistItem(text: "FLY THE AIRPLANE", isChecked: false),
@@ -226,8 +226,8 @@ enum ChecklistCategory: String, CaseIterable, Identifiable {
             ChecklistItem(text: "Ignition OFF", isChecked: false),
             ChecklistItem(text: "Master OFF", isChecked: false),
             ChecklistItem(text: "Seat belts TIGHT", isChecked: false),
-            ChecklistItem(text: "Doors UNLATCHED", isChecked: false),
-        ],
+            ChecklistItem(text: "Doors UNLATCHED", isChecked: false)
+        ]
     ]
 }
 

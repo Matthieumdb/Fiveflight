@@ -47,7 +47,7 @@ struct CalculatorsScreen: View {
         ("Time/Speed/Dist", "clock"),
         ("Fuel Planning", "fuelpump"),
         ("Climb Gradient", "arrow.up.right"),
-        ("Glide Range", "arrow.down.right"),
+        ("Glide Range", "arrow.down.right")
     ]
 
     var body: some View {
@@ -203,7 +203,7 @@ struct WeightBalanceCalculator: View {
                     WBItem(name: "Empty Weight", weight: Double(aircraft.emptyWeight), arm: Double((aircraft.cgForward + aircraft.cgAft) / 2)),
                     WBItem(name: "Pilot", weight: 170, arm: 37),
                     WBItem(name: "Passenger", weight: 170, arm: 37),
-                    WBItem(name: "Fuel (gal)", weight: 0, arm: 48, isFuel: true),
+                    WBItem(name: "Fuel (gal)", weight: 0, arm: 48, isFuel: true)
                 ]
             }
         }
@@ -687,9 +687,7 @@ struct TimeSpeedDistance {
     static func calculate(distance: Double?, speed: Double?, time: Double?) -> (distance: Double, speed: Double, time: Double) {
         var d = distance ?? 0, s = speed ?? 0, t = time ?? 0
 
-        if distance == nil { d = s * t / 60.0 }
-        else if speed == nil { s = d / t * 60.0 }
-        else { t = d / s * 60.0 }
+        if distance == nil { d = s * t / 60.0 } else if speed == nil { s = d / t * 60.0 } else { t = d / s * 60.0 }
 
         return (d, s, t)
     }

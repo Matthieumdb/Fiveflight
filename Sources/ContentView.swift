@@ -240,6 +240,7 @@ struct MapScreen: View {
 
     private func addWaypoint(_ a: Airport) {
         logged = false
+        Haptics.tap()
         if waypoints.isEmpty, let dep = nearest.first, dep.id != a.id {
             waypoints = [dep, a]
             fromText = dep.id

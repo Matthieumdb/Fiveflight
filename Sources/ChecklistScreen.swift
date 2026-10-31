@@ -21,8 +21,12 @@ struct ChecklistScreen: View {
                             .tint(.primary)
                         }
                     } header: {
+                        let done = list.items.filter(\.done).count
                         HStack {
                             Text(list.name)
+                            Text("\(done)/\(list.items.count)")
+                                .monospacedDigit()
+                                .foregroundStyle(done == list.items.count ? .green : .secondary)
                             Spacer()
                             Button("Réinitialiser") { model.reset(list) }
                                 .font(.caption).textCase(nil)

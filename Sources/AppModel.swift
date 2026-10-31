@@ -42,12 +42,14 @@ final class AppModel: ObservableObject {
     func isFavorite(_ id: String) -> Bool { favorites.contains(id) }
     func toggleFavorite(_ id: String) {
         if favorites.contains(id) { favorites.remove(id) } else { favorites.insert(id) }
+        Haptics.tap()
         save()
     }
 
     // Logbook
     func logFlight(from: String, to: String, nm: Int, eteMinutes: Int) {
         logbook.insert(LogEntry(date: .now, from: from, to: to, nm: nm, eteMinutes: eteMinutes), at: 0)
+        Haptics.success()
         save()
     }
     func deleteLog(_ offsets: IndexSet) { logbook.remove(atOffsets: offsets); save() }
@@ -57,6 +59,7 @@ final class AppModel: ObservableObject {
         guard let li = checklists.firstIndex(where: { $0.id == list.id }),
               let ii = checklists[li].items.firstIndex(where: { $0.id == item.id }) else { return }
         checklists[li].items[ii].done.toggle()
+        Haptics.tap()
         save()
     }
     func reset(_ list: Checklist) {

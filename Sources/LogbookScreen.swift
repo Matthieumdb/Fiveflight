@@ -17,6 +17,14 @@ struct LogbookScreen: View {
                         description: Text("Trace une route puis touche « Carnet » pour enregistrer le vol."))
                 } else {
                     List {
+                        Section("Totaux") {
+                            let totalNM = model.logbook.reduce(0) { $0 + $1.nm }
+                            let totalMin = model.logbook.reduce(0) { $0 + $1.eteMinutes }
+                            LabeledContent("Vols", value: "\(model.logbook.count)")
+                            LabeledContent("Distance", value: "\(totalNM) NM")
+                            LabeledContent("Temps", value: "\(totalMin / 60)h\(String(format: "%02d", totalMin % 60))")
+                        }
+                        Section("Vols") {
                         ForEach(model.logbook) { e in
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -33,6 +41,7 @@ struct LogbookScreen: View {
                             }
                         }
                         .onDelete(perform: model.deleteLog)
+                        }
                     }
                 }
             }

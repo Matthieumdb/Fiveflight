@@ -26,7 +26,7 @@ jobs:
         run: |
           xcodebuild -project EFB.xcodeproj \
             -scheme EFB \
-            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -destination 'platform=iOS Simulator,name=iPhone 17' \
             -configuration Debug \
             build test \
             CODE_SIGN_IDENTITY="" \

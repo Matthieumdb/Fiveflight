@@ -13,6 +13,8 @@ targets:
       - Sources/AirportStore.swift
       - Sources/AppModel.swift
       - Sources/CSV.swift
+      - Sources/Calculators.swift
+      - Sources/CalculatorsScreen.swift
       - Sources/ChecklistScreen.swift
       - Sources/ContentView.swift
       - Sources/EFBApp.swift

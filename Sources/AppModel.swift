@@ -38,6 +38,7 @@ final class AppModel: ObservableObject {
     }
 
     // Aircraft profile (persisted, shared by the flight computer and plan)
+    @Published var nightMode = false { didSet { defaults.set(nightMode, forKey: "nightMode") } }
     @Published var cruiseGS = 110.0 { didSet { saveProfile() } }
     @Published var fuelBurn = 8.0    { didSet { saveProfile() } }
     @Published var reserveMin = 45.0 { didSet { saveProfile() } }
@@ -86,6 +87,7 @@ final class AppModel: ObservableObject {
            let v = try? JSONDecoder().decode([Checklist].self, from: d) { checklists = v }
         if checklists.isEmpty { checklists = Self.defaultChecklists }
         recents = defaults.stringArray(forKey: "recents") ?? []
+        nightMode = defaults.bool(forKey: "nightMode")
         if defaults.object(forKey: "cruiseGS") != nil { cruiseGS = defaults.double(forKey: "cruiseGS") }
         if defaults.object(forKey: "fuelBurn") != nil { fuelBurn = defaults.double(forKey: "fuelBurn") }
         if defaults.object(forKey: "reserveMin") != nil { reserveMin = defaults.double(forKey: "reserveMin") }

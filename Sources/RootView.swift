@@ -43,6 +43,8 @@ struct RootView: View {
                 LoadingView(progress: store.progress)
             }
         }
+        .colorMultiply(model.nightMode ? Color(red: 1.0, green: 0.30, blue: 0.30) : .white)
+        .animation(.easeInOut, value: model.nightMode)
         .tint(Theme.accent)
         .preferredColorScheme(.dark)
         .environmentObject(store)

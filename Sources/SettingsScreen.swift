@@ -22,6 +22,14 @@ struct SettingsScreen: View {
                     Text("Utilisé par le calculateur de vol et le plan.")
                 }
 
+                Section {
+                    Toggle(isOn: $model.nightMode) {
+                        Label("Mode nuit (rouge)", systemImage: "moon.fill")
+                    }
+                } footer: {
+                    Text("Teinte rouge pour préserver la vision nocturne en vol de nuit.")
+                }
+
                 Section("Sources de données") {
                     LabeledContent("Aéroports", value: "OurAirports")
                     LabeledContent("Carte VFR", value: "FAA sectionnelles")

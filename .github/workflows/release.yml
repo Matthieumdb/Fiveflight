@@ -21,5 +21,11 @@ jobs:
           fetch-depth: 0
       - name: Show Xcode Version
         run: xcodebuild -version
-      - name: Test Step
-        run: echo "Hello from release workflow"
+      - name: Install xcodegen
+        run: |
+          if ! command -v xcodegen &> /dev/null; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+      - name: Generate Xcode Project
+        run: xcodegen generate

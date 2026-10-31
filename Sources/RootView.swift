@@ -36,6 +36,8 @@ struct RootView: View {
                         .tabItem { Label("Carnet", systemImage: "book.fill") }
                     ChecklistScreen()
                         .tabItem { Label("Checklist", systemImage: "checklist") }
+                    SettingsScreen()
+                        .tabItem { Label("Réglages", systemImage: "gearshape.fill") }
                 }
             } else {
                 LoadingView(progress: store.progress)

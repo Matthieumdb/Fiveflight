@@ -29,6 +29,11 @@ final class AppModel: ObservableObject {
     @Published var checklists: [Checklist] = []
     @Published var directTo: String?   // ICAO requested as route destination from a detail sheet
 
+    // Aircraft profile (persisted, shared by the flight computer and plan)
+    @Published var cruiseGS = 110.0 { didSet { saveProfile() } }
+    @Published var fuelBurn = 8.0    { didSet { saveProfile() } }
+    @Published var reserveMin = 45.0 { didSet { saveProfile() } }
+
     private let defaults = UserDefaults.standard
 
     init() { load() }
@@ -69,6 +74,15 @@ final class AppModel: ObservableObject {
         if let d = defaults.data(forKey: "checklists"),
            let v = try? JSONDecoder().decode([Checklist].self, from: d) { checklists = v }
         if checklists.isEmpty { checklists = Self.defaultChecklists }
+        if defaults.object(forKey: "cruiseGS") != nil { cruiseGS = defaults.double(forKey: "cruiseGS") }
+        if defaults.object(forKey: "fuelBurn") != nil { fuelBurn = defaults.double(forKey: "fuelBurn") }
+        if defaults.object(forKey: "reserveMin") != nil { reserveMin = defaults.double(forKey: "reserveMin") }
+    }
+
+    private func saveProfile() {
+        defaults.set(cruiseGS, forKey: "cruiseGS")
+        defaults.set(fuelBurn, forKey: "fuelBurn")
+        defaults.set(reserveMin, forKey: "reserveMin")
     }
     private func save() {
         let e = JSONEncoder()

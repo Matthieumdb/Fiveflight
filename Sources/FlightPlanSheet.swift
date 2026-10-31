@@ -11,9 +11,6 @@ struct Leg: Identifiable {
 /// Full flight plan: editable waypoints, per-leg table, performance + fuel with reserve.
 struct FlightPlanSheet: View {
     @Binding var waypoints: [Airport]
-    @Binding var groundSpeed: Double
-    @Binding var fuelBurn: Double
-    @State private var reserveMin = 45.0
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
@@ -21,10 +18,10 @@ struct FlightPlanSheet: View {
         zip(waypoints, waypoints.dropFirst()).map { Leg(from: $0.0, to: $0.1) }
     }
     private var totalNM: Double { legs.reduce(0) { $0 + $1.nm } }
-    private var hours: Double { groundSpeed > 0 ? totalNM / groundSpeed : 0 }
+    private var hours: Double { model.cruiseGS > 0 ? totalNM / model.cruiseGS : 0 }
     private var enrouteMin: Int { Int((hours * 60).rounded()) }
-    private var fuelEnroute: Double { hours * fuelBurn }
-    private var fuelReserve: Double { reserveMin / 60 * fuelBurn }
+    private var fuelEnroute: Double { hours * model.fuelBurn }
+    private var fuelReserve: Double { model.reserveMin / 60 * model.fuelBurn }
 
     private func hm(_ minutes: Int) -> String { "\(minutes / 60)h\(String(format: "%02d", minutes % 60))" }
 
@@ -61,9 +58,15 @@ struct FlightPlanSheet: View {
                 }
 
                 Section("Performance") {
-                    Stepper("Vitesse sol : \(Int(groundSpeed)) kt", value: $groundSpeed, in: 40...500, step: 5)
-                    Stepper("Conso : \(Int(fuelBurn)) gal/h", value: $fuelBurn, in: 1...100, step: 1)
-                    Stepper("Réserve : \(Int(reserveMin)) min", value: $reserveMin, in: 0...120, step: 5)
+                    Stepper(value: $model.cruiseGS, in: 40.0...500.0, step: 5.0) {
+                        Text("Vitesse sol : \(Int(model.cruiseGS)) kt")
+                    }
+                    Stepper(value: $model.fuelBurn, in: 1.0...100.0, step: 1.0) {
+                        Text("Conso : \(Int(model.fuelBurn)) gal/h")
+                    }
+                    Stepper(value: $model.reserveMin, in: 0.0...120.0, step: 5.0) {
+                        Text("Réserve : \(Int(model.reserveMin)) min")
+                    }
                 }
 
                 Section("Totaux") {

@@ -15,8 +15,6 @@ struct MapScreen: View {
     @State private var fromText = ""
     @State private var toText = ""
     @State private var routeError: String?
-    @State private var groundSpeed = 110.0
-    @State private var fuelBurn = 8.0
     @State private var logged = false
 
     @State private var showSectional = true
@@ -62,7 +60,7 @@ struct MapScreen: View {
                 .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showPlan) {
-            FlightPlanSheet(waypoints: $waypoints, groundSpeed: $groundSpeed, fuelBurn: $fuelBurn)
+            FlightPlanSheet(waypoints: $waypoints)
                 .presentationDetents([.medium, .large])
         }
     }
@@ -162,17 +160,17 @@ struct MapScreen: View {
     }
 
     private var flightComputer: some View {
-        let hours = groundSpeed > 0 ? totalNM / groundSpeed : 0
+        let hours = model.cruiseGS > 0 ? totalNM / model.cruiseGS : 0
         let mins = Int((hours * 60).rounded())
         let ete = "\(mins / 60)h\(String(format: "%02d", mins % 60))"
-        let fuel = hours * fuelBurn
+        let fuel = hours * model.fuelBurn
         return VStack(spacing: 4) {
             HStack {
-                Text("GS \(Int(groundSpeed)) kt").font(.caption.monospacedDigit())
-                Stepper("", value: $groundSpeed, in: 40...500, step: 5).labelsHidden()
+                Text("GS \(Int(model.cruiseGS)) kt").font(.caption.monospacedDigit())
+                Stepper("", value: $model.cruiseGS, in: 40...500, step: 5).labelsHidden()
                 Spacer()
-                Text("\(Int(fuelBurn)) gph").font(.caption.monospacedDigit())
-                Stepper("", value: $fuelBurn, in: 1...100, step: 1).labelsHidden()
+                Text("\(Int(model.fuelBurn)) gph").font(.caption.monospacedDigit())
+                Stepper("", value: $model.fuelBurn, in: 1...100, step: 1).labelsHidden()
             }
             HStack {
                 Text("ETE \(ete)  ·  \(String(format: "%.1f", fuel)) gal")

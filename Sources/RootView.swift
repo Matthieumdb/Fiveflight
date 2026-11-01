@@ -363,9 +363,6 @@ struct SettingsScreen: View {
                 NavigationLink("Aircraft Profiles") {
                     AircraftProfilesView()
                 }
-                NavigationLink("Weight & Balance Defaults") {
-                    WeightBalanceDefaultsView()
-                }
             } header: {
                 Text("Aircraft")
             }
@@ -528,38 +525,6 @@ struct AddAircraftSheet: View {
     }
 }
 
-struct WeightBalanceDefaultsView: View {
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        Form {
-            Section("Weight & Balance") {
-                HStack {
-                    Text("Max Weight")
-                    Spacer()
-                    TextField("LBS", value: $model.maxWeight, format: .number)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                }
-                HStack {
-                    Text("Forward CG Limit")
-                    Spacer()
-                    TextField("IN", value: $model.cgForward, format: .number)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                }
-                HStack {
-                    Text("Aft CG Limit")
-                    Spacer()
-                    TextField("IN", value: $model.cgAft, format: .number)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                }
-            }
-        }
-        .navigationTitle("W&B Defaults")
-    }
-}
 
 // Need to reference AirspaceDataManager in SettingsScreen
 import SwiftUI

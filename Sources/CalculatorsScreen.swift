@@ -211,7 +211,7 @@ struct WeightBalanceCalculator: View {
 }
 
 struct WBItem: Identifiable {
-    let id = UUID()
+    var id = UUID()
     var name: String
     var weight: Double
     var arm: Double

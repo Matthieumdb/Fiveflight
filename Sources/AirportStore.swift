@@ -97,7 +97,7 @@ struct Airport: Identifiable, Codable, Hashable {
 }
 
 struct Runway: Identifiable, Codable, Hashable {
-    let id = UUID()
+    var id = UUID()
     let airportIdent: String
     let designation: String
     let length: Int
@@ -114,7 +114,7 @@ struct Runway: Identifiable, Codable, Hashable {
 }
 
 struct Frequency: Identifiable, Codable, Hashable {
-    let id = UUID()
+    var id = UUID()
     let airportIdent: String
     let type: String
     let frequencyMHz: Double

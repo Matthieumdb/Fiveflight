@@ -429,7 +429,7 @@ struct Airspace: Identifiable, Codable, Hashable {
 
 /// CTAF/UNICOM frequency info
 struct CTAFFrequency: Identifiable, Codable, Hashable {
-    let id = UUID()
+    var id = UUID()
     let frequency: Double // MHz
     let type: String // "CTAF", "UNICOM", "MULTICOM"
     let description: String

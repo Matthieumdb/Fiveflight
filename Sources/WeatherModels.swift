@@ -36,7 +36,7 @@ enum FlightCategory: String, Codable, CaseIterable, Identifiable {
 // MARK: - METAR
 
 struct METAR: Identifiable, Codable, Hashable {
-    let id = UUID()
+    var id = UUID()
     let station: String
     let rawText: String
     let observationTime: Date
@@ -162,7 +162,7 @@ struct METARDecoded: Codable, Hashable {
 // MARK: - TAF
 
 struct TAF: Identifiable, Codable, Hashable {
-    let id = UUID()
+    var id = UUID()
     let station: String
     let rawText: String
     let issueTime: Date
@@ -191,7 +191,7 @@ struct TAF: Identifiable, Codable, Hashable {
 }
 
 struct TAFForecast: Identifiable, Codable, Hashable {
-    let id = UUID()
+    var id = UUID()
     let from: Date
     let to: Date
     let windDirection: Int?
@@ -228,7 +228,7 @@ struct TAFCloudLayer: Codable, Hashable {
 // MARK: - Winds Aloft
 
 struct WindsAloft: Identifiable, Codable, Hashable {
-    let id = UUID()
+    var id = UUID()
     let station: String
     let latitude: Double
     let longitude: Double
@@ -245,7 +245,7 @@ struct WindsAloft: Identifiable, Codable, Hashable {
 }
 
 struct WindsAloftLevel: Identifiable, Codable, Hashable {
-    let id = UUID()
+    var id = UUID()
     let altitude: Int
     let direction: Int
     let speed: Int
@@ -262,7 +262,7 @@ struct WindsAloftLevel: Identifiable, Codable, Hashable {
 // MARK: - PIREP
 
 struct PIREP: Identifiable, Codable, Hashable {
-    let id = UUID()
+    var id = UUID()
     let location: String
     let time: Date
     let latitude: Double
@@ -285,7 +285,7 @@ struct PIREP: Identifiable, Codable, Hashable {
 }
 
 struct PIREPElement: Identifiable, Codable, Hashable {
-    let id = UUID()
+    var id = UUID()
     let type: String
     let value: String
     let severity: String?
@@ -310,7 +310,7 @@ struct PIREPElement: Identifiable, Codable, Hashable {
 // MARK: - AIRMET/SIGMET (AirSigmet)
 
 struct AirSigmet: Identifiable, Codable, Hashable {
-    let id = UUID()
+    var id = UUID()
     let type: String // "AIRMET", "SIGMET", "CONVECTIVE SIGMET"
     let hazard: String // "ICE", "TURB", "IFR", "MTN OBSCN", "CONVECTION", etc.
     let severity: String

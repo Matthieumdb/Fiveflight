@@ -496,7 +496,7 @@ struct WaypointMapMarker: View {
 // MARK: - Route Warning
 
 struct RouteWarning: Identifiable {
-    let id = UUID()
+    var id = UUID()
     let legIndex: Int
     let airspaceName: String
     let type: AirspaceWarningType

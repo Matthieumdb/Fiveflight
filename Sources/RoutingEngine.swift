@@ -410,7 +410,7 @@ final class RoutingEngine: ObservableObject {
 
 /// Result of a route calculation
 struct RouteResult: Identifiable {
-    let id = UUID()
+    var id = UUID()
     let legs: [RouteLeg]
     let totalDistanceNM: Double
     let totalTimeMinutes: Double
@@ -444,7 +444,7 @@ struct RouteResult: Identifiable {
 
 /// Individual leg of a route
 struct RouteLeg: Identifiable {
-    let id = UUID()
+    var id = UUID()
     let from: String
     let to: String
     let waypoints: [CLLocationCoordinate2D]
@@ -471,13 +471,13 @@ struct RouteLeg: Identifiable {
 
 /// Airspace warning for a leg
 struct LegAirspaceWarning: Identifiable {
-    let id = UUID()
+    var id = UUID()
     let airspace: Airspace
     let type: AirspaceWarningType
 }
 
 struct AirspaceWarning: Identifiable {
-    let id = UUID()
+    var id = UUID()
     let legIndex: Int
     let airspace: Airspace
     let type: AirspaceWarningType

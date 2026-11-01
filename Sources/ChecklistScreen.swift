@@ -260,7 +260,7 @@ struct CategoryPill: View {
 
 @Observable
 final class ChecklistItem: Identifiable {
-    let id = UUID()
+    var id = UUID()
     var text: String
     var isChecked: Bool
 

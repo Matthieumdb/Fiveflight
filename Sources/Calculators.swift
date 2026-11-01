@@ -89,7 +89,7 @@ struct Crosswind {
 // MARK: - NOTAM (basic)
 
 struct Notam: Identifiable, Codable, Hashable {
-    let id = UUID()
+    var id = UUID()
     let icao: String
     let text: String
     let start: Date?

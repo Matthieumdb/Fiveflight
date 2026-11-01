@@ -258,7 +258,7 @@ final class AppModel: ObservableObject {
 // MARK: - Supporting Models
 
 struct FlightLeg: Identifiable {
-    let id = UUID()
+    var id = UUID()
     let index: Int
     let from: Airport
     let to: Airport
@@ -277,7 +277,7 @@ struct FlightLeg: Identifiable {
 }
 
 struct AircraftProfile: Identifiable, Codable, Hashable {
-    let id = UUID()
+    var id = UUID()
     var name: String
     var type: String
     var cruiseSpeed: Double
@@ -294,7 +294,7 @@ struct AircraftProfile: Identifiable, Codable, Hashable {
 }
 
 struct LogbookEntry: Identifiable, Codable {
-    let id = UUID()
+    var id = UUID()
     let date: Date
     let from: String
     let to: String

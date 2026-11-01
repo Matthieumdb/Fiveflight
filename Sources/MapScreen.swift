@@ -26,6 +26,15 @@ struct MapScreen: View {
     @State private var routePolyline: [CLLocationCoordinate2D] = []
     @State private var routeWarnings: [RouteWarning] = []
 
+    // Computed properties to avoid re-filtering on every render
+    private var activeAirspaces: [Airspace] {
+        airspaceManager.airspaces.filter { $0.isActive }
+    }
+
+    private var visibleAirports: [Airport] {
+        store.airports.filter { shouldShowAirport($0) }
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             // MARK: - Full Screen Map
@@ -42,17 +51,16 @@ struct MapScreen: View {
                             .stroke(ColorToken.brandPrimary, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
                     }
 
-                    // Airspace overlays
+                    // Airspace overlays - using pre-filtered arrays
                     if model.showAirspace {
-                        ForEach(airspaceManager.airspaces.filter { $0.isActive }) { airspace in
+                        ForEach(activeAirspaces) { airspace in
                             let color = airspaceColor(airspace)
                             ForEach(Array(airspace.polygons.enumerated()), id: \.offset) { _, polygon in
                                 if polygon.count >= 3 {
                                     let coordinates = polygon.map { $0.clCoordinate }
-                                    let polygonView = MapPolygon(coordinates: coordinates)
-                                    polygonView
+                                    MapPolygon(coordinates: coordinates)
                                         .foregroundStyle(color.opacity(0.15))
-                                    polygonView
+                                    MapPolygon(coordinates: coordinates)
                                         .stroke(color, style: StrokeStyle(lineWidth: 1.5, dash: [8, 4]))
                                 }
                             }
@@ -61,14 +69,13 @@ struct MapScreen: View {
 
                     // TFRs
                     if model.showTFRs {
-                        ForEach(airspaceManager.airspaces.filter { $0.isActive && airspaceTypeIsTFR($0) }) { airspace in
+                        ForEach(activeAirspaces.filter { airspaceTypeIsTFR($0) }) { airspace in
                             ForEach(Array(airspace.polygons.enumerated()), id: \.offset) { _, polygon in
                                 if polygon.count >= 3 {
                                     let coordinates = polygon.map { $0.clCoordinate }
-                                    let polygonView = MapPolygon(coordinates: coordinates)
-                                    polygonView
+                                    MapPolygon(coordinates: coordinates)
                                         .foregroundStyle(ColorToken.tfr.opacity(0.2))
-                                    polygonView
+                                    MapPolygon(coordinates: coordinates)
                                         .stroke(ColorToken.tfr, style: StrokeStyle(lineWidth: 2, dash: [4, 4]))
                                 }
                             }
@@ -76,7 +83,7 @@ struct MapScreen: View {
                     }
 
                     // Airport markers
-                    ForEach(store.airports.filter { shouldShowAirport($0) }) { airport in
+                    ForEach(visibleAirports) { airport in
                         Annotation("", coordinate: airport.coordinate) {
                             AirportMapMarker(airport: airport, isSelected: selectedAirport?.id == airport.id)
                                 .onTapGesture {

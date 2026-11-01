@@ -47,12 +47,13 @@ struct RootView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .id(selectedTab) // Prevent state bleed between tabs
 
             // Custom Bottom Tab Bar (single source of truth)
             CustomTabBar(selectedTab: $selectedTab)
-                .padding(.bottom, 0) // Respects safe area automatically
+                .padding(.bottom, 0)
+                .zIndex(100) // Ensure tab bar is above map content
         }
-        .ignoresSafeArea(.container, edges: .bottom) // Allow bar to extend to bottom
         .background(ColorToken.surfaceBase)
         .onAppear {
             Task {

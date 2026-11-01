@@ -444,9 +444,11 @@ struct AddAircraftSheet: View {
     @State private var type = ""
     @State private var cruiseSpeed = 120.0
     @State private var fuelBurn = 10.0
-    @State private var fuelCapacity = 50.0
-    @State private var maxWeight = 2550.0
-    @State private var emptyWeight = 1650.0
+    @State private var usableFuel = 50.0
+    @State private var maxWeight = 2550
+    @State private var emptyWeight = 1650
+    @State private var cgForward = 82
+    @State private var cgAft = 88
 
     var body: some View {
         NavigationStack {
@@ -471,32 +473,46 @@ struct AddAircraftSheet: View {
                             .multilineTextAlignment(.trailing)
                     }
                     HStack {
-                        Text("Fuel Capacity")
+                        Text("Usable Fuel")
                         Spacer()
-                        TextField("GAL", value: $fuelCapacity, format: .number)
+                        TextField("GAL", value: $usableFuel, format: .number)
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                     }
                 }
-                Section("Weight Limits") {
+                Section("Weight & Balance") {
                     HStack {
                         Text("Max Weight")
                         Spacer()
                         TextField("LBS", value: $maxWeight, format: .number)
-                            .keyboardType(.decimalPad)
+                            .keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
                     }
                     HStack {
                         Text("Empty Weight")
                         Spacer()
                         TextField("LBS", value: $emptyWeight, format: .number)
-                            .keyboardType(.decimalPad)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    HStack {
+                        Text("CG Forward Limit")
+                        Spacer()
+                        TextField("IN", value: $cgForward, format: .number)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    HStack {
+                        Text("CG Aft Limit")
+                        Spacer()
+                        TextField("IN", value: $cgAft, format: .number)
+                            .keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
                     }
                 }
             }
             .navigationTitle("Add Aircraft")
-            .toolbar {
+            .toolbar(content: {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
                 }
@@ -507,9 +523,11 @@ struct AddAircraftSheet: View {
                             type: type,
                             cruiseSpeed: cruiseSpeed,
                             fuelBurn: fuelBurn,
-                            fuelCapacity: fuelCapacity,
+                            usableFuel: usableFuel,
                             maxWeight: maxWeight,
-                            emptyWeight: emptyWeight
+                            emptyWeight: emptyWeight,
+                            cgForward: cgForward,
+                            cgAft: cgAft
                         )
                         model.aircraftProfiles.append(aircraft)
                         if model.selectedAircraft == nil {
@@ -518,9 +536,8 @@ struct AddAircraftSheet: View {
                         dismiss()
                     }
                     .disabled(name.isEmpty || type.isEmpty)
-                    .primaryButton(size: .small)
                 }
-            }
+            })
         }
     }
 }

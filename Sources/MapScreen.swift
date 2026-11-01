@@ -121,16 +121,6 @@ struct MapScreen: View {
                 showSearch: $showSearch
             )
 
-            // MARK: - Bottom Tab Bar
-            VStack {
-                Spacer()
-                BottomTabBar(
-                    showFlightPlanPanel: $showFlightPlanPanel,
-                    showLayersPanel: $showLayersPanel,
-                    showNearbyPanel: $showNearbyPanel
-                )
-            }
-
             // MARK: - Side Panels
             if showFlightPlanPanel {
                 FlightPlanSidePanel(
@@ -422,121 +412,6 @@ struct RouteInfoBar: View {
         .shadow(ShadowToken.medium)
         .padding(.horizontal, SpacingToken.insetMedium)
         .padding(.bottom, SpacingToken.space3)
-    }
-}
-
-// MARK: - Bottom Tab Bar
-
-struct BottomTabBar: View {
-    @EnvironmentObject private var model: AppModel
-    @Binding var showFlightPlanPanel: Bool
-    @Binding var showLayersPanel: Bool
-    @Binding var showNearbyPanel: Bool
-
-    var body: some View {
-        HStack(spacing: 0) {
-            // Flight Plan Tab
-            TabButton(
-                icon: "list.bullet.clipboard",
-                selectedIcon: "list.bullet.clipboard.fill",
-                label: "Flights",
-                isSelected: showFlightPlanPanel,
-                badge: model.waypoints.isEmpty ? nil : "\(model.waypoints.count)"
-            ) {
-                withAnimation(AnimationToken.tabSwitch) {
-                    showFlightPlanPanel.toggle()
-                    showLayersPanel = false
-                    showNearbyPanel = false
-                }
-            }
-
-            // Weather Tab
-            TabButton(
-                icon: "cloud.sun",
-                selectedIcon: "cloud.sun.fill",
-                label: "Wx"
-            ) {
-                model.showingWeather = true
-            }
-
-            // Airspace Tab
-            TabButton(
-                icon: "shield.lefthalf.filled",
-                selectedIcon: "shield.lefthalf.filled",
-                label: "Airspace"
-            ) {
-                model.showingAirspace = true
-            }
-
-            // Calculators Tab
-            TabButton(
-                icon: "function",
-                selectedIcon: "function",
-                label: "Calc"
-            ) {
-                model.showingCalculators = true
-            }
-
-            // More Tab
-            TabButton(
-                icon: "ellipsis.circle",
-                selectedIcon: "ellipsis.circle.fill",
-                label: "More"
-            ) {
-                model.showingSettings = true
-            }
-        }
-        .padding(.horizontal, SpacingToken.space2)
-        .padding(.top, SpacingToken.space3)
-        .padding(.bottom, SpacingToken.space2)
-        .background(
-            LinearGradient.bottomBarGradient
-                .ignoresSafeArea(edges: .bottom)
-        )
-        .overlay(
-            Rectangle()
-                .fill(ColorToken.borderDefault)
-                .frame(height: 0.5),
-            alignment: .top
-        )
-        .shadow(ShadowToken.bottomBar)
-    }
-}
-
-struct TabButton: View {
-    let icon: String
-    let selectedIcon: String
-    let label: String
-    var isSelected: Bool = false
-    var badge: String?
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: SpacingToken.space0) {
-                ZStack(alignment: .topTrailing) {
-                    Image(systemName: isSelected ? selectedIcon : icon)
-                        .font(.system(size: 22, weight: .medium))
-                        .foregroundStyle(isSelected ? ColorToken.brandPrimary : ColorToken.textTertiary)
-
-                    if let badge = badge {
-                        Text(badge)
-                            .font(TypographyToken.labelXSmall)
-                            .foregroundStyle(ColorToken.textOnBrand)
-                            .frame(minWidth: 16, minHeight: 16)
-                            .background(ColorToken.danger, in: Capsule())
-                            .offset(x: 8, y: -8)
-                    }
-                }
-                .frame(height: 24)
-
-                Text(label)
-                    .font(TypographyToken.labelXSmall)
-                    .foregroundStyle(isSelected ? ColorToken.brandPrimary : ColorToken.textTertiary)
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.plain)
     }
 }
 

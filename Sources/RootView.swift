@@ -1,67 +1,157 @@
 import SwiftUI
 
 // MARK: - Root View
+// Uses custom bottom tab bar (ForeFlight style) instead of system TabView
 
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var store: AirportStore
     @EnvironmentObject private var airspaceManager: AirspaceDataManager
     @EnvironmentObject private var weatherService: WeatherService
-    @State private var selectedTab = 0
 
-    private let tabs = [
-        (title: "Map", icon: "map"),
-        (title: "Flight Plan", icon: "list.bullet"),
-        (title: "Weather", icon: "cloud.sun"),
-        (title: "Airspace", icon: "airplane.departure"),
-        (title: "More", icon: "ellipsis")
-    ]
+    @State private var selectedTab: MainTab = .map
+
+    enum MainTab: String, CaseIterable {
+        case map = "map"
+        case flightPlan = "list.bullet"
+        case weather = "cloud.sun"
+        case airspace = "airplane.departure"
+        case more = "ellipsis"
+
+        var title: String {
+            switch self {
+            case .map: return "Map"
+            case .flightPlan: return "Flights"
+            case .weather: return "Wx"
+            case .airspace: return "Airspace"
+            case .more: return "More"
+            }
+        }
+    }
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            // Map Tab
-            MapScreen()
-                .tabItem {
-                    Label(tabs[0].title, systemImage: tabs[0].icon)
+        ZStack(alignment: .bottom) {
+            // Main content - no system TabView
+            Group {
+                switch selectedTab {
+                case .map:
+                    MapScreen()
+                case .flightPlan:
+                    FlightPlanTabView()
+                case .weather:
+                    WeatherScreen()
+                case .airspace:
+                    AirspaceScreen()
+                case .more:
+                    MoreTabView()
                 }
-                .tag(0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Flight Plan Tab
-            FlightPlanTabView()
-                .tabItem {
-                    Label(tabs[1].title, systemImage: tabs[1].icon)
-                }
-                .tag(1)
-
-            // Weather Tab
-            WeatherScreen()
-                .tabItem {
-                    Label(tabs[2].title, systemImage: tabs[2].icon)
-                }
-                .tag(2)
-
-            // Airspace Tab
-            AirspaceScreen()
-                .tabItem {
-                    Label(tabs[3].title, systemImage: tabs[3].icon)
-                }
-                .tag(3)
-
-            // More Tab
-            MoreTabView()
-                .tabItem {
-                    Label(tabs[4].title, systemImage: tabs[4].icon)
-                }
-                .tag(4)
+            // Custom Bottom Tab Bar (single source of truth)
+            CustomTabBar(selectedTab: $selectedTab)
+                .padding(.bottom, 0) // Respects safe area automatically
         }
-        .tint(ColorToken.brandPrimary)
+        .ignoresSafeArea(.container, edges: .bottom) // Allow bar to extend to bottom
+        .background(ColorToken.surfaceBase)
         .onAppear {
-            // Load data on launch
             Task {
                 await store.loadData()
                 await airspaceManager.refresh()
             }
         }
+    }
+}
+
+// MARK: - Custom Tab Bar (ForeFlight-style)
+
+struct CustomTabBar: View {
+    @Binding var selectedTab: RootView.MainTab
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(RootView.MainTab.allCases, id: \.self) { tab in
+                TabBarButton(
+                    icon: tab.rawValue,
+                    label: tab.title,
+                    isSelected: selectedTab == tab,
+                    badge: badgeForTab(tab)
+                ) {
+                    withAnimation(AnimationToken.tabSwitch) {
+                        // Close side panels when switching main tabs
+                        if selectedTab == .map && tab != .map {
+                            model.showingAirportDetail = false
+                            model.showingWeather = false
+                            model.showingAirspace = false
+                            model.showingCalculators = false
+                            model.showingSettings = false
+                        }
+                        selectedTab = tab
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, SpacingToken.space2)
+        .padding(.top, SpacingToken.space3)
+        .padding(.bottom, SpacingToken.space2)
+        .background(
+            LinearGradient.bottomBarGradient
+                .ignoresSafeArea(edges: .bottom)
+        )
+        .overlay(
+            Rectangle()
+                .fill(ColorToken.borderDefault)
+                .frame(height: 0.5),
+            alignment: .top
+        )
+        .shadow(ShadowToken.bottomBar)
+    }
+
+    private func badgeForTab(_ tab: RootView.MainTab) -> String? {
+        switch tab {
+        case .flightPlan:
+            return model.waypoints.isEmpty ? nil : "\(model.waypoints.count)"
+        default:
+            return nil
+        }
+    }
+}
+
+struct TabBarButton: View {
+    let icon: String
+    let label: String
+    let isSelected: Bool
+    var badge: String?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: SpacingToken.space0) {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: icon)
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(isSelected ? ColorToken.brandPrimary : ColorToken.textTertiary)
+                        .symbolVariant(isSelected ? .fill : .none)
+
+                    if let badge = badge {
+                        Text(badge)
+                            .font(TypographyToken.labelXSmall)
+                            .foregroundStyle(ColorToken.textOnBrand)
+                            .frame(minWidth: 16, minHeight: 16)
+                            .background(ColorToken.danger, in: Capsule())
+                            .offset(x: 8, y: -8)
+                    }
+                }
+                .frame(height: 24)
+
+                Text(label)
+                    .font(TypographyToken.labelXSmall)
+                    .foregroundStyle(isSelected ? ColorToken.brandPrimary : ColorToken.textTertiary)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -148,37 +238,330 @@ struct FlightPlanListView: View {
 // MARK: - More Tab View
 
 struct MoreTabView: View {
+    @State private var moreSelection: MoreTab = .favorites
+
+    enum MoreTab: String, CaseIterable {
+        case favorites = "star"
+        case calculators = "function"
+        case checklists = "checklist"
+        case logbook = "book"
+        case settings = "gear"
+
+        var title: String {
+            switch self {
+            case .favorites: return "Favorites"
+            case .calculators: return "Calculators"
+            case .checklists: return "Checklists"
+            case .logbook: return "Logbook"
+            case .settings: return "Settings"
+            }
+        }
+    }
+
     var body: some View {
-        TabView {
-            FavoritesScreen()
-                .tabItem {
-                    Label("Favorites", systemImage: "star")
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Content
+                Group {
+                    switch moreSelection {
+                    case .favorites:
+                        FavoritesScreen()
+                    case .calculators:
+                        CalculatorsScreen()
+                    case .checklists:
+                        ChecklistScreen()
+                    case .logbook:
+                        LogbookScreen()
+                    case .settings:
+                        SettingsScreen()
+                    }
                 }
-
-            CalculatorsScreen()
-                .tabItem {
-                    Label("Calculators", systemImage: "function")
-                }
-
-            ChecklistScreen()
-                .tabItem {
-                    Label("Checklists", systemImage: "checklist")
-                }
-
-            LogbookScreen()
-                .tabItem {
-                    Label("Logbook", systemImage: "book")
-                }
-
-            // Settings placeholder
-            Text("Settings")
-                .font(TypographyToken.bodyLarge)
-                .foregroundStyle(ColorToken.textPrimary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(ColorToken.surfaceBase)
-                .tabItem {
-                    Label("Settings", systemImage: "gear")
+
+                // More tab picker (segmented control style)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: SpacingToken.space2) {
+                        ForEach(MoreTab.allCases, id: \.self) { tab in
+                            Button {
+                                withAnimation(AnimationToken.tabSwitch) { moreSelection = tab }
+                            } label: {
+                                VStack(spacing: SpacingToken.space1) {
+                                    Image(systemName: tab.rawValue)
+                                        .font(.system(size: 20, weight: .medium))
+                                    Text(tab.title)
+                                        .font(TypographyToken.labelXSmall)
+                                }
+                                .foregroundStyle(moreSelection == tab ? ColorToken.brandPrimary : ColorToken.textTertiary)
+                                .padding(.horizontal, SpacingToken.space4)
+                                .padding(.vertical, SpacingToken.space2)
+                                .background(
+                                    moreSelection == tab ? ColorToken.brandPrimary.opacity(0.1) : Color.clear,
+                                    in: Capsule()
+                                )
+                            }
+                        }
+                    }
+                    .padding(.horizontal, SpacingToken.insetMedium)
                 }
+                .padding(.vertical, SpacingToken.space2)
+                .background(ColorToken.surfaceElevated)
+            }
+        }
+        .navigationTitle("More")
+        .navigationBarTitleDisplayMode(.large)
+    }
+}
+
+// MARK: - Settings Screen (placeholder)
+
+struct SettingsScreen: View {
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var store: AirportStore
+
+    var body: some View {
+        List {
+            Section {
+                HStack {
+                    Label("Airport Database", systemImage: "cylinder")
+                    Spacer()
+                    if store.isLoading {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    } else {
+                        Text("\(store.airports.count) airports")
+                            .foregroundStyle(ColorToken.textSecondary)
+                    }
+                }
+
+                HStack {
+                    Label("Airspace Data", systemImage: "shield")
+                    Spacer()
+                    if airspaceManager.isLoading {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    } else if let date = airspaceManager.lastUpdate {
+                        Text(date.formatted(date: .abbreviated, time: .shortened))
+                            .font(TypographyToken.monoSmall)
+                            .foregroundStyle(ColorToken.textSecondary)
+                    } else {
+                        Text("Not loaded")
+                            .foregroundStyle(ColorToken.textTertiary)
+                    }
+                }
+            } header: {
+                Text("Data")
+            }
+
+            Section {
+                Toggle("Show User Location", isOn: $model.showUserLocation)
+                Toggle("Follow User", isOn: $model.followUser)
+            } header: {
+                Text("Map")
+            }
+
+            Section {
+                NavigationLink("Aircraft Profiles") {
+                    AircraftProfilesView()
+                }
+                NavigationLink("Weight & Balance Defaults") {
+                    WeightBalanceDefaultsView()
+                }
+            } header: {
+                Text("Aircraft")
+            }
+
+            Section {
+                Button("Clear All Favorites") {
+                    model.favorites.removeAll()
+                }
+                .foregroundStyle(ColorToken.danger)
+
+                Button("Clear Flight Log") {
+                    // Would clear logbook
+                }
+                .foregroundStyle(ColorToken.danger)
+            } header: {
+                Text("Danger Zone")
+            }
+        }
+        .navigationTitle("Settings")
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(ColorToken.surfaceBase)
+    }
+}
+
+struct AircraftProfilesView: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var showingAdd = false
+
+    var body: some View {
+        List {
+            ForEach(model.aircraftProfiles) { aircraft in
+                Button {
+                    model.selectAircraft(aircraft)
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(aircraft.name)
+                                .font(TypographyToken.bodyMedium)
+                                .foregroundStyle(ColorToken.textPrimary)
+                            Text("\(aircraft.type) • \(Int(aircraft.cruiseSpeed)) kt • \(aircraft.fuelBurn, specifier: "%.1f") gph")
+                                .font(TypographyToken.bodySmall)
+                                .foregroundStyle(ColorToken.textSecondary)
+                        }
+                        Spacer()
+                        if model.selectedAircraft?.id == aircraft.id {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(ColorToken.brandPrimary)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .onDelete { indices in
+                for index in indices {
+                    model.aircraftProfiles.remove(at: index)
+                }
+            }
+
+            Button {
+                showingAdd = true
+            } label: {
+                Label("Add Aircraft", systemImage: "plus.circle.fill")
+                    .foregroundStyle(ColorToken.brandPrimary)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .navigationTitle("Aircraft Profiles")
+        .sheet(isPresented: $showingAdd) {
+            AddAircraftSheet()
         }
     }
 }
+
+struct AddAircraftSheet: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var type = ""
+    @State private var cruiseSpeed = 120.0
+    @State private var fuelBurn = 10.0
+    @State private var fuelCapacity = 50.0
+    @State private var maxWeight = 2550.0
+    @State private var emptyWeight = 1650.0
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Basic Info") {
+                    TextField("Name (e.g. \"C172 N12345\")", text: $name)
+                    TextField("Type (e.g. \"Cessna 172\")", text: $type)
+                }
+                Section("Performance") {
+                    HStack {
+                        Text("Cruise Speed")
+                        Spacer()
+                        TextField("KTAS", value: $cruiseSpeed, format: .number)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    HStack {
+                        Text("Fuel Burn")
+                        Spacer()
+                        TextField("GPH", value: $fuelBurn, format: .number)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    HStack {
+                        Text("Fuel Capacity")
+                        Spacer()
+                        TextField("GAL", value: $fuelCapacity, format: .number)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                    }
+                }
+                Section("Weight Limits") {
+                    HStack {
+                        Text("Max Weight")
+                        Spacer()
+                        TextField("LBS", value: $maxWeight, format: .number)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    HStack {
+                        Text("Empty Weight")
+                        Spacer()
+                        TextField("LBS", value: $emptyWeight, format: .number)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                    }
+                }
+            }
+            .navigationTitle("Add Aircraft")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save") {
+                        let aircraft = AircraftProfile(
+                            name: name,
+                            type: type,
+                            cruiseSpeed: cruiseSpeed,
+                            fuelBurn: fuelBurn,
+                            fuelCapacity: fuelCapacity,
+                            maxWeight: maxWeight,
+                            emptyWeight: emptyWeight
+                        )
+                        model.aircraftProfiles.append(aircraft)
+                        if model.selectedAircraft == nil {
+                            model.selectAircraft(aircraft)
+                        }
+                        dismiss()
+                    }
+                    .disabled(name.isEmpty || type.isEmpty)
+                    .primaryButton(size: .small)
+                }
+            }
+        }
+    }
+}
+
+struct WeightBalanceDefaultsView: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        Form {
+            Section("Weight & Balance") {
+                HStack {
+                    Text("Max Weight")
+                    Spacer()
+                    TextField("LBS", value: $model.maxWeight, format: .number)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                }
+                HStack {
+                    Text("Forward CG Limit")
+                    Spacer()
+                    TextField("IN", value: $model.cgForward, format: .number)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                }
+                HStack {
+                    Text("Aft CG Limit")
+                    Spacer()
+                    TextField("IN", value: $model.cgAft, format: .number)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+        }
+        .navigationTitle("W&B Defaults")
+    }
+}
+
+// Need to reference AirspaceDataManager in SettingsScreen
+import SwiftUI
+@MainActor
+private var airspaceManager: AirspaceDataManager { AirspaceDataManager.shared }

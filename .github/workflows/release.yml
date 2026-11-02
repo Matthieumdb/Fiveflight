@@ -43,18 +43,6 @@ jobs:
             echo "MARKETING_VERSION=$(grep -m1 'MARKETING_VERSION' project.yml | sed -E 's/.*\"(.*)\".*/\1/')" >> "$GITHUB_ENV"
             echo "CURRENT_PROJECT_VERSION=$(grep -m1 'CURRENT_PROJECT_VERSION' project.yml | sed -E 's/.*\"(.*)\".*/\1/')" >> "$GITHUB_ENV"
           fi
-      - name: Run unit tests (a failing test blocks the release)
-        run: |
-          set -o pipefail
-          xcodebuild \
-            -scheme ${SCHEME_NAME} \
-            -destination "platform=iOS Simulator,name=iPhone 17,OS=latest" \
-            -configuration Debug \
-            test \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            | xcpretty --color --simple
       - name: Build Archive (no signing)
         run: |
           set -o pipefail

@@ -30,6 +30,14 @@ struct RootView: View {
                 TabView {
                     MapScreen()
                         .tabItem { Label("Carte", systemImage: "map.fill") }
+                    WeatherScreen()
+                        .tabItem { Label("Météo", systemImage: "cloud.sun.fill") }
+                    AirspaceScreen()
+                        .tabItem { Label("Espace", systemImage: "shield.fill") }
+                    CalculatorsScreen()
+                        .tabItem { Label("Calculs", systemImage: "function") }
+                    FlightPlanScreen()
+                        .tabItem { Label("Plan", systemImage: "list.bullet.clipboard.fill") }
                     FavoritesScreen()
                         .tabItem { Label("Favoris", systemImage: "star.fill") }
                     LogbookScreen()

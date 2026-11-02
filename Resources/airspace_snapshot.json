@@ -1,0 +1,188 @@
+[
+  {
+    "id": "KMIA_B",
+    "name": "Miami Class B",
+    "type": { "classAirspace": "B" },
+    "polygons": [[
+      { "latitude": 25.793, "longitude": -80.290 },
+      { "latitude": 25.850, "longitude": -80.200 },
+      { "latitude": 25.750, "longitude": -80.100 },
+      { "latitude": 25.650, "longitude": -80.150 },
+      { "latitude": 25.700, "longitude": -80.250 },
+      { "latitude": 25.793, "longitude": -80.290 }
+    ]],
+    "floor": 0,
+    "ceiling": 10000,
+    "controllingAgency": "Miami Approach",
+    "frequency": "125.5",
+    "isActive": true,
+    "schedule": null
+  },
+  {
+    "id": "KFLL_C",
+    "name": "Fort Lauderdale Class C",
+    "type": { "classAirspace": "C" },
+    "polygons": [[
+      { "latitude": 26.072, "longitude": -80.152 },
+      { "latitude": 26.130, "longitude": -80.080 },
+      { "latitude": 26.050, "longitude": -80.020 },
+      { "latitude": 25.980, "longitude": -80.050 },
+      { "latitude": 26.010, "longitude": -80.120 },
+      { "latitude": 26.072, "longitude": -80.152 }
+    ]],
+    "floor": 0,
+    "ceiling": 4000,
+    "controllingAgency": "Fort Lauderdale Tower",
+    "frequency": "119.1",
+    "isActive": true,
+    "schedule": null
+  },
+  {
+    "id": "KTPA_C",
+    "name": "Tampa Class C",
+    "type": { "classAirspace": "C" },
+    "polygons": [[
+      { "latitude": 27.975, "longitude": -82.533 },
+      { "latitude": 28.030, "longitude": -82.450 },
+      { "latitude": 27.950, "longitude": -82.380 },
+      { "latitude": 27.880, "longitude": -82.420 },
+      { "latitude": 27.910, "longitude": -82.500 },
+      { "latitude": 27.975, "longitude": -82.533 }
+    ]],
+    "floor": 0,
+    "ceiling": 4000,
+    "controllingAgency": "Tampa Approach",
+    "frequency": "119.9",
+    "isActive": true,
+    "schedule": null
+  },
+  {
+    "id": "KORL_C",
+    "name": "Orlando Class C",
+    "type": { "classAirspace": "C" },
+    "polygons": [[
+      { "latitude": 28.431, "longitude": -81.308 },
+      { "latitude": 28.490, "longitude": -81.230 },
+      { "latitude": 28.400, "longitude": -81.150 },
+      { "latitude": 28.330, "longitude": -81.180 },
+      { "latitude": 28.370, "longitude": -81.260 },
+      { "latitude": 28.431, "longitude": -81.308 }
+    ]],
+    "floor": 0,
+    "ceiling": 4000,
+    "controllingAgency": "Orlando Approach",
+    "frequency": "124.8",
+    "isActive": true,
+    "schedule": null
+  },
+  {
+    "id": "KJAX_C",
+    "name": "Jacksonville Class C",
+    "type": { "classAirspace": "C" },
+    "polygons": [[
+      { "latitude": 30.494, "longitude": -81.687 },
+      { "latitude": 30.550, "longitude": -81.600 },
+      { "latitude": 30.470, "longitude": -81.530 },
+      { "latitude": 30.400, "longitude": -81.570 },
+      { "latitude": 30.430, "longitude": -81.650 },
+      { "latitude": 30.494, "longitude": -81.687 }
+    ]],
+    "floor": 0,
+    "ceiling": 4000,
+    "controllingAgency": "Jacksonville Approach",
+    "frequency": "123.9",
+    "isActive": true,
+    "schedule": null
+  },
+  {
+    "id": "KPNS_D",
+    "name": "Pensacola Class D",
+    "type": { "classAirspace": "D" },
+    "polygons": [[
+      { "latitude": 30.473, "longitude": -87.186 },
+      { "latitude": 30.520, "longitude": -87.120 },
+      { "latitude": 30.440, "longitude": -87.060 },
+      { "latitude": 30.380, "longitude": -87.100 },
+      { "latitude": 30.410, "longitude": -87.170 },
+      { "latitude": 30.473, "longitude": -87.186 }
+    ]],
+    "floor": 0,
+    "ceiling": 2500,
+    "controllingAgency": "Pensacola Tower",
+    "frequency": "118.7",
+    "isActive": true,
+    "schedule": null
+  },
+  {
+    "id": "MOA_EGLIN",
+    "name": "Eglin MOA",
+    "type": { "sua": "MOA" },
+    "polygons": [[
+      { "latitude": 30.500, "longitude": -86.500 },
+      { "latitude": 30.800, "longitude": -86.500 },
+      { "latitude": 30.800, "longitude": -86.000 },
+      { "latitude": 30.500, "longitude": -86.000 },
+      { "latitude": 30.500, "longitude": -86.500 }
+    ]],
+    "floor": 100,
+    "ceiling": 18000,
+    "controllingAgency": "Eglin Control",
+    "frequency": "134.35",
+    "isActive": true,
+    "schedule": "Intermittent by NOTAM"
+  },
+  {
+    "id": "R2910",
+    "name": "R-2910 Eglin",
+    "type": { "sua": "RESTRICTED" },
+    "polygons": [[
+      { "latitude": 30.200, "longitude": -86.800 },
+      { "latitude": 30.500, "longitude": -86.800 },
+      { "latitude": 30.500, "longitude": -86.300 },
+      { "latitude": 30.200, "longitude": -86.300 },
+      { "latitude": 30.200, "longitude": -86.800 }
+    ]],
+    "floor": 0,
+    "ceiling": 50000,
+    "controllingAgency": "Eglin Control",
+    "frequency": "134.35",
+    "isActive": true,
+    "schedule": "Continuous"
+  },
+  {
+    "id": "W151",
+    "name": "Warning Area W-151",
+    "type": { "sua": "WARNING" },
+    "polygons": [[
+      { "latitude": 29.500, "longitude": -85.000 },
+      { "latitude": 30.000, "longitude": -85.000 },
+      { "latitude": 30.000, "longitude": -84.000 },
+      { "latitude": 29.500, "longitude": -84.000 },
+      { "latitude": 29.500, "longitude": -85.000 }
+    ]],
+    "floor": 0,
+    "ceiling": 60000,
+    "controllingAgency": "Tyndall Control",
+    "frequency": "125.2",
+    "isActive": true,
+    "schedule": "Intermittent by NOTAM"
+  },
+  {
+    "id": "ALERT_A292",
+    "name": "Alert Area A-292",
+    "type": { "sua": "ALERT" },
+    "polygons": [[
+      { "latitude": 26.500, "longitude": -81.000 },
+      { "latitude": 26.800, "longitude": -81.000 },
+      { "latitude": 26.800, "longitude": -80.600 },
+      { "latitude": 26.500, "longitude": -80.600 },
+      { "latitude": 26.500, "longitude": -81.000 }
+    ]],
+    "floor": 0,
+    "ceiling": 10000,
+    "controllingAgency": "Miami Center",
+    "frequency": "132.15",
+    "isActive": true,
+    "schedule": "Daylight hours"
+  }
+]

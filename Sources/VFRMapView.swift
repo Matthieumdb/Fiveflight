@@ -229,11 +229,16 @@ struct VFRMapView: UIViewRepresentable {
                 for polygon in airspace.polygons {
                     guard polygon.count >= 3 else { continue }
                     let coords = polygon.map(\.clCoordinate)
-                    let overlay = AirspacePolygonOverlay(coordinates: coords, count: coords.count, airspaceColor: color, isTFR: tf)
+                    let overlay = makeAirspaceOverlay(coords: coords, color: color, isTFR: tf)
                     airspaceOverlays.append(overlay)
                     mv.addOverlay(overlay, level: .aboveLabels)
                 }
             }
+        }
+
+        @_optimize(none)
+        private func makeAirspaceOverlay(coords: [CLLocationCoordinate2D], color: UIColor, isTFR: Bool) -> AirspacePolygonOverlay {
+            AirspacePolygonOverlay(coordinates: coords, count: coords.count, airspaceColor: color, isTFR: isTFR)
         }
 
         func updateAnnotations(on mv: MKMapView, nearest: [Airport], waypoints: [Airport], categories: [String: String]) {

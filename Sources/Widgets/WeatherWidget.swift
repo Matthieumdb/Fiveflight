@@ -33,7 +33,7 @@ struct WeatherSummary: Codable {
 
 /// Provider that reads cached data from App Group shared defaults.
 struct FiveflightProvider: TimelineProvider {
-    let sharedDefaults = UserDefaults(suiteName: "group.com.example.efb.fiveflight")!
+    let sharedDefaults = UserDefaults(suiteName: "group.com.fiveflight.app")!
 
     func placeholder(in context: Context) -> FiveflightEntry {
         FiveflightEntry(date: Date(), nearest: [], activeRoute: nil, weather: nil)
@@ -303,6 +303,7 @@ struct LargeWidgetView: View {
 }
 
 // MARK: - Widget bundle
+@main
 struct FiveflightWidgetBundle: WidgetBundle {
     var body: some Widget {
         FiveflightSmallWidget()

@@ -111,6 +111,11 @@ final class WeatherService: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
 
+    /// Flight categories from currently cached METARs (for map markers).
+    var categories: [String: String] {
+        metars.mapValues { $0.flightCategory.rawValue }
+    }
+
     private let baseURL = "https://aviationweather.gov/api/data"
     private let session = URLSession.shared
     private var cancellables = Set<AnyCancellable>()
@@ -255,6 +260,116 @@ final class WeatherService: ObservableObject {
         async let airsigmets = fetchAIRMETs()
 
         _ = await (metars, tafs, winds, pireps, airsigmets)
+    }
+
+    // MARK: - Static Convenience Methods (for backward compatibility)
+
+    /// Fetches METAR/TAF for a single airport, returning a simplified AirportWeather struct.
+    static func fetch(icao: String) async -> AirportWeather? {
+        async let metarResult = shared.fetchMETAR(for: icao)
+        async let tafResult = shared.fetchTAF(for: icao)
+        let (metar, taf) = await (metarResult, tafResult)
+        guard metar != nil || taf != nil else { return nil }
+
+        return AirportWeather(
+            fltCat: metar?.flightCategory.rawValue,
+            rawMetar: metar?.rawText,
+            rawTaf: taf?.rawText,
+            windText: metar.flatMap { windText(from: $0) },
+            visib: metar?.visibility.map { "\($0) SM" },
+            altimInHg: metar?.altimeter.map { String(format: "%.2f inHg", $0) },
+            tempC: metar?.temperature,
+            dewpC: metar?.dewpoint,
+            windDirDeg: metar?.windDirection,
+            windSpdKt: metar?.windSpeed,
+            obsTime: metar?.observationTime
+        )
+    }
+
+    /// Flight category per ICAO, in one batched request.
+    static func categories(for icaos: [String]) async -> [String: String] {
+        let ids = icaos.prefix(40).joined(separator: ",")
+        guard !ids.isEmpty else { return [:] }
+
+        let urlString = "https://aviationweather.gov/api/data/metar?ids=\(ids)&format=json"
+        guard let url = URL(string: urlString) else { return [:] }
+
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let response = try JSONDecoder().decode([MetarDTO].self, from: data)
+            var out: [String: String] = [:]
+            for m in response {
+                if let id = m.icaoId, let cat = m.fltCat {
+                    out[id] = cat
+                }
+            }
+            return out
+        } catch {
+            print("Categories fetch error: \(error)")
+            return [:]
+        }
+    }
+
+    private static func windText(from metar: METAR) -> String? {
+        guard let dir = metar.windDirection, let spd = metar.windSpeed else { return nil }
+        let base = "\(dir)° \(spd) kt"
+        if let gust = metar.windGust, gust > 0 {
+            return base + " raf. \(gust)"
+        }
+        return base
+    }
+}
+
+// MARK: - AirportWeather (simplified weather for quick display)
+
+struct AirportWeather: Sendable {
+    let fltCat: String?       // VFR / MVFR / IFR / LIFR
+    let rawMetar: String?
+    let rawTaf: String?
+    let windText: String?
+    let visib: String?        // statute miles
+    let altimInHg: String?    // US altimeter setting
+    let tempC: Int?
+    let dewpC: Int?
+    let windDirDeg: Int?      // nil when variable (VRB)
+    let windSpdKt: Int?
+    let obsTime: Date?        // observation time (for freshness)
+
+    /// Human relative age, e.g. "il y a 12 min".
+    var ageText: String? {
+        guard let obsTime else { return nil }
+        let mins = Int(max(0, Date().timeIntervalSince(obsTime)) / 60)
+        if mins < 1 { return "à l'instant" }
+        if mins < 60 { return "il y a \(mins) min" }
+        return "il y a \(mins / 60) h \(mins % 60) min"
+    }
+}
+
+// MARK: - DTOs for static methods (aviationweather.gov sends wdir/visib as String or number)
+
+private struct MetarDTO: Decodable {
+    let icaoId: String?
+    let rawOb: String?
+    let fltCat: String?
+    let wdir: Flex?
+    let wspd: Double?
+    let wgst: Double?
+    let visib: Flex?
+    let altim: Double?     // hPa
+    let temp: Double?
+    let dewp: Double?
+    let obsTime: Double?    // epoch seconds
+}
+
+/// Decodes a field that may arrive as String, Int, or Double into a String.
+private struct Flex: Decodable {
+    let string: String
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let s = try? c.decode(String.self) { string = s }
+        else if let i = try? c.decode(Int.self) { string = String(i) }
+        else if let d = try? c.decode(Double.self) { string = String(d) }
+        else { string = "" }
     }
 }
 

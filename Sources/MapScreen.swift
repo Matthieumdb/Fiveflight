@@ -346,6 +346,8 @@ struct RouteInfoBar: View {
             .padding(.vertical, SpacingToken.space1)
             .background(ColorToken.brandPrimary.opacity(0.1), in: Capsule())
         }
+        .lineLimit(1)
+        .minimumScaleFactor(0.6)
         .padding(.horizontal, SpacingToken.insetMedium)
         .padding(.vertical, SpacingToken.space2)
         .background(ColorToken.surfaceElevated, in: RoundedRectangle(cornerRadius: RadiusToken.md))

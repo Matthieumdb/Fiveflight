@@ -22,11 +22,13 @@ jobs:
         run: python3 scripts/build_airspace_snapshot.py Resources/airspace_snapshot.json
       - name: Keep OurAirports CSVs US-only
         run: python3 scripts/filter_us_csv.py Resources
+      - name: Capture aviationweather.gov fixtures
+        run: bash scripts/fetch_weather_fixtures.sh Tests/Fixtures
       - name: Commit changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Resources/airspace_snapshot.json Resources/*.csv
+          git add Resources/airspace_snapshot.json Resources/*.csv Tests/Fixtures
           if git diff --cached --quiet; then echo "No data changes"; exit 0; fi
-          git commit -m "data: regenerate FAA airspace snapshot (Florida) and US-only CSVs"
+          git commit -m "data: regenerate FAA airspace snapshot, US-only CSVs and weather fixtures"
           git push

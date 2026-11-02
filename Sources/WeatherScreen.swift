@@ -7,32 +7,18 @@ struct WeatherScreen: View {
     @EnvironmentObject private var weatherService: WeatherService
     @State private var selectedTab = 0
 
-    private let tabs = ["Overview", "Winds Aloft", "PIREPs", "AIRMETs/SIGMETs"]
+    private let tabs = ["Aperçu", "Vents", "PIREPs", "AIRMET"]
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Tab picker
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: SpacingToken.space2) {
-                        ForEach(tabs.indices, id: \.self) { index in
-                            Button {
-                                withAnimation(AnimationToken.tabSwitch) { selectedTab = index }
-                            } label: {
-                                Text(tabs[index])
-                                    .font(TypographyToken.labelMedium)
-                                    .foregroundStyle(selectedTab == index ? ColorToken.textOnBrand : ColorToken.textTertiary)
-                                    .padding(.horizontal, SpacingToken.space4)
-                                    .padding(.vertical, SpacingToken.space2)
-                                    .background(
-                                        selectedTab == index ? ColorToken.brandPrimary : ColorToken.surfaceCard,
-                                        in: Capsule()
-                                    )
-                            }
-                        }
+                Picker("Section", selection: $selectedTab) {
+                    ForEach(tabs.indices, id: \.self) { index in
+                        Text(tabs[index]).tag(index)
                     }
-                    .padding(.horizontal, SpacingToken.insetMedium)
                 }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, SpacingToken.insetMedium)
                 .padding(.vertical, SpacingToken.space3)
 
                 // Content
@@ -52,7 +38,12 @@ struct WeatherScreen: View {
                 .tabViewStyle(.page(indexDisplayMode: .never))
             }
             .background(ColorToken.surfaceBase)
-            .navigationTitle("Weather")
+            .task {
+                if weatherService.windsAloft.isEmpty && weatherService.airsigmets.isEmpty {
+                    await refreshAllWeather()
+                }
+            }
+            .navigationTitle("Météo")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -69,21 +60,16 @@ struct WeatherScreen: View {
     }
 
     private func refreshAllWeather() async {
-        for airport in model.waypoints {
+        for airport in model.waypoints where airport.id != AppModel.gpsWaypointID {
             async let metar = weatherService.fetchMETAR(for: airport.id)
             async let taf = weatherService.fetchTAF(for: airport.id)
             _ = await (metar, taf)
         }
 
-        if model.showWindsAloft {
-            await weatherService.fetchWindsAloft()
-        }
-        if model.showPIREPs {
-            await weatherService.fetchPIREPs()
-        }
-        if model.showAIRMETs {
-            await weatherService.fetchAIRMETs()
-        }
+        async let winds: Void = weatherService.fetchWindsAloft()
+        async let pireps: Void = weatherService.fetchPIREPs()
+        async let airmets: Void = weatherService.fetchAIRMETs()
+        _ = await (winds, pireps, airmets)
     }
 }
 
@@ -429,9 +415,9 @@ struct WindsAloftTab: View {
         ScrollView {
             if weatherService.windsAloft.isEmpty {
                 ContentUnavailableView(
-                    "No Winds Aloft Data",
+                    "Pas de vents en altitude",
                     systemImage: "wind",
-                    description: Text("Enable Winds Aloft layer to load forecast data")
+                    description: Text("Tirez vers le bas pour charger les vents FD de Floride.")
                 )
             } else {
                 LazyVStack(spacing: SpacingToken.space3) {
@@ -516,9 +502,9 @@ struct PIREPsTab: View {
         ScrollView {
             if weatherService.pireps.isEmpty {
                 ContentUnavailableView(
-                    "No PIREPs",
+                    "Aucun PIREP",
                     systemImage: "bubble.left.and.bubble.right",
-                    description: Text("Enable PIREPs layer to load pilot reports")
+                    description: Text("Aucun PIREP en Floride ces 3 dernières heures. Tirez pour actualiser.")
                 )
             } else {
                 LazyVStack(spacing: SpacingToken.space3) {
@@ -609,9 +595,9 @@ struct AIRMETsTab: View {
         ScrollView {
             if weatherService.airsigmets.isEmpty {
                 ContentUnavailableView(
-                    "No AIRMETs/SIGMETs",
+                    "Aucun AIRMET/SIGMET",
                     systemImage: "exclamationmark.triangle",
-                    description: Text("Enable AIRMETs layer to load in-flight advisories")
+                    description: Text("Aucun avis en cours sur la Floride. Tirez pour actualiser.")
                 )
             } else {
                 LazyVStack(spacing: SpacingToken.space3) {

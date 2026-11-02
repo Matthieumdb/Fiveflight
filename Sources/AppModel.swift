@@ -52,7 +52,6 @@ final class AppModel: ObservableObject {
     @Published var logbook: [LogEntry] = []
     @Published var checklists: [Checklist] = []
     @Published var recents: [String] = []   // recently viewed ICAOs, most recent first
-    @Published var directTo: String?   // ICAO requested as route destination from a detail sheet
 
     func markViewed(_ id: String) {
         recents.removeAll { $0 == id }
@@ -94,15 +93,20 @@ final class AppModel: ObservableObject {
 
     private var mapRegionSaveTask: Task<Void, Never>?
 
+    /// Bumped whenever code (not the user's finger) moves the map, so VFRMapView applies `mapRegion`.
+    @Published private(set) var mapRegionVersion = 0
+
+    /// Recentres the map (GPS button, search result, Direct To).
+    func moveMap(to center: CLLocationCoordinate2D, span: Double = 0.5) {
+        mapRegion = MKCoordinateRegion(center: center,
+                                       span: MKCoordinateSpan(latitudeDelta: span, longitudeDelta: span))
+        mapRegionVersion += 1
+    }
+
     // Map layer visibility (persisted)
     @Published var showSectional: Bool = true { didSet { defaults.set(showSectional, forKey: "showSectional") } }
     @Published var showRadar: Bool = false { didSet { defaults.set(showRadar, forKey: "showRadar") } }
     @Published var showAirspace: Bool = true { didSet { defaults.set(showAirspace, forKey: "showAirspace") } }
-    @Published var showTFRs: Bool = true { didSet { defaults.set(showTFRs, forKey: "showTFRs") } }
-    @Published var showWindsAloft: Bool = true { didSet { defaults.set(showWindsAloft, forKey: "showWindsAloft") } }
-    @Published var showPIREPs: Bool = true { didSet { defaults.set(showPIREPs, forKey: "showPIREPs") } }
-    @Published var showAIRMETs: Bool = true { didSet { defaults.set(showAIRMETs, forKey: "showAIRMETs") } }
-    @Published var showAirways: Bool = true { didSet { defaults.set(showAirways, forKey: "showAirways") } }
 
     // Appearance (persisted): 0 = System, 1 = Light, 2 = Dark
     @Published var appearanceMode: Int = 0 { didSet { defaults.set(appearanceMode, forKey: "appearanceMode") } }
@@ -142,6 +146,20 @@ final class AppModel: ObservableObject {
         waypoints.append(airport)
         Haptics.tap()
     }
+
+    /// Direct To: replaces the plan with "current GPS position → airport" (just the airport without a fix).
+    func directTo(_ airport: Airport) {
+        var plan: [Airport] = []
+        if let here = userLocation {
+            plan.append(Airport(id: Self.gpsWaypointID, name: "Position actuelle", type: "gps",
+                                icao: nil, iata: nil, municipality: nil, elevationFt: nil, coordinate: here))
+        }
+        plan.append(airport)
+        waypoints = plan
+        Haptics.success()
+    }
+
+    static let gpsWaypointID = "GPS"
 
     func clearFlightPlan() {
         waypoints.removeAll()
@@ -201,11 +219,6 @@ final class AppModel: ObservableObject {
         showSectional = defaults.object(forKey: "showSectional") as? Bool ?? true
         showRadar = defaults.object(forKey: "showRadar") as? Bool ?? false
         showAirspace = defaults.object(forKey: "showAirspace") as? Bool ?? true
-        showTFRs = defaults.object(forKey: "showTFRs") as? Bool ?? true
-        showWindsAloft = defaults.object(forKey: "showWindsAloft") as? Bool ?? true
-        showPIREPs = defaults.object(forKey: "showPIREPs") as? Bool ?? true
-        showAIRMETs = defaults.object(forKey: "showAIRMETs") as? Bool ?? true
-        showAirways = defaults.object(forKey: "showAirways") as? Bool ?? true
         appearanceMode = defaults.object(forKey: "appearanceMode") as? Int ?? 0
     }
 

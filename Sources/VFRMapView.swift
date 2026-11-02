@@ -90,7 +90,8 @@ struct VFRMapView: UIViewRepresentable {
     var onRegionChange: (MKCoordinateRegion) -> Void = { _ in }
     var airspaces: [Airspace] = []
     var showAirspace: Bool = true
-    var showTFRs: Bool = true
+    /// No live TFR source is wired yet, so TFR polygons stay hidden rather than showing stale data.
+    var showTFRs: Bool = false
 
     // FAA official VFR sectional (ArcGIS, updated per chart cycle); ArcGIS tile = {z}/{y}/{x}.
     fileprivate static let sectionalURL =

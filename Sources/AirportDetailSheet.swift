@@ -28,9 +28,18 @@ struct AirportDetailSheet: View {
                 Section {
                     HStack(spacing: SpacingToken.space3) {
                         ActionButton(
-                            icon: "plus.circle.fill",
-                            label: "Add to Route",
+                            icon: "location.north.line.fill",
+                            label: "Direct To",
                             color: ColorToken.brandPrimary
+                        ) {
+                            model.directTo(airport)
+                            dismiss()
+                        }
+
+                        ActionButton(
+                            icon: "plus.circle.fill",
+                            label: "Ajouter",
+                            color: ColorToken.info
                         ) {
                             model.addWaypoint(airport)
                             dismiss()
@@ -38,18 +47,10 @@ struct AirportDetailSheet: View {
 
                         ActionButton(
                             icon: model.isFavorite(airport.id) ? "star.fill" : "star",
-                            label: model.isFavorite(airport.id) ? "Remove Fav" : "Add Favorite",
+                            label: model.isFavorite(airport.id) ? "Retirer" : "Favori",
                             color: ColorToken.warning
                         ) {
                             model.toggleFavorite(airport.id)
-                        }
-
-                        ActionButton(
-                            icon: "arrow.up.right.square",
-                            label: "Nearby",
-                            color: ColorToken.info
-                        ) {
-                            // Would show nearby
                         }
                     }
                 }

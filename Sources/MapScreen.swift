@@ -11,7 +11,6 @@ struct MapScreen: View {
     @EnvironmentObject private var weatherService: WeatherService
     @EnvironmentObject private var locationManager: LocationManager
 
-    @State private var regionVersion = 0
     @State private var showFlightPlanPanel = false
     @State private var showLayersPanel = false
     @State private var showNearbyPanel = false
@@ -34,12 +33,6 @@ struct MapScreen: View {
             .sorted()
     }
 
-    /// Coarse key so the widget refreshes when the position moves by roughly 1 km, not on every fix.
-    private var positionKey: String {
-        guard let c = model.userLocation else { return "-" }
-        return "\(Int(c.latitude * 100)),\(Int(c.longitude * 100))"
-    }
-
     var body: some View {
         ZStack(alignment: .top) {
             // MARK: - Full Screen Map (VFRMapView with MKTileOverlay)
@@ -52,7 +45,7 @@ struct MapScreen: View {
                 categories: weatherService.categories,
                 userCoord: model.userLocation,
                 region: model.mapRegion,
-                regionVersion: regionVersion,
+                regionVersion: model.mapRegionVersion,
                 onSelect: { airport in
                     selectedAirport = airport
                     model.selectedAirport = airport
@@ -62,8 +55,7 @@ struct MapScreen: View {
                     visibleAirports = Self.airportsToShow(store.airports, in: region)
                 },
                 airspaces: activeAirspaces,
-                showAirspace: model.showAirspace,
-                showTFRs: model.showTFRs
+                showAirspace: model.showAirspace
             )
             .ignoresSafeArea()
 
@@ -108,7 +100,16 @@ struct MapScreen: View {
                 .environmentObject(weatherService)
         }
         .sheet(isPresented: $showSearch) {
-            SearchSheet(nearest: store.nearest(to: model.userLocation ?? AppModel.homeCoordinate, limit: 20))
+            SearchSheet(nearest: store.nearest(to: model.userLocation ?? AppModel.homeCoordinate, limit: 20)) { airport in
+                showSearch = false
+                model.markViewed(airport.id)
+                model.moveMap(to: airport.coordinate, span: 0.3)
+                // Open the airport card once the search sheet has finished closing.
+                Task {
+                    try? await Task.sleep(nanoseconds: 450_000_000)
+                    selectedAirport = airport
+                }
+            }
         }
         .onAppear {
             visibleAirports = Self.airportsToShow(store.airports, in: model.mapRegion)
@@ -116,20 +117,15 @@ struct MapScreen: View {
         }
         .onChange(of: model.waypoints) { _, _ in
             Task { await calculateAndUpdateRoute() }
-            WidgetBridge.update(store: store, model: model, weather: weatherService)
         }
         .onChange(of: routingEngine.currentMode) { _, _ in
             Task { await calculateAndUpdateRoute() }
-        }
-        .onChange(of: positionKey) { _, _ in
-            WidgetBridge.update(store: store, model: model, weather: weatherService)
         }
         .task(id: metarStations) {
             // Debounce: wait until the map has settled, then colour markers by flight category.
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else { return }
             await weatherService.refreshMETARs(forVisible: metarStations)
-            WidgetBridge.update(store: store, model: model, weather: weatherService)
         }
     }
 
@@ -195,6 +191,7 @@ struct MapScreen: View {
 
 struct TopMapBar: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var locationManager: LocationManager
     @Binding var showFlightPlanPanel: Bool
     @Binding var showLayersPanel: Bool
     @Binding var showNearbyPanel: Bool
@@ -225,11 +222,10 @@ struct TopMapBar: View {
 
                 // GPS button
                 Button {
-                    if let loc = model.userLocation {
-                        withAnimation(AnimationToken.map) {
-                            model.mapRegion.center = loc
-                            model.mapRegion.span = MKCoordinateSpan(latitudeDelta: 0.5, longitudeDelta: 0.5)
-                        }
+                    if let loc = model.userLocation ?? locationManager.location {
+                        model.moveMap(to: loc)
+                    } else {
+                        locationManager.start()
                     }
                 } label: {
                     Image(systemName: model.followUser ? "location.fill" : "location")

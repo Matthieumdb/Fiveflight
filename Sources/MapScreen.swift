@@ -19,14 +19,12 @@ struct MapScreen: View {
     @State private var selectedAirport: Airport?
     @State private var routePolyline: [CLLocationCoordinate2D] = []
     @State private var routeWarnings: [RouteWarning] = []
+    @State private var visibleAirports: [Airport] = []
+    @State private var lastFilterSpan: MKCoordinateSpan?
 
     // Computed properties to avoid re-filtering on every render
     private var activeAirspaces: [Airspace] {
         airspaceManager.airspaces.filter { $0.isActive }
-    }
-
-    private var visibleAirports: [Airport] {
-        store.airports.filter { shouldShowAirport($0) }
     }
 
     var body: some View {
@@ -105,6 +103,9 @@ struct MapScreen: View {
             Task {
                 await calculateAndUpdateRoute()
             }
+            // Initial airport filtering
+            visibleAirports = store.airports.filter { shouldShowAirport($0, span: model.mapRegion.span) }
+            lastFilterSpan = model.mapRegion.span
         }
         .onChange(of: model.waypoints) { _, _ in
             Task { await calculateAndUpdateRoute() }
@@ -112,12 +113,20 @@ struct MapScreen: View {
         .onChange(of: routingEngine.currentMode) { _, _ in
             Task { await calculateAndUpdateRoute() }
         }
+        .onChange(of: model.mapRegion.span) { oldSpan, newSpan in
+            // Only re-filter when zoom level changes significantly (not on pan)
+            let oldMax = max(oldSpan.latitudeDelta, oldSpan.longitudeDelta)
+            let newMax = max(newSpan.latitudeDelta, newSpan.longitudeDelta)
+            if abs(oldMax - newMax) > 0.1 || lastFilterSpan == nil {
+                lastFilterSpan = newSpan
+                visibleAirports = store.airports.filter { shouldShowAirport($0, span: newSpan) }
+            }
+        }
     }
 
     // MARK: - Helpers
 
-    private func shouldShowAirport(_ airport: Airport) -> Bool {
-        let span = model.mapRegion.span
+    private func shouldShowAirport(_ airport: Airport, span: MKCoordinateSpan) -> Bool {
         let maxDelta = max(span.latitudeDelta, span.longitudeDelta)
 
         // Show major airports always, smaller ones when zoomed in

@@ -42,6 +42,7 @@ struct MapScreen: View {
                 nearest: visibleAirports,
                 waypoints: model.waypoints,
                 route: routePolyline,
+                track: model.track,
                 categories: weatherService.categories,
                 userCoord: model.userLocation,
                 region: model.mapRegion,
@@ -121,6 +122,9 @@ struct MapScreen: View {
         .onChange(of: routingEngine.currentMode) { _, _ in
             Task { await calculateAndUpdateRoute() }
         }
+        .onChange(of: model.cruiseAlt) { _, _ in
+            Task { await calculateAndUpdateRoute() }
+        }
         .task(id: metarStations) {
             // Debounce: wait until the map has settled, then colour markers by flight category.
             try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -168,13 +172,16 @@ struct MapScreen: View {
             return
         }
 
+        let planned = model.waypoints
         if let result = await routingEngine.calculateRoute(
-            waypoints: model.waypoints,
+            waypoints: planned,
             cruiseAltitude: model.cruiseAlt,
             mode: routingEngine.currentMode,
             airspaces: airspaceManager.airspaces
         ) {
+            guard model.waypoints.map(\.id) == planned.map(\.id) else { return } // plan changed meanwhile
             routePolyline = result.legs.flatMap { $0.waypoints }
+            model.routedDistanceNM = result.totalDistanceNM
             routeWarnings = result.airspaceWarnings.map { warning in
                 RouteWarning(
                     legIndex: warning.legIndex,
@@ -281,71 +288,22 @@ struct RouteInfoBar: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var routingEngine: RoutingEngine
 
+    /// Compact enough for an iPhone in portrait (the old bar truncated every value to "0…").
     var body: some View {
-        HStack(spacing: SpacingToken.space6) {
-            // Origin → Destination
-            HStack(spacing: SpacingToken.space2) {
-                Text(model.waypoints.first?.id ?? "—")
-                    .font(TypographyToken.monoMedium)
-                    .foregroundStyle(ColorToken.textPrimary)
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(ColorToken.textTertiary)
-                Text(model.waypoints.last?.id ?? "—")
-                    .font(TypographyToken.monoMedium)
-                    .foregroundStyle(ColorToken.textPrimary)
-            }
-
-            Divider().frame(height: 20)
-
-            // Distance
-            HStack(spacing: SpacingToken.space1) {
-                Image(systemName: "point.topleft.down.curvedto.point.bottomright.forward")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(ColorToken.textTertiary)
-                Text(String(format: "%.0f NM", model.totalDistanceNM))
-                    .font(TypographyToken.monoMedium)
-                    .foregroundStyle(ColorToken.textPrimary)
-            }
-
-            Divider().frame(height: 20)
-
-            // Time
-            HStack(spacing: SpacingToken.space1) {
-                Image(systemName: "clock")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(ColorToken.textTertiary)
-                Text(model.formattedTotalTime)
-                    .font(TypographyToken.monoMedium)
-                    .foregroundStyle(ColorToken.textPrimary)
-            }
-
-            Divider().frame(height: 20)
-
-            // Fuel
-            HStack(spacing: SpacingToken.space1) {
-                Image(systemName: "fuelpump")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(ColorToken.textTertiary)
-                Text(String(format: "%.1f gal", model.totalFuelGallons))
-                    .font(TypographyToken.monoMedium)
-                    .foregroundStyle(ColorToken.textPrimary)
-            }
-
-            Spacer()
-
-            // Routing mode badge
-            HStack(spacing: SpacingToken.space1) {
-                Image(systemName: routingEngine.currentMode.icon)
-                    .font(.system(size: 11, weight: .medium))
-                Text(routingEngine.currentMode.rawValue)
-                    .font(TypographyToken.labelXSmall)
-            }
-            .foregroundStyle(ColorToken.brandPrimary)
-            .padding(.horizontal, SpacingToken.space2)
-            .padding(.vertical, SpacingToken.space1)
-            .background(ColorToken.brandPrimary.opacity(0.1), in: Capsule())
+        HStack(spacing: SpacingToken.space3) {
+            Text("\(model.waypoints.first?.id ?? "—")→\(model.waypoints.last?.id ?? "—")")
+                .foregroundStyle(ColorToken.textPrimary)
+                .layoutPriority(-1)
+            Spacer(minLength: 0)
+            Text(String(format: "%.0f NM", model.totalDistanceNM)).fixedSize()
+            Text(model.formattedTotalTime).fixedSize()
+            Label(String(format: "%.1f gal", model.totalFuelGallons), systemImage: "fuelpump")
+                .labelStyle(.titleAndIcon).fixedSize()
+            Image(systemName: routingEngine.currentMode.icon)
+                .foregroundStyle(ColorToken.brandPrimary)
         }
+        .font(TypographyToken.monoSmall)
+        .foregroundStyle(ColorToken.textPrimary)
         .lineLimit(1)
         .minimumScaleFactor(0.6)
         .padding(.horizontal, SpacingToken.insetMedium)

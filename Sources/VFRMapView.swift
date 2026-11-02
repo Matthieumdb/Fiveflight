@@ -82,6 +82,8 @@ struct VFRMapView: UIViewRepresentable {
     var waypoints: [Airport]
     /// Route computed by RoutingEngine (may detour around airspace); straight legs when empty.
     var route: [CLLocationCoordinate2D] = []
+    /// Flown GPS track, drawn as a solid magenta line.
+    var track: [CLLocationCoordinate2D] = []
     var categories: [String: String]
     var userCoord: CLLocationCoordinate2D?
     var region: MKCoordinateRegion
@@ -133,6 +135,7 @@ struct VFRMapView: UIViewRepresentable {
         c.parent = self
         c.updateTileOverlays(on: mv, showSectional: showSectional, showWeather: showWeather)
         c.updateRoute(on: mv, coordinates: route.count >= 2 ? route : waypoints.map(\.coordinate))
+        c.updateTrack(on: mv, coordinates: track)
         c.updateUserCircles(on: mv, userCoord: waypoints.isEmpty ? userCoord : nil)
         c.updateAirspacePolygons(on: mv, airspaces: airspaces, showAirspace: showAirspace, showTFRs: showTFRs,
                                  colorFor: airspaceColor, isTFR: airspaceTypeIsTFR)
@@ -186,6 +189,8 @@ struct VFRMapView: UIViewRepresentable {
         private var weatherOverlay: WeatherTileOverlay?
         private var routeOverlay: MKPolyline?
         private var routeKey = ""
+        private var trackOverlay: MKPolyline?
+        private var trackKey = ""
         private var userCircles: [MKCircle] = []
         private var circleCenter: CLLocation?
         private var airspaceOverlays: [MKPolygon] = []
@@ -234,6 +239,17 @@ struct VFRMapView: UIViewRepresentable {
             let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
             routeOverlay = polyline
             mv.addOverlay(polyline, level: .aboveLabels)
+        }
+
+        func updateTrack(on mv: MKMapView, coordinates: [CLLocationCoordinate2D]) {
+            let key = "\(coordinates.count)|\(coordinates.last?.latitude ?? 0)|\(coordinates.last?.longitude ?? 0)"
+            guard key != trackKey else { return }
+            trackKey = key
+            if let old = trackOverlay { mv.removeOverlay(old); trackOverlay = nil }
+            guard coordinates.count >= 2 else { return }
+            let line = MKPolyline(coordinates: coordinates, count: coordinates.count)
+            trackOverlay = line
+            mv.addOverlay(line, level: .aboveLabels)
         }
 
         /// 10 and 25 NM range rings around the aircraft, redrawn only after it moved 200 m or more.
@@ -332,6 +348,12 @@ struct VFRMapView: UIViewRepresentable {
         }
 
         func mapView(_ mv: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let line = overlay as? MKPolyline, line === trackOverlay {
+                let r = MKPolylineRenderer(polyline: line)
+                r.strokeColor = .systemPink
+                r.lineWidth = 3
+                return r
+            }
             if let line = overlay as? MKPolyline {
                 let r = MKPolylineRenderer(polyline: line)
                 r.strokeColor = .systemBlue

@@ -38,7 +38,13 @@ struct SearchSheet: View {
                     Button {
                         onSelect(a)
                     } label: {
-                        airportRow(a)
+                        HStack {
+                            airportRow(a)
+                            // In the flight plan, show which airports are already in the route.
+                            if model.waypoints.contains(where: { $0.id == a.id }) {
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                            }
+                        }
                     }
                     .buttonStyle(.plain)
                 } else {

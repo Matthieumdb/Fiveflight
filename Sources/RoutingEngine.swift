@@ -36,10 +36,6 @@ final class RoutingEngine: ObservableObject {
     @Published var lastRoute: RouteResult?
     @Published var error: String?
 
-    private let gridResolution: Double = 0.1 // degrees (~6 NM at mid-latitudes)
-    private let maxAltitude = 17500 // VFR max
-    private let minAltitude = 500  // AGL buffer
-
     private init() {}
 
     /// Calculates a route between waypoints
@@ -133,14 +129,11 @@ final class RoutingEngine: ObservableObject {
             )
         }
 
-        // A* pathfinding to avoid airspace
-        let path = await findPathAStar(
-            start: from,
-            goal: to,
-            altitude: altitude,
-            mode: mode,
-            airspaces: airspaces
-        )
+        // Grid A* around the blocking airspaces, then straightened.
+        let blockers = Self.blockingRings(airspaces, from: from, to: to, altitude: altitude, mode: mode)
+        let path = await Task.detached(priority: .userInitiated) {
+            Self.findPath(start: from, goal: to, blockers: blockers)
+        }.value
 
         var totalDist = 0.0
         var totalTime = 0.0
@@ -151,7 +144,6 @@ final class RoutingEngine: ObservableObject {
         for i in 1..<path.count {
             let current = path[i]
             let dist = Haversine.nauticalMiles(previous, current)
-            let course = Haversine.trueCourse(previous, current)
             totalDist += dist
             totalTime += dist / 120.0 * 60
             totalFuel += dist / 120.0 * 10
@@ -177,196 +169,144 @@ final class RoutingEngine: ObservableObject {
         )
     }
 
-    /// A* pathfinding on a grid to avoid controlled airspace
-    private func findPathAStar(
-        start: CLLocationCoordinate2D,
-        goal: CLLocationCoordinate2D,
-        altitude: Int,
-        mode: RoutingMode,
-        airspaces: [Airspace]
-    ) async -> [CLLocationCoordinate2D] {
-        // Build a grid around the route corridor
-        let bounds = calculateBounds(start: start, goal: goal, padding: 2.0) // 2 degree padding
-        let grid = buildGrid(bounds: bounds, altitude: altitude, mode: mode, airspaces: airspaces)
+    // MARK: - Avoidance
 
-        let startNode = gridNode(for: start, in: bounds)
-        let goalNode = gridNode(for: goal, in: bounds)
+    /// A polygon ring to keep out of, with its bounding box for fast rejection.
+    struct Blocker: Sendable {
+        let ring: [CLLocationCoordinate2D]
+        let minLat, maxLat, minLon, maxLon: Double
 
-        // A* algorithm
-        var openSet: [GridNode] = [startNode]
-        var cameFrom: [GridNode: GridNode] = [:]
-        var gScore: [GridNode: Double] = [startNode: 0]
-        var fScore: [GridNode: Double] = [startNode: heuristic(startNode, goalNode)]
+        init(_ ring: [CLLocationCoordinate2D]) {
+            self.ring = ring
+            minLat = ring.map(\.latitude).min() ?? 0; maxLat = ring.map(\.latitude).max() ?? 0
+            minLon = ring.map(\.longitude).min() ?? 0; maxLon = ring.map(\.longitude).max() ?? 0
+        }
 
-        var openSetQueue = PriorityQueue<GridNode> { $0.fScore < $1.fScore }
-        openSetQueue.enqueue(startNode)
+        func contains(_ p: CLLocationCoordinate2D) -> Bool {
+            p.latitude >= minLat && p.latitude <= maxLat && p.longitude >= minLon && p.longitude <= maxLon
+                && Airspace.pointInPolygonStatic(p, polygon: ring)
+        }
 
-        var iterations = 0
-        let maxIterations = 10000
+        func crosses(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Bool {
+            guard max(a.latitude, b.latitude) >= minLat, min(a.latitude, b.latitude) <= maxLat,
+                  max(a.longitude, b.longitude) >= minLon, min(a.longitude, b.longitude) <= maxLon else { return false }
+            return Airspace.segmentIntersectsPolygonInternal(a, b, polygon: ring)
+        }
+    }
 
-        while !openSetQueue.isEmpty && iterations < maxIterations {
-            iterations += 1
-            guard let current = openSetQueue.dequeue() else { break }
-
-            if current == goalNode {
-                return reconstructPath(cameFrom: cameFrom, current: current, bounds: bounds)
+    /// Rings the leg must stay out of. Any part of a Class B/C/D (or E surface, or permission-only SUA)
+    /// whose floor is at or below the cruise altitude is avoided laterally: the aircraft would be inside
+    /// it in cruise, climb or descent. The airspace around the departure or destination is exempt
+    /// (all its shelves, which share its name): you have to fly through it.
+    static func blockingRings(_ airspaces: [Airspace], from: CLLocationCoordinate2D, to: CLLocationCoordinate2D,
+                              altitude: Int, mode: RoutingMode) -> [Blocker] {
+        let candidates = airspaces.filter { airspace in
+            guard airspace.isActive, airspace.floor <= altitude else { return false }
+            switch (mode, airspace.type) {
+            case (.direct, _): return false
+            case (_, .classAirspace(let cls)): return cls.requiresATC
+            case (_, .classESurface): return true
+            case (.avoidAllSUA, .sua(let sua)): return sua.requiresPermission
+            default: return false
             }
+        }
+        let rings = candidates.map { a in (a.name, a.polygons.map { Blocker($0.map(\.clCoordinate)) }) }
+        let exempt = Set(rings.filter { $0.1.contains { $0.contains(from) || $0.contains(to) } }.map(\.0))
+        return rings.filter { !exempt.contains($0.0) }.flatMap(\.1)
+    }
 
-            for neighbor in neighbors(of: current, in: grid, bounds: bounds) {
-                let tentativeGScore = (gScore[current] ?? .infinity) + distance(current, neighbor, bounds: bounds)
+    /// A* on a ~1.8 NM grid; an edge is allowed only if the segment crosses no blocker.
+    /// Falls back to the straight line when no path exists.
+    nonisolated static func findPath(start: CLLocationCoordinate2D, goal: CLLocationCoordinate2D,
+                                     blockers: [Blocker]) -> [CLLocationCoordinate2D] {
+        func clear(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Bool {
+            !blockers.contains { $0.crosses(a, b) }
+        }
+        if clear(start, goal) { return [start, goal] }
 
-                if tentativeGScore < (gScore[neighbor] ?? .infinity) {
-                    cameFrom[neighbor] = current
-                    gScore[neighbor] = tentativeGScore
-                    fScore[neighbor] = tentativeGScore + heuristic(neighbor, goalNode)
+        let res = 0.03
+        let pad = 0.6 + 0.3 * max(abs(start.latitude - goal.latitude), abs(start.longitude - goal.longitude))
+        let minLat = min(start.latitude, goal.latitude) - pad, minLon = min(start.longitude, goal.longitude) - pad
+        let rows = Int((max(start.latitude, goal.latitude) + pad - minLat) / res) + 1
+        let cols = Int((max(start.longitude, goal.longitude) + pad - minLon) / res) + 1
+        let cosLat = cos((start.latitude + goal.latitude) / 2 * .pi / 180)
 
-                    if !openSetQueue.contains(neighbor) {
-                        openSetQueue.enqueue(neighbor)
-                    }
+        // Node index rows*cols is the start, rows*cols+1 the goal; the rest are grid points.
+        let startID = rows * cols, goalID = startID + 1
+        func coord(_ id: Int) -> CLLocationCoordinate2D {
+            if id == startID { return start }
+            if id == goalID { return goal }
+            return CLLocationCoordinate2D(latitude: minLat + Double(id / cols) * res, longitude: minLon + Double(id % cols) * res)
+        }
+        func cell(_ c: CLLocationCoordinate2D) -> (Int, Int) {
+            (Int(((c.latitude - minLat) / res).rounded()), Int(((c.longitude - minLon) / res).rounded()))
+        }
+        func cost(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
+            let dLat = a.latitude - b.latitude, dLon = (a.longitude - b.longitude) * cosLat
+            return (dLat * dLat + dLon * dLon).squareRoot()
+        }
+        // Start/goal connect to grid points up to 2 cells away.
+        func near(_ c: CLLocationCoordinate2D) -> [Int] {
+            let (r0, c0) = cell(c)
+            var ids: [Int] = []
+            for r in (r0 - 2)...(r0 + 2) where r >= 0 && r < rows {
+                for k in (c0 - 2)...(c0 + 2) where k >= 0 && k < cols { ids.append(r * cols + k) }
+            }
+            return ids
+        }
+        let goalNeighbors = Set(near(goal))
+        func neighbors(_ id: Int) -> [Int] {
+            if id == startID { return near(start) }
+            let r = id / cols, k = id % cols
+            var out: [Int] = []
+            for dr in -1...1 { for dk in -1...1 where dr != 0 || dk != 0 {
+                let nr = r + dr, nk = k + dk
+                if nr >= 0, nr < rows, nk >= 0, nk < cols { out.append(nr * cols + nk) }
+            } }
+            if goalNeighbors.contains(id) { out.append(goalID) }
+            return out
+        }
+
+        var g: [Int: Double] = [startID: 0]
+        var cameFrom: [Int: Int] = [:]
+        var closed = Set<Int>()
+        var heap = MinHeap()
+        heap.push(cost(start, goal), startID)
+        while let (_, id) = heap.pop() {
+            if id == goalID {
+                var path = [goalID]
+                while let p = cameFrom[path.last!] { path.append(p) }
+                return smooth(path.reversed().map(coord), clear: clear)
+            }
+            guard closed.insert(id).inserted else { continue }
+            let here = coord(id)
+            for n in neighbors(id) where !closed.contains(n) {
+                let there = coord(n)
+                guard clear(here, there) else { continue }
+                let tentative = g[id]! + cost(here, there)
+                if tentative < g[n] ?? .infinity {
+                    g[n] = tentative
+                    cameFrom[n] = id
+                    heap.push(tentative + cost(there, goal), n)
                 }
             }
         }
-
-        // Fallback to direct if no path found
         return [start, goal]
     }
 
-    // MARK: - Grid System
-
-    private struct GridBounds {
-        let minLat, maxLat: Double
-        let minLon, maxLon: Double
-        let rows, cols: Int
-    }
-
-    private struct GridNode: Hashable, Equatable {
-        let row, col: Int
-        var fScore: Double = 0
-
-        static func == (lhs: GridNode, rhs: GridNode) -> Bool {
-            lhs.row == rhs.row && lhs.col == rhs.col
+    /// Drops grid zig-zags: from each point, jump to the farthest later point still in clear line of sight.
+    nonisolated static func smooth(_ path: [CLLocationCoordinate2D],
+                                   clear: (CLLocationCoordinate2D, CLLocationCoordinate2D) -> Bool) -> [CLLocationCoordinate2D] {
+        guard path.count > 2 else { return path }
+        var out = [path[0]]
+        var i = 0
+        while i < path.count - 1 {
+            var j = path.count - 1
+            while j > i + 1 && !clear(path[i], path[j]) { j -= 1 }
+            out.append(path[j])
+            i = j
         }
-
-        func hash(into hasher: inout Hasher) {
-            hasher.combine(row)
-            hasher.combine(col)
-        }
-    }
-
-    private func calculateBounds(start: CLLocationCoordinate2D, goal: CLLocationCoordinate2D, padding: Double) -> GridBounds {
-        let minLat = min(start.latitude, goal.latitude) - padding
-        let maxLat = max(start.latitude, goal.latitude) + padding
-        let minLon = min(start.longitude, goal.longitude) - padding
-        let maxLon = max(start.longitude, goal.longitude) + padding
-
-        let rows = Int((maxLat - minLat) / gridResolution) + 1
-        let cols = Int((maxLon - minLon) / gridResolution) + 1
-
-        return GridBounds(minLat: minLat, maxLat: maxLat, minLon: minLon, maxLon: maxLon, rows: rows, cols: cols)
-    }
-
-    private func buildGrid(bounds: GridBounds, altitude: Int, mode: RoutingMode, airspaces: [Airspace]) -> [[Bool]] {
-        var grid = Array(repeating: Array(repeating: true, count: bounds.cols), count: bounds.rows)
-
-        for row in 0..<bounds.rows {
-            for col in 0..<bounds.cols {
-                let lat = bounds.minLat + Double(row) * gridResolution
-                let lon = bounds.minLon + Double(col) * gridResolution
-                let coord = CLLocationCoordinate2D(latitude: lat, longitude: lon)
-
-                // Check if this grid cell is in forbidden airspace
-                let forbidden = airspaces.contains { airspace in
-                    guard airspace.isActive else { return false }
-                    guard altitude >= airspace.floor && altitude <= airspace.ceiling else { return false }
-
-                    switch mode {
-                    case .direct:
-                        return false
-                    case .avoidControlled:
-                        // Avoid Class B, C, D, E surface
-                        if case .classAirspace(let cls) = airspace.type {
-                            return cls.requiresATC
-                        }
-                        if case .classESurface = airspace.type {
-                            return true
-                        }
-                        return false
-                    case .avoidAllSUA:
-                        // Avoid all SUA that requires permission + controlled
-                        if case .classAirspace(let cls) = airspace.type {
-                            return cls.requiresATC
-                        }
-                        if case .sua(let sua) = airspace.type {
-                            return sua.requiresPermission
-                        }
-                        if case .classESurface = airspace.type {
-                            return true
-                        }
-                        return false
-                    }
-                }
-
-                grid[row][col] = !forbidden
-            }
-        }
-
-        return grid
-    }
-
-    private func gridNode(for coordinate: CLLocationCoordinate2D, in bounds: GridBounds) -> GridNode {
-        let row = Int((coordinate.latitude - bounds.minLat) / gridResolution)
-        let col = Int((coordinate.longitude - bounds.minLon) / gridResolution)
-        return GridNode(row: max(0, min(bounds.rows - 1, row)), col: max(0, min(bounds.cols - 1, col)))
-    }
-
-    private func coordinate(for node: GridNode, in bounds: GridBounds) -> CLLocationCoordinate2D {
-        let lat = bounds.minLat + Double(node.row) * gridResolution
-        let lon = bounds.minLon + Double(node.col) * gridResolution
-        return CLLocationCoordinate2D(latitude: lat, longitude: lon)
-    }
-
-    private func neighbors(of node: GridNode, in grid: [[Bool]], bounds: GridBounds) -> [GridNode] {
-        var result: [GridNode] = []
-        let directions = [
-            (-1, 0), (1, 0), (0, -1), (0, 1),  // Cardinal
-            (-1, -1), (-1, 1), (1, -1), (1, 1)  // Diagonal
-        ]
-
-        for (dr, dc) in directions {
-            let nr = node.row + dr
-            let nc = node.col + dc
-
-            guard nr >= 0 && nr < bounds.rows && nc >= 0 && nc < bounds.cols else { continue }
-            guard grid[nr][nc] else { continue } // Blocked
-
-            result.append(GridNode(row: nr, col: nc))
-        }
-        return result
-    }
-
-    private func distance(_ a: GridNode, _ b: GridNode, bounds: GridBounds) -> Double {
-        let coordA = coordinate(for: a, in: bounds)
-        let coordB = coordinate(for: b, in: bounds)
-        return Haversine.nauticalMiles(coordA, coordB)
-    }
-
-    private func heuristic(_ a: GridNode, _ b: GridNode) -> Double {
-        // Euclidean distance in grid space * approximate NM per grid
-        let dr = Double(a.row - b.row)
-        let dc = Double(a.col - b.col)
-        return sqrt(dr * dr + dc * dc) * gridResolution * 60.0 // Rough NM
-    }
-
-    private func reconstructPath(cameFrom: [GridNode: GridNode], current: GridNode, bounds: GridBounds) -> [CLLocationCoordinate2D] {
-        var path: [GridNode] = [current]
-        var node = current
-
-        while let parent = cameFrom[node] {
-            path.append(parent)
-            node = parent
-        }
-
-        return path.reversed().map { coordinate(for: $0, in: bounds) }
+        return out
     }
 
     // MARK: - Airspace Checking
@@ -521,28 +461,29 @@ enum AirspaceWarningType {
     }
 }
 
-// Simple priority queue for A*
-struct PriorityQueue<T> {
-    private var elements: [T] = []
-    private let comparator: (T, T) -> Bool
+/// Binary min-heap of (priority, node id) for A*.
+struct MinHeap {
+    private var items: [(Double, Int)] = []
 
-    init(comparator: @escaping (T, T) -> Bool) {
-        self.comparator = comparator
+    mutating func push(_ priority: Double, _ id: Int) {
+        items.append((priority, id))
+        var i = items.count - 1
+        while i > 0, items[(i - 1) / 2].0 > items[i].0 { items.swapAt(i, (i - 1) / 2); i = (i - 1) / 2 }
     }
 
-    mutating func enqueue(_ element: T) {
-        elements.append(element)
-        elements.sort(by: comparator)
-    }
-
-    mutating func dequeue() -> T? {
-        guard !elements.isEmpty else { return nil }
-        return elements.removeFirst()
-    }
-
-    var isEmpty: Bool { elements.isEmpty }
-
-    func contains(_ element: T) -> Bool where T: Equatable {
-        elements.contains(element)
+    mutating func pop() -> (Double, Int)? {
+        guard !items.isEmpty else { return nil }
+        items.swapAt(0, items.count - 1)
+        let top = items.removeLast()
+        var i = 0
+        while true {
+            let l = 2 * i + 1, r = l + 1
+            var m = i
+            if l < items.count, items[l].0 < items[m].0 { m = l }
+            if r < items.count, items[r].0 < items[m].0 { m = r }
+            if m == i { break }
+            items.swapAt(i, m); i = m
+        }
+        return top
     }
 }

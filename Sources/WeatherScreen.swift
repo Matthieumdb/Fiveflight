@@ -340,7 +340,9 @@ struct NearbyWeatherList: View {
 
     private var nearby: [Airport] {
         guard let loc = model.userLocation else { return [] }
-        return store.nearest(to: loc, limit: 10)
+        // Only airports that can have a METAR (US ICAO codes), not heliports and private strips.
+        return store.nearest(to: loc, limit: 80, matching: ["large_airport", "medium_airport", "small_airport"])
+            .filter { $0.id.count == 4 && ($0.id.hasPrefix("K") || $0.id.hasPrefix("P")) }
     }
 
     var body: some View {
@@ -479,10 +481,11 @@ struct WindLevelView: View {
                 .foregroundStyle(ColorToken.textTertiary)
 
             HStack(spacing: SpacingToken.space1) {
+                // FD direction is where the wind comes FROM; the arrow shows where it blows.
                 Image(systemName: "arrow.up")
                     .font(.system(size: 10))
-                    .rotationEffect(.degrees(Double(level.direction)))
-                Text("\(level.speed) kt")
+                    .rotationEffect(.degrees(Double(level.direction) + 180))
+                Text(String(format: "%03d° %d kt", level.direction, level.speed))
                     .font(TypographyToken.monoSmall)
             }
             .foregroundStyle(ColorToken.textPrimary)

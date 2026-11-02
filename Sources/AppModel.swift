@@ -61,7 +61,9 @@ final class AppModel: ObservableObject {
     }
 
     // Flight plan
-    @Published var waypoints: [Airport] = []
+    @Published var waypoints: [Airport] = [] { didSet { routedDistanceNM = nil } }
+    /// Length of the computed route (with airspace detours); straight-line legs until it is known.
+    @Published var routedDistanceNM: Double?
     @Published var legs: [RouteLeg] = []
     @Published var cruiseAlt: Int = 5500 { didSet { defaults.set(cruiseAlt, forKey: "cruiseAlt") } }
 
@@ -87,7 +89,20 @@ final class AppModel: ObservableObject {
         span: MKCoordinateSpan(latitudeDelta: 1.2, longitudeDelta: 1.2)
     )
 
-    @Published var userLocation: CLLocationCoordinate2D?
+    @Published var userLocation: CLLocationCoordinate2D? { didSet { recordTrack() } }
+    /// Flown track (breadcrumb): a point each time the aircraft has moved 100 m or more.
+    @Published private(set) var track: [CLLocationCoordinate2D] = []
+
+    private func recordTrack() {
+        guard let c = userLocation else { return }
+        if let last = track.last,
+           CLLocation(latitude: last.latitude, longitude: last.longitude)
+               .distance(from: CLLocation(latitude: c.latitude, longitude: c.longitude)) < 100 { return }
+        track.append(c)
+        if track.count > 20_000 { track.removeFirst(track.count - 20_000) }
+    }
+
+    func clearTrack() { track.removeAll() }
     @Published var showUserLocation = true
     @Published var followUser = false
 
@@ -257,6 +272,7 @@ final class AppModel: ObservableObject {
     // Computed properties for flight plan
     var totalDistanceNM: Double {
         guard waypoints.count >= 2 else { return 0 }
+        if let routedDistanceNM { return routedDistanceNM }
         var total = 0.0
         for i in 1..<waypoints.count {
             total += waypoints[i-1].distanceNM(to: waypoints[i].coordinate)

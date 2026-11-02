@@ -414,7 +414,7 @@ final class FiveflightTests: XCTestCase {
         }
         var all = [apt("KFPR", "medium_airport", 27.4975, -80.3726),
                    apt("KJFK", "large_airport", 40.64, -73.78),          // far outside
-                   apt("FD01", "heliport", 27.50, -80.37)]
+                   apt("FD01", "heliport", 27.60, -80.20)]
         for i in 0..<1000 { all.append(apt("S\(i)", "small_airport", 27.4 + Double(i) * 0.0001, -80.4)) }
 
         let wide = MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 27.5, longitude: -80.4),
@@ -425,7 +425,8 @@ final class FiveflightTests: XCTestCase {
         XCTAssertFalse(shown.contains { $0.id == "KJFK" })     // outside the view
         XCTAssertFalse(shown.contains { $0.id == "FD01" })     // heliports only when zoomed in
 
-        let close = MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 27.5, longitude: -80.37),
+        // Zoomed in around the heliport (the 1000 small airports are outside this view).
+        let close = MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 27.60, longitude: -80.20),
                                        span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1))
         XCTAssertTrue(MapScreen.airportsToShow(all, in: close).contains { $0.id == "FD01" })
     }

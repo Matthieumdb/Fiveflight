@@ -119,7 +119,7 @@ struct CalculatorsScreen: View {
 // MARK: - Weight & Balance Calculator
 
 struct WeightBalanceCalculator: View {
-    @EnvironmentObject private var wbModel: WeightBalanceModel
+    @StateObject private var wbModel = WeightBalanceModel()
 
     var body: some View {
         List {
@@ -644,7 +644,7 @@ struct TimeSpeedDistance {
     static func calculate(distance: Double?, speed: Double?, time: Double?) -> (distance: Double, speed: Double, time: Double) {
         var d = distance ?? 0, s = speed ?? 0, t = time ?? 0
 
-        if distance == nil { d = s * t / 60.0 } else if speed == nil { s = d / t * 60.0 } else { t = d / s * 60.0 }
+        if distance == nil { d = s * t / 60.0 } else if speed == nil { s = t > 0 ? d / t * 60.0 : 0 } else { t = s > 0 ? d / s * 60.0 : 0 }
 
         return (d, s, t)
     }

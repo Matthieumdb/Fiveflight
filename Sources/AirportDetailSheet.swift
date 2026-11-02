@@ -175,7 +175,7 @@ struct AirportDetailSheet: View {
         let lon = airport.coordinate.longitude
         let latDir = lat >= 0 ? "N" : "S"
         let lonDir = lon >= 0 ? "E" : "W"
-        return String(format: "%02d°%02d'%s %03d°%02d'%s",
+        return String(format: "%02d°%02d'%@ %03d°%02d'%@",
                       Int(abs(lat)), Int((abs(lat).truncatingRemainder(dividingBy: 1)) * 60), latDir,
                       Int(abs(lon)), Int((abs(lon).truncatingRemainder(dividingBy: 1)) * 60), lonDir)
     }

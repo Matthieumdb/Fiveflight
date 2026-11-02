@@ -27,7 +27,8 @@ struct SearchSheet: View {
             }
         }
         // ICAO/IATA exact-ish matches first.
-        return out.sorted { lhs, _ in lhs.id.uppercased().hasPrefix(q) || lhs.iata?.uppercased() == q }
+        let first = { (a: Airport) in a.id.uppercased().hasPrefix(q) || a.iata?.uppercased() == q }
+        return out.filter(first) + out.filter { !first($0) }
     }
 
     var body: some View {
@@ -52,7 +53,7 @@ struct SearchSheet: View {
             }
             .navigationTitle("Recherche")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, prompt: "Code OACI, IATA ou nom")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Code OACI, IATA ou nom")
             .textInputAutocapitalization(.characters)
             .overlay {
                 if !query.isEmpty && results.isEmpty { ContentUnavailableView.search(text: query) }

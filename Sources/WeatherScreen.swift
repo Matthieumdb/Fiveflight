@@ -344,7 +344,7 @@ struct NearbyWeatherList: View {
     }
 
     var body: some View {
-        ForEach(nearby.prefix(10)) { airport in
+        Group { ForEach(nearby.prefix(10)) { airport in
             if let metar = weatherService.metars[airport.id] {
                 HStack(spacing: SpacingToken.space3) {
                     ZStack {
@@ -392,6 +392,9 @@ struct NearbyWeatherList: View {
                 }
                 .buttonStyle(.plain)
             }
+        } }
+        .task(id: nearby.map(\.id)) {
+            await weatherService.refreshMETARs(forVisible: nearby.map(\.id))
         }
     }
 

@@ -49,7 +49,7 @@ struct FlightPlanScreen: View {
             }
             .sheet(isPresented: $showFlightPlanSheet) {
                 SearchSheet(nearest: store.nearest(to: model.userLocation ?? AppModel.homeCoordinate, limit: 20), onSelect: { airport in
-                    model.waypoints.append(airport)
+                    model.addWaypoint(airport)
                 })
             }
         }
@@ -89,31 +89,6 @@ private struct FlightPlanContent: View {
                         .font(TypographyToken.labelSmall)
                         .foregroundStyle(ColorToken.textTertiary)
                         .textCase(.uppercase)
-                }
-
-                // Airspace warnings
-                if !airspaceManager.airspaces.isEmpty {
-                    Section {
-                        Button {
-                            // Show detailed warnings
-                        } label: {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(ColorToken.warning)
-                                Text("Check Airspace Warnings")
-                                    .font(TypographyToken.bodyMedium)
-                                    .foregroundStyle(ColorToken.textPrimary)
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .foregroundStyle(ColorToken.textTertiary)
-                            }
-                        }
-                    } header: {
-                        Text("Airspace")
-                            .font(TypographyToken.labelSmall)
-                            .foregroundStyle(ColorToken.textTertiary)
-                            .textCase(.uppercase)
-                    }
                 }
 
                 // Performance section
@@ -180,7 +155,7 @@ private struct FlightPlanContent: View {
                             from: model.waypoints.first!.id,
                             to: model.waypoints.last!.id,
                             nm: Int(model.totalDistanceNM.rounded()),
-                            eteMinutes: Int(model.totalDistanceNM / model.cruiseGS * 60)
+                            eteMinutes: Int(model.totalTimeMinutes.rounded())
                         )
                     } label: {
                         Label("Log Flight", systemImage: "book.fill")

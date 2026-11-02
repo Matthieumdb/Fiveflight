@@ -292,7 +292,7 @@ struct AirspaceRow: View {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.system(size: 20))
                             .foregroundStyle(ColorToken.danger)
-                        Text("YOU'RE IN")
+                        Text("À CETTE ALT.")
                             .font(TypographyToken.labelXSmall)
                             .foregroundStyle(ColorToken.danger)
                     } else if altitude < airspace.floor {

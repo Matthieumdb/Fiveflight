@@ -26,9 +26,11 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
     @Published var accuracy: Double = 0
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published var isUpdating = false
+    @Published var isBackgroundModeEnabled = false
 
     private let manager = CLLocationManager()
     private var lastLocation: CLLocation?
+    private var isSignificantChangeMonitoring = false
 
     override init() {
         super.init()
@@ -36,6 +38,8 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
         manager.desiredAccuracy = kCLLocationAccuracyBest
         manager.distanceFilter = 10
         manager.headingFilter = 5
+        manager.pausesLocationUpdatesAutomatically = true
+        manager.allowsBackgroundLocationUpdates = false // Set to true when background mode enabled
         authorizationStatus = manager.authorizationStatus
     }
 
@@ -58,7 +62,31 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
     func stop() {
         manager.stopUpdatingLocation()
         manager.stopUpdatingHeading()
+        if isSignificantChangeMonitoring {
+            manager.stopMonitoringSignificantLocationChanges()
+            isSignificantChangeMonitoring = false
+        }
         isUpdating = false
+    }
+
+    func enableBackgroundMode(_ enabled: Bool) {
+        guard isBackgroundModeEnabled != enabled else { return }
+        isBackgroundModeEnabled = enabled
+
+        if enabled {
+            manager.allowsBackgroundLocationUpdates = true
+            // Start significant change monitoring for background updates
+            if !isSignificantChangeMonitoring {
+                manager.startMonitoringSignificantLocationChanges()
+                isSignificantChangeMonitoring = true
+            }
+        } else {
+            manager.allowsBackgroundLocationUpdates = false
+            if isSignificantChangeMonitoring {
+                manager.stopMonitoringSignificantLocationChanges()
+                isSignificantChangeMonitoring = false
+            }
+        }
     }
 
     private func startUpdating() {
@@ -105,6 +133,11 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("Location error: \(error.localizedDescription)")
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation], isSignificantChange: Bool) {
+        // Called for significant location changes (background mode)
+        didUpdateLocations(locations)
     }
 }
 

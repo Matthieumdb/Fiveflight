@@ -133,22 +133,56 @@ final class WeatherService: ObservableObject {
 
     private init() {}
 
+    // MARK: - Retry Helper
+
+    private func fetchWithRetry<T: Decodable>(
+        url: URL,
+        decode: @escaping (Data) throws -> T,
+        maxRetries: Int = 2,
+        baseDelay: TimeInterval = 1.0
+    ) async -> T? {
+        var lastError: Error?
+
+        for attempt in 0...maxRetries {
+            do {
+                let (data, response) = try await session.data(from: url)
+
+                // Check for HTTP errors
+                if let httpResponse = response as? HTTPURLResponse,
+                   httpResponse.statusCode >= 400 {
+                    throw URLError(.badServerResponse)
+                }
+
+                return try decode(data)
+            } catch {
+                lastError = error
+                if attempt < maxRetries {
+                    let delay = baseDelay * pow(2.0, Double(attempt))
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
+            }
+        }
+
+        if let error = lastError {
+            print("Fetch failed after retries: \(error)")
+        }
+        return nil
+    }
+
     // MARK: - METAR
 
     func fetchMETAR(for station: String) async -> METAR? {
         let urlString = "\(baseURL)/metar?ids=\(station)&format=json&taf=false&hours=2"
         guard let url = URL(string: urlString) else { return nil }
 
-        do {
-            let (data, _) = try await session.data(from: url)
-            let response = try JSONDecoder().decode([METARResponse].self, from: data)
-            if let metarResponse = response.first {
-                let metar = METAR(from: metarResponse)
-                metars[station] = metar
-                return metar
-            }
-        } catch {
-            print("METAR fetch error for \(station): \(error)")
+        let result: [METARResponse]? = await fetchWithRetry(url: url) { data in
+            try JSONDecoder().decode([METARResponse].self, from: data)
+        }
+
+        if let metarResponse = result?.first {
+            let metar = METAR(from: metarResponse)
+            metars[station] = metar
+            return metar
         }
         return nil
     }
@@ -158,15 +192,15 @@ final class WeatherService: ObservableObject {
         let urlString = "\(baseURL)/metar?ids=\(ids)&format=json&taf=false&hours=2"
         guard let url = URL(string: urlString) else { return }
 
-        do {
-            let (data, _) = try await session.data(from: url)
-            let response = try JSONDecoder().decode([METARResponse].self, from: data)
+        let result: [METARResponse]? = await fetchWithRetry(url: url) { data in
+            try JSONDecoder().decode([METARResponse].self, from: data)
+        }
+
+        if let response = result {
             for metarResponse in response {
                 let metar = METAR(from: metarResponse)
                 metars[metar.station] = metar
             }
-        } catch {
-            print("Batch METAR fetch error: \(error)")
         }
     }
 
@@ -176,16 +210,14 @@ final class WeatherService: ObservableObject {
         let urlString = "\(baseURL)/taf?ids=\(station)&format=json&hours=24"
         guard let url = URL(string: urlString) else { return nil }
 
-        do {
-            let (data, _) = try await session.data(from: url)
-            let response = try JSONDecoder().decode([TAFResponse].self, from: data)
-            if let tafResponse = response.first {
-                let taf = TAF(from: tafResponse)
-                tafs[station] = taf
-                return taf
-            }
-        } catch {
-            print("TAF fetch error for \(station): \(error)")
+        let result: [TAFResponse]? = await fetchWithRetry(url: url) { data in
+            try JSONDecoder().decode([TAFResponse].self, from: data)
+        }
+
+        if let tafResponse = result?.first {
+            let taf = TAF(from: tafResponse)
+            tafs[station] = taf
+            return taf
         }
         return nil
     }
@@ -195,15 +227,15 @@ final class WeatherService: ObservableObject {
         let urlString = "\(baseURL)/taf?ids=\(ids)&format=json&hours=24"
         guard let url = URL(string: urlString) else { return }
 
-        do {
-            let (data, _) = try await session.data(from: url)
-            let response = try JSONDecoder().decode([TAFResponse].self, from: data)
+        let result: [TAFResponse]? = await fetchWithRetry(url: url) { data in
+            try JSONDecoder().decode([TAFResponse].self, from: data)
+        }
+
+        if let response = result {
             for tafResponse in response {
                 let taf = TAF(from: tafResponse)
                 tafs[taf.station] = taf
             }
-        } catch {
-            print("Batch TAF fetch error: \(error)")
         }
     }
 
@@ -216,12 +248,12 @@ final class WeatherService: ObservableObject {
         let urlString = "\(baseURL)/wind?format=json"
         guard let url = URL(string: urlString) else { return }
 
-        do {
-            let (data, _) = try await session.data(from: url)
-            let response = try JSONDecoder().decode([WindsAloftResponse].self, from: data)
+        let result: [WindsAloftResponse]? = await fetchWithRetry(url: url) { data in
+            try JSONDecoder().decode([WindsAloftResponse].self, from: data)
+        }
+
+        if let response = result {
             windsAloft = response.compactMap { WindsAloft(from: $0) }
-        } catch {
-            print("Winds aloft fetch error: \(error)")
         }
     }
 
@@ -234,12 +266,12 @@ final class WeatherService: ObservableObject {
         let urlString = "\(baseURL)/pirep?format=json&hours=2"
         guard let url = URL(string: urlString) else { return }
 
-        do {
-            let (data, _) = try await session.data(from: url)
-            let response = try JSONDecoder().decode([PIREPResponse].self, from: data)
+        let result: [PIREPResponse]? = await fetchWithRetry(url: url) { data in
+            try JSONDecoder().decode([PIREPResponse].self, from: data)
+        }
+
+        if let response = result {
             pireps = response.compactMap { PIREP(from: $0) }
-        } catch {
-            print("PIREP fetch error: \(error)")
         }
     }
 
@@ -252,12 +284,12 @@ final class WeatherService: ObservableObject {
         let urlString = "\(baseURL)/airsigmet?format=json&hours=6"
         guard let url = URL(string: urlString) else { return }
 
-        do {
-            let (data, _) = try await session.data(from: url)
-            let response = try JSONDecoder().decode([AirSigmetResponse].self, from: data)
+        let result: [AirSigmetResponse]? = await fetchWithRetry(url: url) { data in
+            try JSONDecoder().decode([AirSigmetResponse].self, from: data)
+        }
+
+        if let response = result {
             airsigmets = response.compactMap { AirSigmet(from: $0) }
-        } catch {
-            print("AIRMET/SIGMET fetch error: \(error)")
         }
     }
 

@@ -11,18 +11,12 @@ struct MapScreen: View {
     @EnvironmentObject private var weatherService: WeatherService
     @StateObject private var locationManager = LocationManager()
 
-    @State private var cameraPosition: MapCameraPosition = .region(
-        MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 39.8283, longitude: -98.5795),
-            span: MKCoordinateSpan(latitudeDelta: 10, longitudeDelta: 10)
-        )
-    )
+    @State private var regionVersion = 0
     @State private var showFlightPlanPanel = false
     @State private var showLayersPanel = false
     @State private var showNearbyPanel = false
     @State private var showSearch = false
     @State private var selectedAirport: Airport?
-    @State private var mapStyle: MapStyle = .hybrid(elevation: .realistic)
     @State private var routePolyline: [CLLocationCoordinate2D] = []
     @State private var routeWarnings: [RouteWarning] = []
 
@@ -37,87 +31,29 @@ struct MapScreen: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            // MARK: - Full Screen Map
-            MapReader { _ in
-                Map(position: $cameraPosition, interactionModes: .all) {
-                    // User location
-                    if model.showUserLocation, let loc = locationManager.location {
-                        UserAnnotation()
-                    }
-
-                    // Route polyline
-                    if !routePolyline.isEmpty {
-                        MapPolyline(coordinates: routePolyline)
-                            .stroke(ColorToken.brandPrimary, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-                    }
-
-                    // Airspace overlays - using pre-filtered arrays
-                    if model.showAirspace {
-                        ForEach(activeAirspaces) { airspace in
-                            let color = airspaceColor(airspace)
-                            ForEach(Array(airspace.polygons.enumerated()), id: \.offset) { _, polygon in
-                                if polygon.count >= 3 {
-                                    let coordinates = polygon.map { $0.clCoordinate }
-                                    MapPolygon(coordinates: coordinates)
-                                        .foregroundStyle(color.opacity(0.15))
-                                    MapPolygon(coordinates: coordinates)
-                                        .stroke(color, style: StrokeStyle(lineWidth: 1.5, dash: [8, 4]))
-                                }
-                            }
-                        }
-                    }
-
-                    // TFRs
-                    if model.showTFRs {
-                        ForEach(activeAirspaces.filter { airspaceTypeIsTFR($0) }) { airspace in
-                            ForEach(Array(airspace.polygons.enumerated()), id: \.offset) { _, polygon in
-                                if polygon.count >= 3 {
-                                    let coordinates = polygon.map { $0.clCoordinate }
-                                    MapPolygon(coordinates: coordinates)
-                                        .foregroundStyle(ColorToken.tfr.opacity(0.2))
-                                    MapPolygon(coordinates: coordinates)
-                                        .stroke(ColorToken.tfr, style: StrokeStyle(lineWidth: 2, dash: [4, 4]))
-                                }
-                            }
-                        }
-                    }
-
-                    // Airport markers
-                    ForEach(visibleAirports) { airport in
-                        Annotation("", coordinate: airport.coordinate) {
-                            AirportMapMarker(airport: airport, isSelected: selectedAirport?.id == airport.id)
-                                .onTapGesture {
-                                    withAnimation(AnimationToken.fast) {
-                                        selectedAirport = airport
-                                        model.selectedAirport = airport
-                                    }
-                                }
-                        }
-                    }
-
-                    // Waypoint markers
-                    ForEach(Array(model.waypoints.enumerated()), id: \.element.id) { index, airport in
-                        Annotation("", coordinate: airport.coordinate) {
-                            WaypointMapMarker(index: index, airport: airport)
-                        }
-                    }
-                }
-                .mapStyle(mapStyle)
-                .mapControls {
-                    MapUserLocationButton()
-                    MapCompass()
-                    MapScaleView()
-                }
-                .onMapCameraChange { context in
-                    model.mapRegion = context.region
-                }
-                .onTapGesture {
+            // MARK: - Full Screen Map (VFRMapView with MKTileOverlay)
+            VFRMapView(
+                showSectional: model.showSectional,
+                showWeather: model.showRadar,
+                nearest: visibleAirports,
+                waypoints: model.waypoints,
+                categories: weatherService.categories,
+                userCoord: model.userLocation,
+                region: model.mapRegion,
+                regionVersion: regionVersion,
+                onSelect: { airport in
                     withAnimation(AnimationToken.fast) {
-                        selectedAirport = nil
-                        model.selectedAirport = nil
+                        selectedAirport = airport
+                        model.selectedAirport = airport
                     }
-                }
-            }
+                },
+                onRegionChange: { region in
+                    model.mapRegion = region
+                },
+                airspaces: activeAirspaces,
+                showAirspace: model.showAirspace,
+                showTFRs: model.showTFRs
+            )
             .ignoresSafeArea()
 
             // MARK: - Top Bar
@@ -163,7 +99,7 @@ struct MapScreen: View {
         .animation(AnimationToken.transition, value: showNearbyPanel)
         .animation(AnimationToken.transition, value: selectedAirport)
         .sheet(isPresented: $showSearch) {
-            SearchSheet(nearest: store.nearest(to: model.userLocation ?? CLLocationCoordinate2D(latitude: 39.8283, longitude: -98.5795), maxCount: 20))
+            SearchSheet(nearest: store.nearest(to: model.userLocation ?? CLLocationCoordinate2D(latitude: 39.8283, longitude: -98.5795), limit: 20))
         }
         .onAppear {
             locationManager.start()
@@ -190,38 +126,6 @@ struct MapScreen: View {
             return true
         }
         return maxDelta < 2.0 // Show small airports when zoomed in
-    }
-
-    private func airspaceColor(_ airspace: Airspace) -> Color {
-        switch airspace.type {
-        case .classAirspace(let cls):
-            switch cls {
-            case .A: return ColorToken.classA
-            case .B: return ColorToken.classB
-            case .C: return ColorToken.classC
-            case .D: return ColorToken.classD
-            case .E: return ColorToken.classE
-            case .G: return ColorToken.classG
-            }
-        case .sua(let sua):
-            switch sua {
-            case .moa: return ColorToken.moa
-            case .restricted: return ColorToken.restricted
-            case .prohibited: return ColorToken.prohibited
-            case .warning: return ColorToken.warningArea
-            case .alert: return ColorToken.alertArea
-            case .cfa: return ColorToken.cfa
-            case .tf: return ColorToken.tfr
-            case .nationalSecurity: return ColorToken.nationalSecurity
-            }
-        case .airway: return ColorToken.info
-        case .classESurface: return ColorToken.classESurface
-        }
-    }
-
-    private func airspaceTypeIsTFR(_ airspace: Airspace) -> Bool {
-        if case .sua(let sua) = airspace.type, sua == .tf { return true }
-        return false
     }
 
     private func calculateAndUpdateRoute() async {

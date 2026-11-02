@@ -5,6 +5,10 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag de release à créer sur le commit choisi (ex. v1.0.40)'
+        required: true
 
 permissions:
   contents: write
@@ -12,6 +16,7 @@ permissions:
 env:
   PROJECT_NAME: Fiveflight
   SCHEME_NAME: Fiveflight
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   build-and-release:
@@ -35,7 +40,7 @@ jobs:
         run: xcodegen generate
       - name: Derive version from tag
         run: |
-          TAG="${GITHUB_REF_NAME#v}"
+          TAG="${RELEASE_TAG#v}"
           if [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "MARKETING_VERSION=$TAG" >> "$GITHUB_ENV"
             echo "CURRENT_PROJECT_VERSION=${TAG##*.}" >> "$GITHUB_ENV"
@@ -176,19 +181,18 @@ jobs:
           echo "Payload contents:"
           ls -la build/ipa/Payload/
           cd build/ipa
-          IPA_NAME="${PROJECT_NAME}-${GITHUB_REF_NAME}.ipa"
+          IPA_NAME="${PROJECT_NAME}-${RELEASE_TAG}.ipa"
           zip -r "$IPA_NAME" Payload/
           echo "IPA size: $(ls -lh "$IPA_NAME" | awk '{print $5}')"
           echo "IPA_NAME=$IPA_NAME" >> $GITHUB_OUTPUT
-        env:
-          GITHUB_REF_NAME: ${{ github.ref_name }}
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Fiveflight ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
+          name: Fiveflight ${{ env.RELEASE_TAG }}
           body: |
-            ## Fiveflight ${{ github.ref_name }} (Unsigned IPA)
+            ## Fiveflight ${{ env.RELEASE_TAG }} (Unsigned IPA)
 
             **Build:** ${{ github.run_number }}
             **Date:** ${{ github.event.head_commit.timestamp }}
@@ -197,7 +201,7 @@ jobs:
             Cette IPA n'est **pas signée**. Pour l'installer, utilisez **Sideloadly** ou **AltStore** qui la re-signeront avec votre Apple ID.
 
             ### Installation
-            1. Téléchargez `Fiveflight-${{ github.ref_name }}.ipa` ci-dessous
+            1. Téléchargez `Fiveflight-${{ env.RELEASE_TAG }}.ipa` ci-dessous
             2. Installez via Sideloadly (Windows/macOS) ou AltStore (macOS/iOS)
             3. L'app sera signée avec votre identifiant Apple (valide 7 jours gratuit, 1 an payant)
 
@@ -207,7 +211,7 @@ jobs:
             - Compte Apple ID (gratuit)
 
           files: |
-            build/ipa/Fiveflight-${{ github.ref_name }}.ipa
+            build/ipa/Fiveflight-${{ env.RELEASE_TAG }}.ipa
           draft: false
           prerelease: false
         env:
@@ -215,6 +219,6 @@ jobs:
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Fiveflight-${{ github.ref_name }}-unsigned-ipa
-          path: build/ipa/Fiveflight-${{ github.ref_name }}.ipa
+          name: Fiveflight-${{ env.RELEASE_TAG }}-unsigned-ipa
+          path: build/ipa/Fiveflight-${{ env.RELEASE_TAG }}.ipa
           retention-days: 30

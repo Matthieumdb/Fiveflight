@@ -13,6 +13,8 @@ final class AirspaceDataManager: ObservableObject {
     @Published var isLoading = false
     @Published var lastUpdate: Date?
     @Published var error: String?
+    @Published var ctafParseProgress: Double = 0
+    @Published var ctafParseError: String?
 
     private let cacheURL: URL
     private let updateInterval: TimeInterval = 24 * 3600 // 24 hours
@@ -84,15 +86,27 @@ final class AirspaceDataManager: ObservableObject {
 
     /// Loads CTAF/UNICOM frequencies from bundled airport-frequencies.csv
     private func fetchCTAF() async -> [String: [CTAFFrequency]] {
+        ctafParseProgress = 0
+        ctafParseError = nil
+
         guard let url = Bundle.main.url(forResource: "airport-frequencies", withExtension: "csv"),
-              let text = try? String(contentsOf: url, encoding: .utf8) else { return [:] }
+              let text = try? String(contentsOf: url, encoding: .utf8) else {
+            ctafParseError = "CSV file not found"
+            return [:]
+        }
 
         var result: [String: [CTAFFrequency]] = [:]
         let lines = text.split(separator: "\n", omittingEmptySubsequences: true).dropFirst()
+        let totalLines = lines.count
 
-        for line in lines {
+        for (index, line) in lines.enumerated() {
+            // Update progress every 100 lines
+            if index % 100 == 0 {
+                await MainActor.run { self.ctafParseProgress = Double(index) / Double(max(1, totalLines)) }
+            }
+
             let fields = CSV.parseLine(line)
-            guard fields.count >= 4 else { continue }
+            guard fields.count >= 6 else { continue }
 
             // airport-frequencies.csv columns: id, airport_ref, airport_ident, type, description, frequency_mhz
             let airportIdent = fields[2].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
@@ -101,7 +115,7 @@ final class AirspaceDataManager: ObservableObject {
             let type = fields[3].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
             guard !type.isEmpty else { continue }
 
-            let freqStr = fields[4].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            let freqStr = fields[5].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
             guard !freqStr.isEmpty, let freqMHz = Double(freqStr) else { continue }
 
             let freqType = type.lowercased()
@@ -109,11 +123,13 @@ final class AirspaceDataManager: ObservableObject {
                 let ctaf = CTAFFrequency(
                     frequency: freqMHz,
                     type: freqType,
-                    description: fields.count > 5 ? fields[5].trimmingCharacters(in: CharacterSet(charactersIn: "\"")) : ""
+                    description: fields.count > 4 ? fields[4].trimmingCharacters(in: CharacterSet(charactersIn: "\"")) : ""
                 )
                 result[airportIdent, default: []].append(ctaf)
             }
         }
+
+        await MainActor.run { self.ctafParseProgress = 1.0 }
         return result
     }
 

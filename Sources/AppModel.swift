@@ -1,305 +1,269 @@
 import Foundation
-import SwiftUI
-import CoreLocation
 import MapKit
+import CoreLocation
+import SwiftUI
 
-/// Central app state - single source of truth
+struct LogEntry: Codable, Identifiable {
+    var id = UUID()
+    var date: Date
+    var from: String
+    var to: String
+    var nm: Int
+    var eteMinutes: Int
+}
+
+struct AircraftProfile: Codable, Identifiable, Hashable {
+    var id = UUID()
+    let name: String
+    let type: String
+    let cruiseSpeed: Double
+    let fuelBurn: Double
+    let capacityGal: Double
+
+    var enduranceHours: Double {
+        guard fuelBurn > 0 else { return 0 }
+        return capacityGal / fuelBurn
+    }
+
+    static let defaultProfiles: [AircraftProfile] = [
+        AircraftProfile(name: "Cessna 172S", type: "C172", cruiseSpeed: 122, fuelBurn: 8.5, capacityGal: 53),
+        AircraftProfile(name: "Piper PA-28-180", type: "PA28", cruiseSpeed: 124, fuelBurn: 9.0, capacityGal: 48),
+        AircraftProfile(name: "Cirrus SR22T", type: "SR22", cruiseSpeed: 183, fuelBurn: 14.0, capacityGal: 81),
+        AircraftProfile(name: "Diamond DA40", type: "DA40", cruiseSpeed: 130, fuelBurn: 7.5, capacityGal: 40),
+    ]
+}
+
+struct ChecklistItem: Codable, Identifiable {
+    var id = UUID()
+    var text: String
+    var done = false
+}
+
+struct Checklist: Codable, Identifiable {
+    var id = UUID()
+    var name: String
+    var items: [ChecklistItem]
+}
+
+/// App-wide persisted state: favourites, logbook, checklists. Saved to UserDefaults.
 @MainActor
 final class AppModel: ObservableObject {
-    static let shared = AppModel()
+    @Published var favorites: Set<String> = []
+    @Published var logbook: [LogEntry] = []
+    @Published var checklists: [Checklist] = []
+    @Published var recents: [String] = []   // recently viewed ICAOs, most recent first
+    @Published var directTo: String?   // ICAO requested as route destination from a detail sheet
 
-    // MARK: - Flight Plan
+    func markViewed(_ id: String) {
+        recents.removeAll { $0 == id }
+        recents.insert(id, at: 0)
+        if recents.count > 15 { recents = Array(recents.prefix(15)) }
+        defaults.set(recents, forKey: "recents")
+    }
+
+    // Flight plan
     @Published var waypoints: [Airport] = []
-    @Published var cruiseAlt: Int = 5500
-    @Published var cruiseGS: Double = 120
-    @Published var fuelBurn: Double = 10
-    @Published var reserveMin: Int = 30
+    @Published var legs: [RouteLeg] = []
+    @Published var cruiseAlt: Int = 5500 { didSet { defaults.set(cruiseAlt, forKey: "cruiseAlt") } }
 
-    // MARK: - Map State
+    // Map state
     @Published var mapRegion = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 39.8283, longitude: -98.5795),
         span: MKCoordinateSpan(latitudeDelta: 10, longitudeDelta: 10)
-    )
+    ) { didSet { saveMapRegion() } }
     @Published var userLocation: CLLocationCoordinate2D?
     @Published var showUserLocation = true
     @Published var followUser = false
 
-    // MARK: - Layer Visibility
-    @Published var showSectional = true
-    @Published var showRadar = false
-    @Published var showAirspace = true
-    @Published var showAirways = false
-    @Published var showTFRs = true
-    @Published var showWindsAloft = false
-    @Published var showPIREPs = false
-    @Published var showAIRMETs = false
+    // Map layer visibility (persisted)
+    @AppStorage("showSectional") var showSectional: Bool = true
+    @AppStorage("showRadar") var showRadar: Bool = false
+    @AppStorage("showAirspace") var showAirspace: Bool = true
+    @AppStorage("showTFRs") var showTFRs: Bool = true
+    @AppStorage("showWindsAloft") var showWindsAloft: Bool = true
+    @AppStorage("showPIREPs") var showPIREPs: Bool = true
+    @AppStorage("showAIRMETs") var showAIRMETs: Bool = true
+    @AppStorage("showAirways") var showAirways: Bool = true
 
-    // MARK: - UI State
+    // Appearance (persisted): 0 = System, 1 = Light, 2 = Dark
+    @AppStorage("appearanceMode") var appearanceMode: Int = 0
+
+    // UI state
     @Published var selectedAirport: Airport?
-    @Published var showingAirportDetail = false
-    @Published var showingSearch = false
-    @Published var showingFlightPlan = false
-    @Published var showingCalculators = false
-    @Published var showingChecklist = false
-    @Published var showingLogbook = false
-    @Published var showingSettings = false
-    @Published var showingWeather = false
-    @Published var showingAirspace = false
-    @Published var showingNearby = false
-
-    // MARK: - Persistence
-    @Published var favorites: Set<String> = []
-    @Published var recents: [String] = []
-    @Published var aircraftProfiles: [AircraftProfile] = []
     @Published var selectedAircraft: AircraftProfile?
+    @Published var aircraftProfiles: [AircraftProfile] = AircraftProfile.defaultProfiles
 
-    // MARK: - Data
-    @Published var lastWeatherUpdate: Date?
-    @Published var lastAirspaceUpdate: Date?
+    // Aircraft profile (persisted, shared by the flight computer and plan)
+    @Published var nightMode = false { didSet { defaults.set(nightMode, forKey: "nightMode") } }
+    @Published var cruiseGS = 110.0 { didSet { saveProfile() } }
+    @Published var fuelBurn = 8.0    { didSet { saveProfile() } }
+    @Published var reserveMin = 45.0 { didSet { saveProfile() } }
 
     private let defaults = UserDefaults.standard
-    private let favoritesKey = "favorites"
-    private let recentsKey = "recents"
-    private let aircraftKey = "aircraftProfiles"
 
-    private init() {
-        loadPersistence()
-        setupDefaultAircraft()
+    static let shared = AppModel()
+
+    init() { load() }
+
+    // Favorites
+    func isFavorite(_ id: String) -> Bool { favorites.contains(id) }
+    func toggleFavorite(_ id: String) {
+        if favorites.contains(id) { favorites.remove(id) } else { favorites.insert(id) }
+        Haptics.tap()
+        save()
     }
 
-    // MARK: - Flight Plan Management
-
+    // Flight plan
     func addWaypoint(_ airport: Airport) {
-        // Avoid duplicates
-        if !waypoints.contains(where: { $0.id == airport.id }) {
-            waypoints.append(airport)
-            addToRecents(airport.id)
-        }
-    }
-
-    func insertWaypoint(_ airport: Airport, at index: Int) {
-        if !waypoints.contains(where: { $0.id == airport.id }) {
-            waypoints.insert(airport, at: index)
-            addToRecents(airport.id)
-        }
-    }
-
-    func removeWaypoint(_ airport: Airport) {
-        waypoints.removeAll { $0.id == airport.id }
-    }
-
-    func removeWaypoint(at index: Int) {
-        guard index >= 0 && index < waypoints.count else { return }
-        waypoints.remove(at: index)
+        guard !waypoints.contains(where: { $0.id == airport.id }) else { return }
+        waypoints.append(airport)
+        Haptics.tap()
     }
 
     func clearFlightPlan() {
         waypoints.removeAll()
-    }
-
-    func reverseFlightPlan() {
-        waypoints.reverse()
-    }
-
-    // MARK: - Computed Flight Plan Data
-
-    var legs: [FlightLeg] {
-        guard waypoints.count >= 2 else { return [] }
-        return zip(waypoints, waypoints.dropFirst()).enumerated().map { index, pair in
-            let (from, to) = pair
-            let distance = Haversine.nauticalMiles(from.coordinate, to.coordinate)
-            let course = Haversine.trueCourse(from.coordinate, to.coordinate)
-            let time = cruiseGS > 0 ? distance / cruiseGS * 60 : 0
-            let fuel = cruiseGS > 0 ? distance / cruiseGS * fuelBurn : 0
-            return FlightLeg(
-                index: index,
-                from: from,
-                to: to,
-                distanceNM: distance,
-                trueCourse: course,
-                timeMinutes: time,
-                fuelGallons: fuel
-            )
-        }
-    }
-
-    var totalDistanceNM: Double {
-        legs.reduce(0) { $0 + $1.distanceNM }
-    }
-
-    var totalTimeMinutes: Double {
-        legs.reduce(0) { $0 + $1.timeMinutes }
-    }
-
-    var totalFuelGallons: Double {
-        let enroute = legs.reduce(0) { $0 + $1.fuelGallons }
-        let reserve = Double(reserveMin) / 60.0 * fuelBurn
-        return enroute + reserve
-    }
-
-    var formattedTotalTime: String {
-        let m = Int(totalTimeMinutes.rounded())
-        return m >= 60 ? "\(m/60)h\(String(format: "%02d", m%60))m" : "\(m)m"
-    }
-
-    // MARK: - Favorites
-
-    func toggleFavorite(_ ident: String) {
-        if favorites.contains(ident) {
-            favorites.remove(ident)
-        } else {
-            favorites.insert(ident)
-        }
-        savePersistence()
-    }
-
-    func isFavorite(_ ident: String) -> Bool {
-        favorites.contains(ident)
-    }
-
-    // MARK: - Recents
-
-    private func addToRecents(_ ident: String) {
-        recents.removeAll { $0 == ident }
-        recents.insert(ident, at: 0)
-        if recents.count > 20 { recents = Array(recents.prefix(20)) }
-        savePersistence()
-    }
-
-    // MARK: - Aircraft Profiles
-
-    private func setupDefaultAircraft() {
-        if aircraftProfiles.isEmpty {
-            aircraftProfiles = [
-                AircraftProfile(
-                    name: "Cessna 172S",
-                    type: "C172",
-                    cruiseSpeed: 120,
-                    fuelBurn: 10,
-                    usableFuel: 53,
-                    maxWeight: 2550,
-                    emptyWeight: 1650,
-                    cgForward: 35,
-                    cgAft: 47
-                ),
-                AircraftProfile(
-                    name: "Piper PA-28-181",
-                    type: "P28A",
-                    cruiseSpeed: 115,
-                    fuelBurn: 9.5,
-                    usableFuel: 48,
-                    maxWeight: 2550,
-                    emptyWeight: 1600,
-                    cgForward: 35,
-                    cgAft: 47
-                ),
-                AircraftProfile(
-                    name: "Cirrus SR22",
-                    type: "SR22",
-                    cruiseSpeed: 180,
-                    fuelBurn: 14,
-                    usableFuel: 81,
-                    maxWeight: 3400,
-                    emptyWeight: 2300,
-                    cgForward: 35,
-                    cgAft: 47
-                )
-            ]
-            selectedAircraft = aircraftProfiles.first
-            savePersistence()
-        }
+        legs.removeAll()
+        Haptics.success()
     }
 
     func selectAircraft(_ aircraft: AircraftProfile) {
         selectedAircraft = aircraft
         cruiseGS = aircraft.cruiseSpeed
         fuelBurn = aircraft.fuelBurn
-        savePersistence()
+        Haptics.tap()
     }
 
-    // MARK: - Logbook
-
+    // Logbook
     func logFlight(from: String, to: String, nm: Int, eteMinutes: Int) {
-        let entry = LogbookEntry(
-            date: Date(),
-            from: from,
-            to: to,
-            distanceNM: nm,
-            eteMinutes: eteMinutes,
-            aircraft: selectedAircraft?.name ?? "Unknown",
-            conditions: "VFR"
-        )
-        // Would save to persistent store
-        print("Logged flight: \(entry)")
+        logbook.insert(LogEntry(date: .now, from: from, to: to, nm: nm, eteMinutes: eteMinutes), at: 0)
+        Haptics.success()
+        save()
+    }
+    func deleteLog(_ offsets: IndexSet) { logbook.remove(atOffsets: offsets); save() }
+
+    // Checklists
+    func toggle(_ item: ChecklistItem, in list: Checklist) {
+        guard let li = checklists.firstIndex(where: { $0.id == list.id }),
+              let ii = checklists[li].items.firstIndex(where: { $0.id == item.id }) else { return }
+        checklists[li].items[ii].done.toggle()
+        Haptics.tap()
+        save()
+    }
+    func reset(_ list: Checklist) {
+        guard let li = checklists.firstIndex(where: { $0.id == list.id }) else { return }
+        for i in checklists[li].items.indices { checklists[li].items[i].done = false }
+        save()
     }
 
-    // MARK: - Persistence
-
-    private func loadPersistence() {
-        favorites = Set(defaults.stringArray(forKey: favoritesKey) ?? [])
-        recents = defaults.stringArray(forKey: recentsKey) ?? []
-
-        if let data = defaults.data(forKey: aircraftKey),
-           let decoded = try? JSONDecoder().decode([AircraftProfile].self, from: data) {
-            aircraftProfiles = decoded
-            selectedAircraft = decoded.first
+    // Persistence
+    private func load() {
+        if let d = defaults.data(forKey: "favorites"),
+           let v = try? JSONDecoder().decode(Set<String>.self, from: d) { favorites = v }
+        if let d = defaults.data(forKey: "logbook"),
+           let v = try? JSONDecoder().decode([LogEntry].self, from: d) { logbook = v }
+        if let d = defaults.data(forKey: "checklists"),
+           let v = try? JSONDecoder().decode([Checklist].self, from: d) { checklists = v }
+        if checklists.isEmpty { checklists = Self.defaultChecklists }
+        recents = defaults.stringArray(forKey: "recents") ?? []
+        nightMode = defaults.bool(forKey: "nightMode")
+        if defaults.object(forKey: "cruiseGS") != nil { cruiseGS = defaults.double(forKey: "cruiseGS") }
+        if defaults.object(forKey: "fuelBurn") != nil { fuelBurn = defaults.double(forKey: "fuelBurn") }
+        if defaults.object(forKey: "reserveMin") != nil { reserveMin = defaults.double(forKey: "reserveMin") }
+        if defaults.object(forKey: "cruiseAlt") != nil { cruiseAlt = defaults.integer(forKey: "cruiseAlt") }
+        if let data = defaults.data(forKey: "mapRegion"),
+           let region = try? JSONDecoder().decode(MKCoordinateRegionCodable.self, from: data) {
+            mapRegion = region.region
         }
     }
 
-    private func savePersistence() {
-        defaults.set(Array(favorites), forKey: favoritesKey)
-        defaults.set(recents, forKey: recentsKey)
-        if let data = try? JSONEncoder().encode(aircraftProfiles) {
-            defaults.set(data, forKey: aircraftKey)
+    private func saveMapRegion() {
+        if let data = try? JSONEncoder().encode(MKCoordinateRegionCodable(mapRegion)) {
+            defaults.set(data, forKey: "mapRegion")
         }
     }
-}
 
-// MARK: - Supporting Models
-
-struct FlightLeg: Identifiable {
-    var id = UUID()
-    let index: Int
-    let from: Airport
-    let to: Airport
-    let distanceNM: Double
-    let trueCourse: Int
-    let timeMinutes: Double
-    let fuelGallons: Double
-
-    var formattedDistance: String { String(format: "%.0f NM", distanceNM) }
-    var formattedTime: String {
-        let m = Int(timeMinutes.rounded())
-        return m >= 60 ? "\(m/60)h\(String(format: "%02d", m%60))m" : "\(m)m"
+    private func saveProfile() {
+        defaults.set(cruiseGS, forKey: "cruiseGS")
+        defaults.set(fuelBurn, forKey: "fuelBurn")
+        defaults.set(reserveMin, forKey: "reserveMin")
     }
-    var formattedFuel: String { String(format: "%.1f gal", fuelGallons) }
-    var courseString: String { String(format: "%03d°", trueCourse) }
+    private func save() {
+        let e = JSONEncoder()
+        defaults.set(try? e.encode(favorites), forKey: "favorites")
+        defaults.set(try? e.encode(logbook), forKey: "logbook")
+        defaults.set(try? e.encode(checklists), forKey: "checklists")
+    }
+
+    static let defaultChecklists: [Checklist] = [
+        Checklist(name: "Prévol", items: [
+            "Documents à bord", "Essence & huile vérifiées", "Surfaces & gouvernes",
+            "Pneus & freins", "Pitot / prises statiques", "Feux & gyrophare"
+        ].map { ChecklistItem(text: $0) }),
+        Checklist(name: "Avant décollage", items: [
+            "Harnais & portes", "Volets réglés", "Trim décollage",
+            "Instruments moteur dans le vert", "Magnétos testées", "Transpondeur ALT"
+        ].map { ChecklistItem(text: $0) }),
+        Checklist(name: "Après atterrissage", items: [
+            "Volets rentrés", "Transpondeur STBY", "Feux inutiles éteints", "Réchauffage carbu froid"
+        ].map { ChecklistItem(text: $0) })
+    ]
+
+    // Computed properties for flight plan
+    var totalDistanceNM: Double {
+        guard waypoints.count >= 2 else { return 0 }
+        var total = 0.0
+        for i in 1..<waypoints.count {
+            total += waypoints[i-1].distanceNM(to: waypoints[i].coordinate)
+        }
+        return total
+    }
+
+    var totalTimeMinutes: Double {
+        guard totalDistanceNM > 0 && cruiseGS > 0 else { return 0 }
+        return (totalDistanceNM / cruiseGS) * 60
+    }
+
+    var formattedTotalTime: String {
+        guard totalDistanceNM > 0 && cruiseGS > 0 else { return "—" }
+        let hours = totalDistanceNM / cruiseGS
+        let totalMinutes = Int(hours * 60)
+        let h = totalMinutes / 60
+        let m = totalMinutes % 60
+        return h > 0 ? "\(h)h \(m)min" : "\(m)min"
+    }
+
+    var totalFuelGallons: Double {
+        guard fuelBurn > 0 && totalDistanceNM > 0 && cruiseGS > 0 else { return 0 }
+        let hours = totalDistanceNM / cruiseGS
+        return hours * fuelBurn + (reserveMin / 60.0 * fuelBurn)
+    }
 }
 
-struct AircraftProfile: Identifiable, Codable, Hashable {
-    var id = UUID()
-    var name: String
-    var type: String
-    var cruiseSpeed: Double
-    var fuelBurn: Double
-    var usableFuel: Double
-    var maxWeight: Int
-    var emptyWeight: Int
-    var cgForward: Int
-    var cgAft: Int
+/// Codable wrapper for MKCoordinateRegion
+struct MKCoordinateRegionCodable: Codable {
+    let center: CLLocationCoordinate2DCodable
+    let span: MKCoordinateSpanCodable
 
-    var usefulLoad: Int { maxWeight - emptyWeight }
-    var enduranceHours: Double { usableFuel / fuelBurn }
-    var rangeNM: Double { enduranceHours * cruiseSpeed }
+    var region: MKCoordinateRegion {
+        MKCoordinateRegion(center: center.coordinate, span: span.span)
+    }
+
+    init(_ region: MKCoordinateRegion) {
+        self.center = CLLocationCoordinate2DCodable(region.center)
+        self.span = MKCoordinateSpanCodable(region.span)
+    }
 }
 
-struct LogbookEntry: Identifiable, Codable {
-    var id = UUID()
-    let date: Date
-    let from: String
-    let to: String
-    let distanceNM: Int
-    let eteMinutes: Int
-    let aircraft: String
-    let conditions: String
+struct CLLocationCoordinate2DCodable: Codable {
+    let latitude: Double
+    let longitude: Double
+    var coordinate: CLLocationCoordinate2D { CLLocationCoordinate2D(latitude: latitude, longitude: longitude) }
+    init(_ coordinate: CLLocationCoordinate2D) { self.latitude = coordinate.latitude; self.longitude = coordinate.longitude }
+}
+
+struct MKCoordinateSpanCodable: Codable {
+    let latitudeDelta: Double
+    let longitudeDelta: Double
+    var span: MKCoordinateSpan { MKCoordinateSpan(latitudeDelta: latitudeDelta, longitudeDelta: longitudeDelta) }
+    init(_ span: MKCoordinateSpan) { self.latitudeDelta = span.latitudeDelta; self.longitudeDelta = span.longitudeDelta }
 }

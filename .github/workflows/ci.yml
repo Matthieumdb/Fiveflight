@@ -70,4 +70,4 @@ jobs:
           fi
 
       - name: Run SwiftLint
-        run: swiftlint lint --path Sources
+        run: swiftlint lint Sources

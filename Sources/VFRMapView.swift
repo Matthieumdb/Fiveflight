@@ -48,29 +48,15 @@ final class SectionalTileOverlay: MKTileOverlay {
 }
 
 final class WeatherTileOverlay: MKTileOverlay {}
-final class AirspacePolygonOverlay: MKPolygon {
-    let airspaceColor: UIColor
+/// Styling for an airspace outline. MKPolygon cannot be subclassed with a custom initializer
+/// (its `init(coordinates:count:)` is a class factory, so `super.init` crashes with
+/// "unrecognized selector"), so the style is kept next to a plain MKPolygon instead.
+struct AirspaceStyle {
+    let color: UIColor
     let isTFR: Bool
-    let fillAlpha: CGFloat
-    let strokeColor: UIColor
-    let lineWidth: CGFloat
-    let dashPattern: [NSNumber]?
-
-    @_optimize(none)
-    init(coordinates: UnsafePointer<CLLocationCoordinate2D>, count: Int, airspaceColor: UIColor, isTFR: Bool = false) {
-        self.airspaceColor = airspaceColor
-        self.isTFR = isTFR
-        self.fillAlpha = isTFR ? 0.2 : 0.15
-        self.strokeColor = airspaceColor
-        self.lineWidth = isTFR ? 2 : 1.5
-        self.dashPattern = isTFR ? [4, 4] : [8, 4]
-        super.init(coordinates: coordinates, count: count)
-    }
-
-    static func make(for airspace: Airspace, color: UIColor, isTFR: Bool = false) -> AirspacePolygonOverlay {
-        let coords = airspace.polygons.flatMap { $0.map(\.clCoordinate) }
-        return AirspacePolygonOverlay(coordinates: coords, count: coords.count, airspaceColor: color, isTFR: isTFR)
-    }
+    var fillAlpha: CGFloat { isTFR ? 0.2 : 0.15 }
+    var lineWidth: CGFloat { isTFR ? 2 : 1.5 }
+    var dashPattern: [NSNumber] { isTFR ? [4, 4] : [8, 4] }
 }
 
 final class AirportAnnotation: NSObject, MKAnnotation {
@@ -202,6 +188,7 @@ struct VFRMapView: UIViewRepresentable {
         private var userCircles: [MKCircle] = []
         private var circleCenter: CLLocation?
         private var airspaceOverlays: [MKPolygon] = []
+        private var airspaceStyles: [ObjectIdentifier: AirspaceStyle] = [:]
         private var airspaceKey = ""
         private var annotationsByKey: [String: AirportAnnotation] = [:]
         private var lastCategories: [String: String] = [:]
@@ -278,6 +265,7 @@ struct VFRMapView: UIViewRepresentable {
 
             mv.removeOverlays(airspaceOverlays)
             airspaceOverlays.removeAll()
+            airspaceStyles.removeAll()
             guard showAirspace || showTFRs else { return }
 
             for airspace in airspaces where airspace.isActive {
@@ -285,15 +273,13 @@ struct VFRMapView: UIViewRepresentable {
                 guard (tf && showTFRs) || (!tf && showAirspace) else { continue }
                 let color = tf ? UIColor(ColorToken.tfr) : colorFor(airspace)
                 for polygon in airspace.polygons where polygon.count >= 3 {
-                    let overlay = makeAirspaceOverlay(coords: polygon.map(\.clCoordinate), color: color, isTFR: tf)
+                    let coords = polygon.map(\.clCoordinate)
+                    let overlay = MKPolygon(coordinates: coords, count: coords.count)
+                    airspaceStyles[ObjectIdentifier(overlay)] = AirspaceStyle(color: color, isTFR: tf)
                     airspaceOverlays.append(overlay)
                 }
             }
             mv.addOverlays(airspaceOverlays, level: .aboveLabels)
-        }
-
-        private func makeAirspaceOverlay(coords: [CLLocationCoordinate2D], color: UIColor, isTFR: Bool) -> AirspacePolygonOverlay {
-            AirspacePolygonOverlay(coordinates: coords, count: coords.count, airspaceColor: color, isTFR: isTFR)
         }
 
         /// Adds/removes only the annotations that changed (keyed by role + airport id).
@@ -367,12 +353,13 @@ struct VFRMapView: UIViewRepresentable {
             if let tile = overlay as? MKTileOverlay {
                 return MKTileOverlayRenderer(tileOverlay: tile)
             }
-            if let polygon = overlay as? AirspacePolygonOverlay {
+            if let polygon = overlay as? MKPolygon {
+                let style = airspaceStyles[ObjectIdentifier(polygon)] ?? AirspaceStyle(color: .systemBlue, isTFR: false)
                 let r = MKPolygonRenderer(polygon: polygon)
-                r.fillColor = polygon.airspaceColor.withAlphaComponent(polygon.fillAlpha)
-                r.strokeColor = polygon.strokeColor
-                r.lineWidth = polygon.lineWidth
-                r.lineDashPattern = polygon.dashPattern
+                r.fillColor = style.color.withAlphaComponent(style.fillAlpha)
+                r.strokeColor = style.color
+                r.lineWidth = style.lineWidth
+                r.lineDashPattern = style.dashPattern
                 return r
             }
             return MKOverlayRenderer(overlay: overlay)

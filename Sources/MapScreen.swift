@@ -34,12 +34,6 @@ struct MapScreen: View {
             .sorted()
     }
 
-    /// Coarse key so the widget refreshes when the position moves by roughly 1 km, not on every fix.
-    private var positionKey: String {
-        guard let c = model.userLocation else { return "-" }
-        return "\(Int(c.latitude * 100)),\(Int(c.longitude * 100))"
-    }
-
     var body: some View {
         ZStack(alignment: .top) {
             // MARK: - Full Screen Map (VFRMapView with MKTileOverlay)
@@ -116,20 +110,15 @@ struct MapScreen: View {
         }
         .onChange(of: model.waypoints) { _, _ in
             Task { await calculateAndUpdateRoute() }
-            WidgetBridge.update(store: store, model: model, weather: weatherService)
         }
         .onChange(of: routingEngine.currentMode) { _, _ in
             Task { await calculateAndUpdateRoute() }
-        }
-        .onChange(of: positionKey) { _, _ in
-            WidgetBridge.update(store: store, model: model, weather: weatherService)
         }
         .task(id: metarStations) {
             // Debounce: wait until the map has settled, then colour markers by flight category.
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else { return }
             await weatherService.refreshMETARs(forVisible: metarStations)
-            WidgetBridge.update(store: store, model: model, weather: weatherService)
         }
     }
 

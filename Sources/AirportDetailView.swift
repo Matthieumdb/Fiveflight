@@ -17,10 +17,10 @@ struct AirportDetailView: View {
 
                 Section {
                     Button {
-                        model.directTo = airport.id
+                        model.directTo(airport)
                         dismiss()
                     } label: {
-                        Label("Direct to — mettre au plan", systemImage: "location.north.line.fill")
+                        Label("Direct To", systemImage: "location.north.line.fill")
                     }
                 }
 

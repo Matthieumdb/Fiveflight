@@ -586,30 +586,16 @@ struct RouteOptionsCard: View {
     @EnvironmentObject private var routingEngine: RoutingEngine
 
     var body: some View {
-        VStack(spacing: SpacingToken.space3) {
-            Toggle("Avoid Class B/C/D", isOn: .constant(true))
-                .toggleStyle(AviationToggleStyle())
-
-            Toggle("Avoid Restricted/Prohibited", isOn: .constant(true))
-                .toggleStyle(AviationToggleStyle())
-
-            Toggle("Avoid MOAs", isOn: .constant(false))
-                .toggleStyle(AviationToggleStyle())
-
-            Toggle("Avoid TFRs", isOn: .constant(true))
-                .toggleStyle(AviationToggleStyle())
-
-            Divider()
-
-            HStack {
-                Text("Altitude Buffer")
-                    .font(TypographyToken.labelMedium)
-                    .foregroundStyle(ColorToken.textSecondary)
-                Spacer()
-                Text("500 ft")
-                    .font(TypographyToken.monoMedium)
-                    .foregroundStyle(ColorToken.textPrimary)
+        VStack(alignment: .leading, spacing: SpacingToken.space2) {
+            Picker("Itinéraire", selection: $routingEngine.currentMode) {
+                ForEach(RoutingEngine.RoutingMode.allCases, id: \.self) { mode in
+                    Label(mode.rawValue, systemImage: mode.icon).tag(mode)
+                }
             }
+            .pickerStyle(.menu)
+            Text(routingEngine.currentMode.description)
+                .font(TypographyToken.labelSmall)
+                .foregroundStyle(ColorToken.textTertiary)
         }
         .padding(SpacingToken.cardPadding)
         .background(ColorToken.surfaceCard, in: RoundedRectangle(cornerRadius: RadiusToken.card))
@@ -756,62 +742,8 @@ struct LayersSidePanel: View {
                         isOn: $model.showAirspace,
                         color: ColorToken.classB
                     )
-
-                    LayerToggleRow(
-                        title: "TFRs",
-                        subtitle: "Temporary Flight Restrictions",
-                        icon: "exclamationmark.shield.fill",
-                        isOn: $model.showTFRs,
-                        color: ColorToken.tfr
-                    )
                 } header: {
                     Text("Map Layers")
-                        .font(TypographyToken.labelSmall)
-                        .foregroundStyle(ColorToken.textTertiary)
-                        .textCase(.uppercase)
-                }
-
-                Section {
-                    LayerToggleRow(
-                        title: "Winds Aloft",
-                        subtitle: "Forecast winds at altitude",
-                        icon: "wind",
-                        isOn: $model.showWindsAloft,
-                        color: ColorToken.info
-                    )
-
-                    LayerToggleRow(
-                        title: "PIREPs",
-                        subtitle: "Pilot reports",
-                        icon: "bubble.left.and.bubble.right",
-                        isOn: $model.showPIREPs,
-                        color: ColorToken.warning
-                    )
-
-                    LayerToggleRow(
-                        title: "AIRMETs/SIGMETs",
-                        subtitle: "In-flight advisories",
-                        icon: "exclamationmark.triangle",
-                        isOn: $model.showAIRMETs,
-                        color: ColorToken.danger
-                    )
-                } header: {
-                    Text("Weather")
-                        .font(TypographyToken.labelSmall)
-                        .foregroundStyle(ColorToken.textTertiary)
-                        .textCase(.uppercase)
-                }
-
-                Section {
-                    LayerToggleRow(
-                        title: "Airways",
-                        subtitle: "Victor & Jet routes",
-                        icon: "arrow.up.and.down",
-                        isOn: $model.showAirways,
-                        color: ColorToken.success
-                    )
-                } header: {
-                    Text("Navigation")
                         .font(TypographyToken.labelSmall)
                         .foregroundStyle(ColorToken.textTertiary)
                         .textCase(.uppercase)

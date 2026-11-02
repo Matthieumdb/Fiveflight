@@ -192,62 +192,149 @@ final class FiveflightTests: XCTestCase {
         }
     }
 
-    // MARK: - METAR Decoding Tests
+    // MARK: - Weather decoding (real aviationweather.gov payloads in Tests/Fixtures)
 
-    func testMETARCreationFromResponse() {
-        // Test that METAR can be created from API response structure
-        let response = METARResponse(
-            icaoId: "KMIA",
-            reportTime: "2024-01-01T12:53:00Z",
-            rawOb: "KMIA 011253Z 12010KT 10SM FEW025 SCT150 28/22 A3001",
-            temp: "28",
-            dewp: "22",
-            wspd: "10",
-            wdir: "120",
-            wgst: nil,
-            visib: "10",
-            altim: "3001",
-            clouds: [
-                METARResponse.CloudLayer(cover: "FEW", base: "2500"),
-                METARResponse.CloudLayer(cover: "SCT", base: "15000")
-            ],
-            flightCategory: "VFR",
-            wxString: nil
-        )
-        let metar = METAR(from: response)
-        XCTAssertEqual(metar.station, "KMIA")
-        XCTAssertEqual(metar.flightCategory, .vfr)
-        XCTAssertEqual(metar.temperature, 28)
-        XCTAssertEqual(metar.dewpoint, 22)
-        XCTAssertEqual(metar.windDirection, 120)
-        XCTAssertEqual(metar.windSpeed, 10)
-        XCTAssertEqual(metar.visibility, 10)
-        XCTAssertEqual(try XCTUnwrap(metar.altimeter), 30.01, accuracy: 0.1)
+    private func fixture(_ name: String, _ ext: String) throws -> Data {
+        let url = try XCTUnwrap(Bundle(for: FiveflightTests.self).url(forResource: name, withExtension: ext),
+                                "missing fixture \(name).\(ext)")
+        return try Data(contentsOf: url)
     }
 
-    func testMETARWithGusts() {
-        let response = METARResponse(
-            icaoId: "KJFK",
-            reportTime: "2024-01-01T12:53:00Z",
-            rawOb: "KJFK 011253Z 27015G25KT 10SM OVC020 18/15 A2992",
-            temp: "18",
-            dewp: "15",
-            wspd: "15",
-            wdir: "270",
-            wgst: "25",
-            visib: "10",
-            altim: "2992",
-            clouds: [
-                METARResponse.CloudLayer(cover: "OVC", base: "2000")
-            ],
-            flightCategory: "IFR",
-            wxString: nil
-        )
-        let metar = METAR(from: response)
-        XCTAssertEqual(metar.windDirection, 270)
-        XCTAssertEqual(metar.windSpeed, 15)
-        XCTAssertEqual(metar.windGust, 25)
-        XCTAssertEqual(metar.flightCategory, .ifr)
+    func testMETARFixtureDecodesWithFlightCategories() throws {
+        let data = try fixture("metar", "json")
+        let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        let decoded = try JSONDecoder().decode([METARResponse].self, from: data)
+        XCTAssertEqual(decoded.count, raw.count)
+        XCTAssertFalse(decoded.isEmpty)
+        for response in decoded {
+            let metar = METAR(from: response)
+            if response.fltCat != nil { XCTAssertNotEqual(metar.flightCategory, .unknown, metar.station) }
+            if let altim = metar.altimeter { XCTAssertEqual(altim, 30, accuracy: 1.5, metar.station) }
+            XCTAssertLessThan(abs(metar.observationTime.timeIntervalSinceNow), 400 * 24 * 3600)
+        }
+    }
+
+    func testMETARDecodesMixedTypes() throws {
+        let json = """
+        [{"icaoId":"KFPR","obsTime":1793649180,"rawOb":"METAR KFPR 021953Z VRB05KT 3SM RA BR BKN009 OVC015 23/22 A2998",
+          "temp":22.8,"dewp":22.2,"wdir":"VRB","wspd":5,"visib":3,"altim":1015.3,
+          "clouds":[{"cover":"FEW","base":400},{"cover":"BKN","base":900},{"cover":"OVC","base":1500}],"fltCat":"IFR"},
+         {"icaoId":"KMIA","obsTime":1793649180,"rawOb":"KMIA 12010G18KT 10SM FEW025","temp":28,"dewp":22,
+          "wdir":120,"wspd":10,"wgst":18,"visib":"10+","altim":1016.3,"clouds":[{"cover":"FEW","base":2500}]}]
+        """
+        let list = try JSONDecoder().decode([METARResponse].self, from: Data(json.utf8)).map(METAR.init(from:))
+        XCTAssertEqual(list[0].flightCategory, .ifr)
+        XCTAssertEqual(list[0].ceiling, 900)
+        XCTAssertNil(list[0].windDirection)
+        XCTAssertEqual(list[0].decoded?.wind, "VRB @ 5kt")
+        XCTAssertEqual(list[0].temperature, 23)
+        XCTAssertEqual(try XCTUnwrap(list[0].altimeter), 29.98, accuracy: 0.01)
+        // No fltCat: computed from visibility 10+ and no ceiling.
+        XCTAssertEqual(list[1].flightCategory, .vfr)
+        XCTAssertEqual(list[1].windDirection, 120)
+        XCTAssertEqual(list[1].windGust, 18)
+        XCTAssertEqual(list[1].visibility, 10)
+    }
+
+    func testTAFFixtureDecodes() throws {
+        let data = try fixture("taf", "json")
+        let decoded = try JSONDecoder().decode([TAFResponse].self, from: data)
+        XCTAssertFalse(decoded.isEmpty)
+        for response in decoded {
+            let taf = TAF(from: response)
+            XCTAssertGreaterThan(taf.validTo, taf.validFrom)
+            XCTAssertFalse(taf.forecasts.isEmpty, taf.station)
+        }
+    }
+
+    func testFlexValueNumbers() {
+        XCTAssertEqual(FlexValue("10+").number, 10)
+        XCTAssertEqual(FlexValue("6+").number, 6)
+        XCTAssertEqual(FlexValue("1 1/2").number, 1.5)
+        XCTAssertEqual(FlexValue("1/4").number, 0.25)
+        XCTAssertNil(FlexValue("VRB").number)
+    }
+
+    func testWindsAloftFDParsing() throws {
+        let text = """
+        VALID 030000Z   FOR USE 2000-0300Z. TEMPS NEG ABV 24000
+
+        FT  3000    6000    9000   12000   18000   24000  30000  34000  39000
+        MIA 1018 1311+15 1616+10 1827+04 2220-07 2109-18 180533 200844 201657
+        PIE      9900+14 7315+09 1512+04 0914-06 0532-18 350534 250645 202358
+        """
+        let winds = WindsAloftParser.parse(text)
+        let mia = try XCTUnwrap(winds.first { $0.station == "MIA" })
+        XCTAssertEqual(mia.validTime, "030000Z")
+        XCTAssertEqual(mia.levels.map(\.altitude), [3000, 6000, 9000, 12000, 18000])
+        XCTAssertEqual(mia.levels[0].direction, 100)
+        XCTAssertEqual(mia.levels[0].speed, 18)
+        XCTAssertNil(mia.levels[0].temperature)
+        XCTAssertEqual(mia.levels[1].temperature, 15)
+        XCTAssertEqual(mia.levels[4].temperature, -7)
+        let pie = try XCTUnwrap(winds.first { $0.station == "PIE" })
+        XCTAssertEqual(pie.levels.first?.altitude, 6000)          // 3000 ft column is blank
+        XCTAssertEqual(pie.levels[0].speed, 0)                     // 9900 = light and variable
+        XCTAssertEqual(pie.levels[1].direction, 230)               // 73 → 230°, +100 kt
+        XCTAssertEqual(pie.levels[1].speed, 115)
+        XCTAssertEqual(WindsAloftParser.decode("266537", altitude: 30000)?.temperature, -37)
+
+        let live = WindsAloftParser.parse(String(decoding: try fixture("windtemp", "txt"), as: UTF8.self))
+        XCTAssertFalse(live.isEmpty, "no Florida station parsed from the real FD product")
+    }
+
+    func testPIREPFixtureDecodes() throws {
+        let data = try fixture("pirep", "json")
+        let decoded = try JSONDecoder().decode([PIREPResponse].self, from: data)
+        let pireps = decoded.map(PIREP.init(from:))
+        XCTAssertEqual(pireps.count, decoded.count)
+        for p in pireps { XCTAssertFalse(p.location.isEmpty) }
+        XCTAssertEqual(PIREPElement.severity("MOD-SEV"), "SEVERE")
+        XCTAssertNil(PIREPElement.severity("NEG"))
+    }
+
+    func testAdvisoryFixturesDecodeAndFilterToFlorida() throws {
+        let sig = try JSONDecoder().decode([AirSigmetResponse].self, from: try fixture("airsigmet", "json"))
+        let gair = try JSONDecoder().decode([GAirmetResponse].self, from: try fixture("gairmet", "json"))
+        XCTAssertFalse(sig.isEmpty || gair.isEmpty)
+        let advisories = WeatherService.floridaAdvisories(sigmets: sig, gairmets: gair)
+        let expected = sig.filter { FloridaArea.overlaps($0.coords ?? []) }.count
+        XCTAssertGreaterThanOrEqual(advisories.count, expected)
+
+        let maine = AirSigmetResponse.Coord(lat: FlexValue("46.5"), lon: FlexValue("-69.9"))
+        XCTAssertFalse(FloridaArea.overlaps([maine]))
+        let orlando = AirSigmetResponse.Coord(lat: FlexValue("28.5"), lon: FlexValue("-81.3"))
+        XCTAssertTrue(FloridaArea.overlaps([orlando]))
+    }
+
+    // MARK: - Map and Direct To
+
+    @MainActor
+    func testDirectToStartsFromGPSPosition() {
+        let defaults = UserDefaults(suiteName: "test.directTo.\(UUID().uuidString)")!
+        let model = AppModel(defaults: defaults)
+        let kvrb = Airport(id: "KVRB", name: "Vero Beach", type: "medium_airport", icao: "KVRB", iata: "VRB",
+                           municipality: "Vero Beach", elevationFt: 24,
+                           coordinate: CLLocationCoordinate2D(latitude: 27.6556, longitude: -80.4179))
+        model.directTo(kvrb)
+        XCTAssertEqual(model.waypoints.map(\.id), ["KVRB"])     // no GPS fix yet
+
+        model.userLocation = AppModel.homeCoordinate
+        model.directTo(kvrb)
+        XCTAssertEqual(model.waypoints.map(\.id), [AppModel.gpsWaypointID, "KVRB"])
+        XCTAssertGreaterThan(model.totalDistanceNM, 5)
+    }
+
+    @MainActor
+    func testMoveMapRecentresAndBumpsVersion() {
+        let defaults = UserDefaults(suiteName: "test.moveMap.\(UUID().uuidString)")!
+        let model = AppModel(defaults: defaults)
+        let before = model.mapRegionVersion
+        let miami = CLLocationCoordinate2D(latitude: 25.79, longitude: -80.29)
+        model.moveMap(to: miami, span: 0.3)
+        XCTAssertEqual(model.mapRegionVersion, before + 1)
+        XCTAssertEqual(model.mapRegion.center.latitude, 25.79, accuracy: 0.0001)
+        XCTAssertEqual(model.mapRegion.span.latitudeDelta, 0.3, accuracy: 0.0001)
     }
 
     // MARK: - Route Calculation Tests

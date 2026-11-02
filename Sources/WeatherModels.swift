@@ -56,78 +56,58 @@ struct METAR: Identifiable, Codable, Hashable {
     init(from response: METARResponse) {
         self.station = response.icaoId
         self.rawText = response.rawOb
-        self.observationTime = ISO8601DateFormatter().date(from: response.reportTime) ?? Date()
+        self.observationTime = response.obsTime.map { Date(timeIntervalSince1970: $0) } ?? Date()
 
-        // Parse flight category
-        if let cat = response.flightCategory, let fc = FlightCategory(rawValue: cat.uppercased()) {
+        let visibility = response.visib?.number
+        let ceiling = Self.ceiling(of: response.clouds ?? [])
+
+        // aviationweather.gov computes the category itself (fltCat); fall back to vis/ceiling.
+        if let cat = response.fltCat, let fc = FlightCategory(rawValue: cat.uppercased()) {
             self.flightCategory = fc
-        } else if let visStr = response.visib, let vis = Double(visStr),
-                  let ceilStr = response.clouds?.first?.base, let ceil = Int(ceilStr) {
-            self.flightCategory = FlightCategory.from(visibility: vis, ceiling: ceil)
+        } else if let vis = visibility {
+            self.flightCategory = FlightCategory.from(visibility: vis, ceiling: ceiling ?? 99_999)
         } else {
             self.flightCategory = .unknown
         }
 
-        // Build decoded data
-        var decodedData = METARDecoded()
+        var d = METARDecoded()
+        d.temperature = response.temp.map { Int($0.rounded()) }
+        d.dewpoint = response.dewp.map { Int($0.rounded()) }
+        d.windDirection = response.wdir?.number.map { Int($0) }
+        d.windSpeed = response.wspd.map { Int($0) }
+        d.windGust = response.wgst.map { Int($0) }
+        d.visibility = visibility
+        d.altimeter = response.altim.map { $0 / 33.8639 } // hPa → inHg
+        d.ceiling = ceiling
 
-        if let tempStr = response.temp, let temp = Int(tempStr) {
-            decodedData.temperature = temp
-        }
-        if let dewpStr = response.dewp, let dewp = Int(dewpStr) {
-            decodedData.dewpoint = dewp
-        }
-        if let wdirStr = response.wdir, let wdir = Int(wdirStr) {
-            decodedData.windDirection = wdir
-        }
-        if let wspdStr = response.wspd, let wspd = Int(wspdStr) {
-            decodedData.windSpeed = wspd
-        }
-        if let wgstStr = response.wgst, let wgst = Int(wgstStr) {
-            decodedData.windGust = wgst
-        }
-        if let visStr = response.visib, let vis = Double(visStr) {
-            decodedData.visibility = vis
-        }
-        if let altimStr = response.altim, let altim = Double(altimStr) {
-            decodedData.altimeter = altim / 100.0 // Convert to inHg
-        }
-        if let clouds = response.clouds, let first = clouds.first,
-           let base = Int(first.base) {
-            decodedData.ceiling = base
-        }
-
-        // Build wind string
-        if let dir = decodedData.windDirection, let spd = decodedData.windSpeed {
-            decodedData.wind = "\(dir)° @ \(spd)kt"
-            if let gust = decodedData.windGust {
-                decodedData.wind += "G\(gust)"
+        if let spd = d.windSpeed {
+            if spd == 0 {
+                d.wind = "Calme"
+            } else {
+                let dir = d.windDirection.map { String(format: "%03d°", $0) } ?? "VRB"
+                d.wind = "\(dir) @ \(spd)kt" + (d.windGust.map { "G\($0)" } ?? "")
             }
         }
-
-        // Build visibility string
-        if let vis = decodedData.visibility {
-            if vis >= 10 { decodedData.visibilityStr = "10+" } else { decodedData.visibilityStr = String(format: "%.1f", vis) }
+        if let vis = d.visibility {
+            d.visibilityStr = vis >= 10 ? "10+" : String(format: vis == vis.rounded() ? "%.0f" : "%.1f", vis)
         }
-
-        // Build ceiling string
-        if let ceil = decodedData.ceiling {
-            decodedData.ceilingStr = "\(ceil) ft"
+        if let ceil = d.ceiling { d.ceilingStr = "\(ceil) ft" }
+        if let t = d.temperature, let dp = d.dewpoint {
+            d.temperatureStr = "\(t)/\(dp)°C"
+        } else if let t = d.temperature {
+            d.temperatureStr = "\(t)°C"
         }
+        if let altim = d.altimeter { d.altimeterStr = String(format: "%.2f", altim) }
 
-        // Build temperature string
-        if let temp = decodedData.temperature, let dewp = decodedData.dewpoint {
-            decodedData.temperatureStr = "\(temp)/\(dewp)°C"
-        } else if let temp = decodedData.temperature {
-            decodedData.temperatureStr = "\(temp)°C"
-        }
+        self.decoded = d.isEmpty ? nil : d
+    }
 
-        // Build altimeter string
-        if let altim = decodedData.altimeter {
-            decodedData.altimeterStr = String(format: "%.2f", altim)
-        }
-
-        self.decoded = decodedData.isEmpty ? nil : decodedData
+    /// Ceiling = lowest broken, overcast or obscured layer.
+    static func ceiling(of clouds: [METARResponse.CloudLayer]) -> Int? {
+        clouds
+            .filter { ["BKN", "OVC", "OVX", "VV"].contains($0.cover.uppercased()) }
+            .compactMap { $0.base.map { Int($0) } }
+            .min()
     }
 
     init(station: String, rawText: String, observationTime: Date, flightCategory: FlightCategory, decoded: METARDecoded?) {
@@ -176,11 +156,13 @@ struct TAF: Identifiable, Codable, Hashable {
     init(from response: TAFResponse) {
         self.station = response.icaoId
         self.rawText = response.rawTAF
-        self.issueTime = ISO8601DateFormatter().date(from: response.issueTime) ?? Date()
-        self.validFrom = ISO8601DateFormatter().date(from: response.validTimeFrom) ?? Date()
-        self.validTo = ISO8601DateFormatter().date(from: response.validTimeTo) ?? Date()
-
-        self.forecasts = response.forecast?.compactMap { TAFForecast(from: $0) } ?? []
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let validFrom = Date(timeIntervalSince1970: response.validTimeFrom)
+        self.validFrom = validFrom
+        self.validTo = Date(timeIntervalSince1970: response.validTimeTo)
+        self.issueTime = response.issueTime.flatMap { iso.date(from: $0) } ?? validFrom
+        self.forecasts = response.fcsts?.map { TAFForecast(from: $0) } ?? []
     }
 
     init(station: String, rawText: String, issueTime: Date, validFrom: Date, validTo: Date, forecasts: [TAFForecast]) {
@@ -204,16 +186,13 @@ struct TAFForecast: Identifiable, Codable, Hashable {
     var clouds: [TAFCloudLayer] = []
 
     init(from response: TAFResponse.TAFPeriod) {
-        self.from = ISO8601DateFormatter().date(from: response.fcstTimeFrom) ?? Date()
-        self.to = ISO8601DateFormatter().date(from: response.fcstTimeTo) ?? Date()
-        self.windDirection = response.windDir.flatMap { Int($0) }
-        self.windSpeed = response.windSpeed.flatMap { Int($0) }
-        self.visibility = response.visib.flatMap { Double($0) }
+        self.from = Date(timeIntervalSince1970: response.timeFrom)
+        self.to = Date(timeIntervalSince1970: response.timeTo)
+        self.windDirection = response.wdir?.number.map { Int($0) }
+        self.windSpeed = response.wspd.map { Int($0) }
+        self.visibility = response.visib?.number
         self.weather = response.wxString
-
-        if let clouds = response.clouds {
-            self.clouds = clouds.compactMap { TAFCloudLayer(from: $0) }
-        }
+        self.clouds = response.clouds?.compactMap { TAFCloudLayer(from: $0) } ?? []
     }
 }
 
@@ -222,9 +201,9 @@ struct TAFCloudLayer: Codable, Hashable {
     let base: Int
 
     init?(from response: METARResponse.CloudLayer) {
-        guard let base = Int(response.base) else { return nil }
+        guard let base = response.base else { return nil }
         self.cover = response.cover
-        self.base = base
+        self.base = Int(base)
     }
 }
 
@@ -238,12 +217,12 @@ struct WindsAloft: Identifiable, Codable, Hashable {
     let validTime: String
     let levels: [WindsAloftLevel]
 
-    init(from response: WindsAloftResponse) {
-        self.station = response.station
-        self.latitude = response.latitude
-        self.longitude = response.longitude
-        self.validTime = response.time
-        self.levels = response.winds.compactMap { WindsAloftLevel(from: $0) }
+    init(station: String, latitude: Double, longitude: Double, validTime: String, levels: [WindsAloftLevel]) {
+        self.station = station
+        self.latitude = latitude
+        self.longitude = longitude
+        self.validTime = validTime
+        self.levels = levels
     }
 }
 
@@ -254,11 +233,11 @@ struct WindsAloftLevel: Identifiable, Codable, Hashable {
     let speed: Int
     let temperature: Int?
 
-    init(from response: WindsAloftResponse.WindLevel) {
-        self.altitude = response.altitude
-        self.direction = response.direction
-        self.speed = response.speed
-        self.temperature = response.temperature
+    init(altitude: Int, direction: Int, speed: Int, temperature: Int?) {
+        self.altitude = altitude
+        self.direction = direction
+        self.speed = speed
+        self.temperature = temperature
     }
 }
 
@@ -276,15 +255,35 @@ struct PIREP: Identifiable, Codable, Hashable {
     let elements: [PIREPElement]
 
     init(from response: PIREPResponse) {
-        self.location = response.icaoId
-        self.time = ISO8601DateFormatter().date(from: response.obsTime) ?? Date()
-        self.latitude = response.latitude
-        self.longitude = response.longitude
-        self.elevation = Int(response.elev ?? "0")
-        self.aircraftType = response.aircraftType ?? "UNKNOWN"
+        // rawOb starts with the reporting location: "ORL UA /OV ORL270001/TM 2016/..."
+        self.location = response.rawOb.split(separator: " ").first.map(String.init) ?? "—"
+        self.time = response.obsTime.map { Date(timeIntervalSince1970: $0) } ?? Date()
+        self.latitude = response.lat
+        self.longitude = response.lon
+        let altitude = response.fltLvl.map { Int($0) * 100 }
+        self.elevation = altitude
+        self.aircraftType = response.acType.flatMap { $0.isEmpty ? nil : $0 } ?? "—"
         self.rawText = response.rawOb
-        self.elements = response.elements?.compactMap { PIREPElement(from: $0) } ?? []
+
+        var elements: [PIREPElement] = []
+        if let alt = altitude, alt > 0 {
+            elements.append(PIREPElement(type: "Altitude", value: "\(alt) ft", severity: nil))
+        }
+        if let tb = response.tbInt1, !tb.isEmpty {
+            let value = [tb, response.tbType1 ?? ""].filter { !$0.isEmpty }.joined(separator: " ")
+            elements.append(PIREPElement(type: "Turbulence", value: value, severity: PIREPElement.severity(tb)))
+        }
+        if let ic = response.icgInt1, !ic.isEmpty {
+            let value = [ic, response.icgType1 ?? ""].filter { !$0.isEmpty }.joined(separator: " ")
+            elements.append(PIREPElement(type: "Givrage", value: value, severity: PIREPElement.severity(ic)))
+        }
+        if let wx = response.wxString, !wx.isEmpty {
+            elements.append(PIREPElement(type: "Temps", value: wx, severity: nil))
+        }
+        self.elements = elements
     }
+
+    var isUrgent: Bool { rawText.contains(" UUA ") }
 }
 
 struct PIREPElement: Identifiable, Codable, Hashable {
@@ -293,10 +292,22 @@ struct PIREPElement: Identifiable, Codable, Hashable {
     let value: String
     let severity: String?
 
-    init(from response: PIREPResponse.PIREPElementResponse) {
-        self.type = response.type
-        self.value = response.value
-        self.severity = response.severity
+    init(type: String, value: String, severity: String?) {
+        self.type = type
+        self.value = value
+        self.severity = severity
+    }
+
+    /// "LGT" / "MOD-SEV" / "NEG" → the severity names used for colours.
+    static func severity(_ intensity: String) -> String? {
+        let s = intensity.uppercased()
+        if s.hasPrefix("NEG") { return nil }
+        if s.contains("EXTRM") { return "EXTREME" }
+        if s.contains("SEV") { return "SEVERE" }
+        if s.contains("MOD") { return "MODERATE" }
+        if s.contains("LGT") { return "LIGHT" }
+        if s.contains("TRC") { return "TRACE" }
+        return nil
     }
 
     var severityColor: Color {
@@ -323,15 +334,44 @@ struct AirSigmet: Identifiable, Codable, Hashable {
     let issuingOffice: String
     let sequence: String
 
+    init(type: String, hazard: String, severity: String, validFrom: Date, validTo: Date,
+         rawText: String, issuingOffice: String, sequence: String) {
+        self.type = type
+        self.hazard = hazard
+        self.severity = severity
+        self.validFrom = validFrom
+        self.validTo = validTo
+        self.rawText = rawText
+        self.issuingOffice = issuingOffice
+        self.sequence = sequence
+    }
+
     init(from response: AirSigmetResponse) {
-        self.type = response.type
-        self.hazard = response.hazard
-        self.severity = response.severity
-        self.validFrom = ISO8601DateFormatter().date(from: response.validTimeFrom) ?? Date()
-        self.validTo = ISO8601DateFormatter().date(from: response.validTimeTo) ?? Date()
-        self.rawText = response.rawAirSigmet
-        self.issuingOffice = response.icaoId
-        self.sequence = response.sequence
+        let hazard = response.hazard ?? "—"
+        let type = response.airSigmetType ?? "SIGMET"
+        self.type = hazard.uppercased() == "CONVECTIVE" ? "CONVECTIVE SIGMET" : type
+        self.hazard = hazard
+        self.severity = response.severity.map { String(Int($0)) } ?? ""
+        self.validFrom = Date(timeIntervalSince1970: response.validTimeFrom ?? 0)
+        self.validTo = Date(timeIntervalSince1970: response.validTimeTo ?? 0)
+        self.rawText = response.rawAirSigmet ?? ""
+        self.issuingOffice = response.icaoId ?? ""
+        self.sequence = response.seriesId ?? ""
+    }
+
+    /// A G-AIRMET area (IFR, MT_OBSC, TURB-LO, ICE, SFC_WND, LLWS…).
+    init(gairmet g: GAirmetResponse) {
+        let hazard = g.hazard ?? "—"
+        let layers = [g.base?.string, g.top?.string].compactMap { $0 }.filter { !$0.isEmpty }
+        self.type = "AIRMET"
+        self.hazard = hazard
+        self.severity = g.severity ?? ""
+        self.validFrom = Date(timeIntervalSince1970: g.issueTime ?? 0)
+        self.validTo = Date(timeIntervalSince1970: g.expireTime ?? 0)
+        self.rawText = "G-AIRMET \(hazard)" + (layers.isEmpty ? "" : " \(layers.joined(separator: "–"))")
+            + (g.forecastHour.map { " · +\(Int($0)) h" } ?? "")
+        self.issuingOffice = "KKCI"
+        self.sequence = g.tag ?? ""
     }
 
     var isConvective: Bool {
@@ -354,12 +394,12 @@ struct AirSigmet: Identifiable, Codable, Hashable {
 
     var hazardColor: Color {
         switch hazard.uppercased() {
-        case "CONVECTION", "TS", "TCU": return ColorToken.lifr
+        case "CONVECTION", "CONVECTIVE", "TS", "TCU": return ColorToken.lifr
         case "SEVERE TURB", "EXTREME TURB": return ColorToken.lifr
-        case "TURB", "TURBULENCE": return ColorToken.ifr
+        case "TURB", "TURBULENCE", "TURB-LO", "TURB-HI", "LLWS": return ColorToken.ifr
         case "ICE", "ICING", "SEVERE ICE": return ColorToken.mvfr
         case "IFR", "LOW IFR", "LIFR": return ColorToken.ifr
-        case "MTN OBSCN", "MOUNTAIN OBSCURATION": return ColorToken.mvfr
+        case "MTN OBSCN", "MT_OBSC", "MOUNTAIN OBSCURATION": return ColorToken.mvfr
         default: return ColorToken.brandPrimary
         }
     }

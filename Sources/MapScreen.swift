@@ -11,7 +11,6 @@ struct MapScreen: View {
     @EnvironmentObject private var weatherService: WeatherService
     @EnvironmentObject private var locationManager: LocationManager
 
-    @State private var regionVersion = 0
     @State private var showFlightPlanPanel = false
     @State private var showLayersPanel = false
     @State private var showNearbyPanel = false
@@ -46,7 +45,7 @@ struct MapScreen: View {
                 categories: weatherService.categories,
                 userCoord: model.userLocation,
                 region: model.mapRegion,
-                regionVersion: regionVersion,
+                regionVersion: model.mapRegionVersion,
                 onSelect: { airport in
                     selectedAirport = airport
                     model.selectedAirport = airport
@@ -56,8 +55,7 @@ struct MapScreen: View {
                     visibleAirports = Self.airportsToShow(store.airports, in: region)
                 },
                 airspaces: activeAirspaces,
-                showAirspace: model.showAirspace,
-                showTFRs: model.showTFRs
+                showAirspace: model.showAirspace
             )
             .ignoresSafeArea()
 
@@ -102,7 +100,16 @@ struct MapScreen: View {
                 .environmentObject(weatherService)
         }
         .sheet(isPresented: $showSearch) {
-            SearchSheet(nearest: store.nearest(to: model.userLocation ?? AppModel.homeCoordinate, limit: 20))
+            SearchSheet(nearest: store.nearest(to: model.userLocation ?? AppModel.homeCoordinate, limit: 20)) { airport in
+                showSearch = false
+                model.markViewed(airport.id)
+                model.moveMap(to: airport.coordinate, span: 0.3)
+                // Open the airport card once the search sheet has finished closing.
+                Task {
+                    try? await Task.sleep(nanoseconds: 450_000_000)
+                    selectedAirport = airport
+                }
+            }
         }
         .onAppear {
             visibleAirports = Self.airportsToShow(store.airports, in: model.mapRegion)
@@ -184,6 +191,7 @@ struct MapScreen: View {
 
 struct TopMapBar: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var locationManager: LocationManager
     @Binding var showFlightPlanPanel: Bool
     @Binding var showLayersPanel: Bool
     @Binding var showNearbyPanel: Bool
@@ -214,11 +222,10 @@ struct TopMapBar: View {
 
                 // GPS button
                 Button {
-                    if let loc = model.userLocation {
-                        withAnimation(AnimationToken.map) {
-                            model.mapRegion.center = loc
-                            model.mapRegion.span = MKCoordinateSpan(latitudeDelta: 0.5, longitudeDelta: 0.5)
-                        }
+                    if let loc = model.userLocation ?? locationManager.location {
+                        model.moveMap(to: loc)
+                    } else {
+                        locationManager.start()
                     }
                 } label: {
                     Image(systemName: model.followUser ? "location.fill" : "location")

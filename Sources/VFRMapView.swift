@@ -12,6 +12,7 @@ final class AirspacePolygonOverlay: MKPolygon {
     let lineWidth: CGFloat
     let dashPattern: [NSNumber]?
 
+    @_optimize(none)
     init(coordinates: UnsafePointer<CLLocationCoordinate2D>, count: Int, airspaceColor: UIColor, isTFR: Bool = false) {
         self.airspaceColor = airspaceColor
         self.isTFR = isTFR
@@ -207,7 +208,6 @@ struct VFRMapView: UIViewRepresentable {
             }
         }
 
-        @_optimize(none)
         func updateAirspacePolygons(on mv: MKMapView, airspaces: [Airspace], showAirspace: Bool, showTFRs: Bool, colorFor: (Airspace) -> UIColor, isTFR: (Airspace) -> Bool) {
             // Remove existing
             for overlay in airspaceOverlays {
@@ -236,7 +236,6 @@ struct VFRMapView: UIViewRepresentable {
             }
         }
 
-        @_optimize(none)
         private func makeAirspaceOverlay(coords: [CLLocationCoordinate2D], color: UIColor, isTFR: Bool) -> AirspacePolygonOverlay {
             AirspacePolygonOverlay(coordinates: coords, count: coords.count, airspaceColor: color, isTFR: isTFR)
         }

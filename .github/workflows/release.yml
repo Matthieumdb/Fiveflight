@@ -108,6 +108,13 @@ jobs:
           fi
           echo "✓ Widget NSExtension: $EXT_POINT"
 
+          # The app itself must NOT declare NSExtension, or iOS treats it as an extension and won't launch it
+          if /usr/libexec/PlistBuddy -c "Print NSExtension" "$APP_PATH/Info.plist" >/dev/null 2>&1; then
+            echo "ERROR: app Info.plist contains NSExtension (widget plist leaked into the app target)"
+            exit 1
+          fi
+          echo "✓ App Info.plist has no NSExtension"
+
           # Orientations must be an array of real values, not one comma-joined string
           if ! /usr/libexec/PlistBuddy -c "Print UISupportedInterfaceOrientations:0" "$APP_PATH/Info.plist" | grep -qx "UIInterfaceOrientationPortrait"; then
             echo "ERROR: UISupportedInterfaceOrientations is malformed"

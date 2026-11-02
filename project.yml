@@ -43,7 +43,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_ENTITLEMENTS: FiveflightWidget.entitlements
     info:
-      path: Sources/Widgets/Info.plist
+      path: Support/FiveflightWidget-Info.plist
       properties:
         CFBundleDisplayName: Fiveflight
         NSExtension:

@@ -34,6 +34,15 @@ jobs:
       - name: Generate Xcode Project
         run: xcodegen generate
 
+      - name: Check app target does not use the widget Info.plist
+        run: |
+          PLIST=$(xcodebuild -showBuildSettings -project Fiveflight.xcodeproj -target Fiveflight 2>/dev/null | awk -F' = ' '/^ *INFOPLIST_FILE = /{print $2}')
+          echo "Fiveflight INFOPLIST_FILE='$PLIST'"
+          if [ -n "$PLIST" ]; then
+            echo "ERROR: the app target picked up an Info.plist file ($PLIST); it must use the generated one"
+            exit 1
+          fi
+
       - name: Build and Test
         run: |
           set -o pipefail

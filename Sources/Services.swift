@@ -2,6 +2,17 @@ import Foundation
 import CoreLocation
 import Combine
 
+// MARK: - Array Extensions
+
+extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        guard size > 0 else { return [] }
+        return stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
+        }
+    }
+}
+
 // MARK: - Location Manager
 
 @MainActor
@@ -288,26 +299,30 @@ final class WeatherService: ObservableObject {
 
     /// Flight category per ICAO, in one batched request.
     static func categories(for icaos: [String]) async -> [String: String] {
-        let ids = icaos.prefix(40).joined(separator: ",")
-        guard !ids.isEmpty else { return [:] }
+        // Aviation Weather API supports up to ~100 stations per request; chunk to be safe
+        let chunkSize = 80
+        var out: [String: String] = [:]
 
-        let urlString = "https://aviationweather.gov/api/data/metar?ids=\(ids)&format=json"
-        guard let url = URL(string: urlString) else { return [:] }
+        for chunk in icaos.chunked(into: chunkSize) {
+            let ids = chunk.joined(separator: ",")
+            guard !ids.isEmpty else { continue }
 
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            let response = try JSONDecoder().decode([MetarDTO].self, from: data)
-            var out: [String: String] = [:]
-            for m in response {
-                if let id = m.icaoId, let cat = m.fltCat {
-                    out[id] = cat
+            let urlString = "https://aviationweather.gov/api/data/metar?ids=\(ids)&format=json"
+            guard let url = URL(string: urlString) else { continue }
+
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                let response = try JSONDecoder().decode([MetarDTO].self, from: data)
+                for m in response {
+                    if let id = m.icaoId, let cat = m.fltCat {
+                        out[id] = cat
+                    }
                 }
+            } catch {
+                print("Categories fetch error for chunk: \(error)")
             }
-            return out
-        } catch {
-            print("Categories fetch error: \(error)")
-            return [:]
         }
+        return out
     }
 
     private static func windText(from metar: METAR) -> String? {

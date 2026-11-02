@@ -67,8 +67,12 @@ jobs:
           echo "Payload contents:"
           ls -la build/ipa/Payload/
           cd build/ipa
-          zip -r ${PROJECT_NAME}.ipa Payload/
-          echo "IPA size: $(ls -lh ${PROJECT_NAME}.ipa | awk '{print $5}')"
+          IPA_NAME="${PROJECT_NAME}-${GITHUB_REF_NAME}.ipa"
+          zip -r "$IPA_NAME" Payload/
+          echo "IPA size: $(ls -lh "$IPA_NAME" | awk '{print $5}')"
+          echo "IPA_NAME=$IPA_NAME" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -84,7 +88,7 @@ jobs:
             This IPA has **no code signature**. Only install on jailbroken devices.
 
             ### Installation
-            1. Download `Fiveflight.ipa` below
+            1. Download `Fiveflight-${{ github.ref_name }}.ipa` below
             2. Install via Filza, IPA Installer, or SSH to `/var/mobile/Applications/`
             3. Respring if needed
 
@@ -92,7 +96,7 @@ jobs:
             - Jailbroken iOS 17.0+
             - iPhone or iPad
           files: |
-            build/ipa/Fiveflight.ipa
+            build/ipa/Fiveflight-${{ github.ref_name }}.ipa
           draft: false
           prerelease: false
         env:
@@ -101,5 +105,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Fiveflight-${{ github.ref_name }}-unsigned-ipa
-          path: build/ipa/Fiveflight.ipa
+          path: build/ipa/Fiveflight-${{ github.ref_name }}.ipa
           retention-days: 30

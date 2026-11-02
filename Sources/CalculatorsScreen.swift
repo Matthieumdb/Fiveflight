@@ -119,32 +119,12 @@ struct CalculatorsScreen: View {
 // MARK: - Weight & Balance Calculator
 
 struct WeightBalanceCalculator: View {
-    @EnvironmentObject private var model: AppModel
-    @State private var items: [WBItem] = []
-
-    private var totalWeight: Double {
-        items.reduce(0) { $0 + $1.weight }
-    }
-
-    private var totalMoment: Double {
-        items.reduce(0) { $0 + $1.weight * $1.arm }
-    }
-
-    private var cg: Double {
-        totalWeight > 0 ? totalMoment / totalWeight : 0
-    }
-
-    private var isWithinLimits: Bool {
-        guard let aircraft = model.selectedAircraft else { return false }
-        return cg >= Double(aircraft.cgForward) && cg <= Double(aircraft.cgAft) && totalWeight <= Double(aircraft.maxWeight)
-    }
+    @EnvironmentObject private var wbModel: WeightBalanceModel
 
     var body: some View {
         List {
             Section {
-                if let aircraft = model.selectedAircraft {
-                    AircraftLimitCard(aircraft: aircraft, totalWeight: totalWeight, cg: cg)
-                }
+                AircraftLimitCard(model: wbModel)
             } header: {
                 Text("Aircraft Limits")
                     .font(TypographyToken.labelSmall)
@@ -153,14 +133,14 @@ struct WeightBalanceCalculator: View {
             }
 
             Section {
-                ForEach($items) { $item in
+                ForEach($wbModel.items) { $item in
                     WBItemRow(item: $item)
                 }
-                .onDelete { items.remove(atOffsets: $0) }
-                .onMove { items.move(fromOffsets: $0, toOffset: $1) }
+                .onDelete { wbModel.items.remove(atOffsets: $0) }
+                .onMove { wbModel.items.move(fromOffsets: $0, toOffset: $1) }
 
                 Button {
-                    items.append(WBItem(name: "New Item", weight: 0, arm: 0))
+                    wbModel.items.append(WeightBalanceItem(name: "New Item", weight: 0, arm: 0))
                 } label: {
                     Label("Add Item", systemImage: "plus.circle.fill")
                         .font(TypographyToken.labelMedium)
@@ -178,15 +158,12 @@ struct WeightBalanceCalculator: View {
             }
 
             Section {
-                ResultRow(title: "Total Weight", value: String(format: "%.0f lb", totalWeight), color: totalWeight > Double(model.selectedAircraft?.maxWeight ?? 9999) ? ColorToken.danger : ColorToken.textPrimary)
-                ResultRow(title: "Total Moment", value: String(format: "%.0f lb-in", totalMoment))
-                ResultRow(title: "CG Location", value: String(format: "%.1f in", cg), color: isWithinLimits ? ColorToken.success : ColorToken.danger)
+                ResultRow(title: "Total Weight", value: String(format: "%.0f lb", wbModel.totalWeight), color: wbModel.totalWeight > wbModel.maxWeight ? ColorToken.danger : ColorToken.textPrimary)
+                ResultRow(title: "Total Moment", value: String(format: "%.0f lb-in", wbModel.totalMoment))
+                ResultRow(title: "CG Location", value: String(format: "%.1f in", wbModel.cg), color: wbModel.isWithinLimits ? ColorToken.success : ColorToken.danger)
 
-                if let aircraft = model.selectedAircraft {
-                    ResultRow(title: "CG Range", value: "\(aircraft.cgForward)–\(aircraft.cgAft) in")
-                    let remaining = aircraft.usefulLoad - Int(totalWeight - Double(aircraft.emptyWeight))
-                    ResultRow(title: "Useful Load Remaining", value: "\(remaining) lb")
-                }
+                ResultRow(title: "CG Range", value: String(format: "%.0f–%.0f in", wbModel.cgForward, wbModel.cgAft))
+                ResultRow(title: "Useful Load Remaining", value: String(format: "%.0f lb", wbModel.usefulLoad))
             } header: {
                 Text("Results")
                     .font(TypographyToken.labelSmall)
@@ -197,33 +174,15 @@ struct WeightBalanceCalculator: View {
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(ColorToken.surfaceBase)
-        .onAppear {
-            if items.isEmpty, let aircraft = model.selectedAircraft {
-                items = [
-                    WBItem(name: "Empty Weight", weight: Double(aircraft.emptyWeight), arm: Double((aircraft.cgForward + aircraft.cgAft) / 2)),
-                    WBItem(name: "Pilot", weight: 170, arm: 37),
-                    WBItem(name: "Passenger", weight: 170, arm: 37),
-                    WBItem(name: "Fuel (gal)", weight: 0, arm: 48, isFuel: true)
-                ]
-            }
-        }
     }
 }
 
-struct WBItem: Identifiable {
-    var id = UUID()
-    var name: String
-    var weight: Double
-    var arm: Double
-    var isFuel: Bool = false
-}
-
 struct WBItemRow: View {
-    @Binding var item: WBItem
+    @Binding var item: WeightBalanceItem
 
     var body: some View {
         HStack(spacing: SpacingToken.space3) {
-            if item.isFuel {
+            if item.name == "Fuel (gal)" {
                 VStack(alignment: .leading, spacing: SpacingToken.space1) {
                     Text(item.name)
                         .font(TypographyToken.bodySmall)
@@ -269,9 +228,7 @@ struct WBItemRow: View {
 }
 
 struct AircraftLimitCard: View {
-    let aircraft: AircraftProfile
-    let totalWeight: Double
-    let cg: Double
+    @ObservedObject var model: WeightBalanceModel
 
     var body: some View {
         HStack(spacing: SpacingToken.space4) {
@@ -279,9 +236,9 @@ struct AircraftLimitCard: View {
                 Text("Weight")
                     .font(TypographyToken.labelSmall)
                     .foregroundStyle(ColorToken.textTertiary)
-                Text(String(format: "%.0f / %d lb", totalWeight, aircraft.maxWeight))
+                Text(String(format: "%.0f / %.0f lb", model.totalWeight, model.maxWeight))
                     .font(TypographyToken.monoMedium)
-                    .foregroundStyle(totalWeight > Double(aircraft.maxWeight) ? ColorToken.danger : ColorToken.success)
+                    .foregroundStyle(model.totalWeight > model.maxWeight ? ColorToken.danger : ColorToken.success)
             }
 
             Divider().frame(height: 40)
@@ -290,9 +247,9 @@ struct AircraftLimitCard: View {
                 Text("CG")
                     .font(TypographyToken.labelSmall)
                     .foregroundStyle(ColorToken.textTertiary)
-                Text(String(format: "%.1f in (%.0f–%.0f)", cg, aircraft.cgForward, aircraft.cgAft))
+                Text(String(format: "%.1f in (%.0f–%.0f)", model.cg, model.cgForward, model.cgAft))
                     .font(TypographyToken.monoMedium)
-                    .foregroundStyle(cg >= Double(aircraft.cgForward) && cg <= Double(aircraft.cgAft) ? ColorToken.success : ColorToken.danger)
+                    .foregroundStyle(model.cg >= model.cgForward && model.cg <= model.cgAft ? ColorToken.success : ColorToken.danger)
             }
         }
         .padding(SpacingToken.cardPadding)

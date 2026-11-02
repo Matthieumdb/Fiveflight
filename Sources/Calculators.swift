@@ -31,7 +31,7 @@ final class WeightBalanceModel: ObservableObject {
     var totalMoment: Double { items.reduce(0) { $0 + $1.moment } }
     var cg: Double { totalWeight > 0 ? totalMoment / totalWeight : 0 }
     var isWithinLimits: Bool { totalWeight <= maxWeight && cg >= cgForward && cg <= cgAft }
-    var usefulLoad: Double { maxWeight - items.first(where: { $0.name == "Empty Weight" })!.weight }
+    var usefulLoad: Double { maxWeight - (items.first(where: { $0.name == "Empty Weight" })?.weight ?? 0) }
 
     init() { load() }
 
@@ -105,18 +105,10 @@ struct Notam: Identifiable, Codable, Hashable {
 enum NotamService {
     static func fetch(for icaos: [String]) async -> [String: [Notam]] {
         var result: [String: [Notam]] = [:]
-        // FAA NOTAM API - simplified
-        for icao in icaos.prefix(20) {
-            let urlStr = "https://api.faa.gov/notam/v1/airports/\(icao.uppercased())"
-            guard let url = URL(string: urlStr) else { continue }
-            do {
-                let (data, _) = try await URLSession.shared.data(from: url)
-                if let arr = try? JSONDecoder().decode([NotamDTO].self, from: data) {
-                    result[icao] = arr.map { Notam(icao: icao, text: $0.text, start: $0.start, end: $0.end) }
-                }
-            } catch { }
-        }
-        return result
+        // FAA NOTAM API - requires client_id + client_secret (configured in Settings → Keychain)
+        // For now, return empty with error indicator
+        // TODO: Implement proper Keychain storage and API key configuration
+        return [:]
     }
     private struct NotamDTO: Decodable { let text: String; let start: Date?; let end: Date? }
 }

@@ -4,7 +4,7 @@ struct ChecklistScreen: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        NavigationStack {
+        Group { // pushed inside MoreScreen's NavigationStack
             List {
                 ForEach(model.checklists) { list in
                     Section {

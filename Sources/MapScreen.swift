@@ -20,16 +20,24 @@ struct MapScreen: View {
     @State private var routePolyline: [CLLocationCoordinate2D] = []
     @State private var routeWarnings: [RouteWarning] = []
     @State private var visibleAirports: [Airport] = []
-    @State private var lastFilterSpan: MKCoordinateSpan?
-    @State private var lastMaxDelta: Double = 0
 
-    // Computed properties to avoid re-filtering on every render
     private var activeAirspaces: [Airspace] {
         airspaceManager.airspaces.filter { $0.isActive }
     }
 
-    private var currentMaxDelta: Double {
-        max(model.mapRegion.span.latitudeDelta, model.mapRegion.span.longitudeDelta)
+    /// US stations among the airports on screen, for the METAR-driven marker colours.
+    private var metarStations: [String] {
+        visibleAirports
+            .filter { $0.type != "heliport" && $0.id.count == 4 && ($0.id.hasPrefix("K") || $0.id.hasPrefix("P")) }
+            .prefix(100)
+            .map(\.id)
+            .sorted()
+    }
+
+    /// Coarse key so the widget refreshes when the position moves by roughly 1 km, not on every fix.
+    private var positionKey: String {
+        guard let c = model.userLocation else { return "-" }
+        return "\(Int(c.latitude * 100)),\(Int(c.longitude * 100))"
     }
 
     var body: some View {
@@ -40,18 +48,18 @@ struct MapScreen: View {
                 showWeather: model.showRadar,
                 nearest: visibleAirports,
                 waypoints: model.waypoints,
+                route: routePolyline,
                 categories: weatherService.categories,
                 userCoord: model.userLocation,
                 region: model.mapRegion,
                 regionVersion: regionVersion,
                 onSelect: { airport in
-                    withAnimation(AnimationToken.fast) {
-                        selectedAirport = airport
-                        model.selectedAirport = airport
-                    }
+                    selectedAirport = airport
+                    model.selectedAirport = airport
                 },
                 onRegionChange: { region in
                     model.mapRegion = region
+                    visibleAirports = Self.airportsToShow(store.airports, in: region)
                 },
                 airspaces: activeAirspaces,
                 showAirspace: model.showAirspace,
@@ -89,55 +97,72 @@ struct MapScreen: View {
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                     .zIndex(10)
             }
-
-            // MARK: - Airport Detail Sheet
-            if let airport = selectedAirport {
-                AirportDetailSheet(airport: airport, store: store)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .zIndex(20)
-            }
         }
         .animation(AnimationToken.transition, value: showFlightPlanPanel)
         .animation(AnimationToken.transition, value: showLayersPanel)
         .animation(AnimationToken.transition, value: showNearbyPanel)
-        .animation(AnimationToken.transition, value: selectedAirport)
+        // A real sheet: swipe down or "Done" closes it (it used to be an overlay that could not be dismissed).
+        .sheet(item: $selectedAirport) { airport in
+            AirportDetailSheet(airport: airport, store: store)
+                .environmentObject(model)
+                .environmentObject(weatherService)
+        }
         .sheet(isPresented: $showSearch) {
-            SearchSheet(nearest: store.nearest(to: model.userLocation ?? CLLocationCoordinate2D(latitude: 39.8283, longitude: -98.5795), limit: 20))
+            SearchSheet(nearest: store.nearest(to: model.userLocation ?? AppModel.homeCoordinate, limit: 20))
         }
         .onAppear {
-            Task {
-                await calculateAndUpdateRoute()
-            }
-            // Initial airport filtering
-            visibleAirports = store.airports.filter { shouldShowAirport($0, span: model.mapRegion.span) }
-            lastFilterSpan = model.mapRegion.span
+            visibleAirports = Self.airportsToShow(store.airports, in: model.mapRegion)
+            Task { await calculateAndUpdateRoute() }
         }
         .onChange(of: model.waypoints) { _, _ in
             Task { await calculateAndUpdateRoute() }
+            WidgetBridge.update(store: store, model: model, weather: weatherService)
         }
         .onChange(of: routingEngine.currentMode) { _, _ in
             Task { await calculateAndUpdateRoute() }
         }
-        .onChange(of: currentMaxDelta) { oldMax, newMax in
-            // Only re-filter when zoom level changes significantly (not on pan)
-            if abs(oldMax - newMax) > 0.1 || lastFilterSpan == nil {
-                lastMaxDelta = newMax
-                lastFilterSpan = model.mapRegion.span
-                visibleAirports = store.airports.filter { shouldShowAirport($0, span: model.mapRegion.span) }
-            }
+        .onChange(of: positionKey) { _, _ in
+            WidgetBridge.update(store: store, model: model, weather: weatherService)
+        }
+        .task(id: metarStations) {
+            // Debounce: wait until the map has settled, then colour markers by flight category.
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            await weatherService.refreshMETARs(forVisible: metarStations)
+            WidgetBridge.update(store: store, model: model, weather: weatherService)
         }
     }
 
     // MARK: - Helpers
 
-    private func shouldShowAirport(_ airport: Airport, span: MKCoordinateSpan) -> Bool {
-        let maxDelta = max(span.latitudeDelta, span.longitudeDelta)
+    /// Airports worth drawing for `region`: only those inside the visible area (plus a margin),
+    /// smaller types only when zoomed in, capped so MapKit never gets thousands of annotations.
+    nonisolated static func airportsToShow(_ all: [Airport], in region: MKCoordinateRegion, limit: Int = 300) -> [Airport] {
+        let latHalf = region.span.latitudeDelta * 0.6
+        let lonHalf = region.span.longitudeDelta * 0.6
+        let minLat = region.center.latitude - latHalf, maxLat = region.center.latitude + latHalf
+        let minLon = region.center.longitude - lonHalf, maxLon = region.center.longitude + lonHalf
+        let maxDelta = max(region.span.latitudeDelta, region.span.longitudeDelta)
 
-        // Show major airports always, smaller ones when zoomed in
-        if airport.type == "large_airport" || airport.type == "medium_airport" {
-            return true
+        let allowed: Set<String>
+        if maxDelta > 6 {
+            allowed = ["large_airport", "medium_airport"]
+        } else if maxDelta > 0.5 {
+            allowed = ["large_airport", "medium_airport", "small_airport"]
+        } else {
+            allowed = ["large_airport", "medium_airport", "small_airport", "seaplane_base", "heliport"]
         }
-        return maxDelta < 2.0 // Show small airports when zoomed in
+        let rank = ["large_airport": 0, "medium_airport": 1, "small_airport": 2, "seaplane_base": 3, "heliport": 4]
+
+        return all
+            .filter { a in
+                allowed.contains(a.type)
+                    && a.coordinate.latitude >= minLat && a.coordinate.latitude <= maxLat
+                    && a.coordinate.longitude >= minLon && a.coordinate.longitude <= maxLon
+            }
+            .sorted { (rank[$0.type] ?? 9, $0.id) < (rank[$1.type] ?? 9, $1.id) }
+            .prefix(limit)
+            .map { $0 }
     }
 
     private func calculateAndUpdateRoute() async {

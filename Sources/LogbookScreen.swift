@@ -9,7 +9,7 @@ struct LogbookScreen: View {
     }()
 
     var body: some View {
-        NavigationStack {
+        Group { // pushed inside MoreScreen's NavigationStack
             Group {
                 if model.logbook.isEmpty {
                     ContentUnavailableView("Carnet vide",

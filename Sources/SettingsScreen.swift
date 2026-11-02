@@ -4,7 +4,7 @@ struct SettingsScreen: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        NavigationStack {
+        Group { // pushed inside MoreScreen's NavigationStack
             List {
                 Section {
                     Stepper(value: $model.cruiseGS, in: 40.0...500.0, step: 5.0) {
@@ -61,11 +61,11 @@ struct SettingsScreen: View {
                     LabeledContent("Carte VFR", value: "FAA sectionnelles")
                     LabeledContent("Météo", value: "NOAA + Iowa Mesonet")
                     LabeledContent("Espaces aériens", value: "FAA ArcGIS")
-                    LabeledContent("NOTAM", value: "FAA (clé requise)")
+                    LabeledContent("NOTAM", value: "Indisponibles (clé FAA requise)")
                 }
 
                 Section {
-                    LabeledContent("Version", value: "1.0.38")
+                    LabeledContent("Version", value: Self.appVersion)
                     LabeledContent("Zone", value: "US · VFR")
                 } header: {
                     Text("À propos")
@@ -75,5 +75,13 @@ struct SettingsScreen: View {
             }
             .navigationTitle("Réglages")
         }
+    }
+
+    /// "1.0.39 (39)", read from the bundle so it always matches the release tag.
+    static var appVersion: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(short) (\(build))"
     }
 }

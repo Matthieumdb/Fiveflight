@@ -33,6 +33,28 @@ jobs:
           xcodegen --version
       - name: Generate Xcode Project
         run: xcodegen generate
+      - name: Derive version from tag
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          if [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "MARKETING_VERSION=$TAG" >> "$GITHUB_ENV"
+            echo "CURRENT_PROJECT_VERSION=${TAG##*.}" >> "$GITHUB_ENV"
+          else
+            echo "MARKETING_VERSION=$(grep -m1 'MARKETING_VERSION' project.yml | sed -E 's/.*\"(.*)\".*/\1/')" >> "$GITHUB_ENV"
+            echo "CURRENT_PROJECT_VERSION=$(grep -m1 'CURRENT_PROJECT_VERSION' project.yml | sed -E 's/.*\"(.*)\".*/\1/')" >> "$GITHUB_ENV"
+          fi
+      - name: Run unit tests (a failing test blocks the release)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -scheme ${SCHEME_NAME} \
+            -destination "platform=iOS Simulator,name=iPhone 17,OS=latest" \
+            -configuration Debug \
+            test \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty --color --simple
       - name: Build Archive (no signing)
         run: |
           set -o pipefail
@@ -42,6 +64,8 @@ jobs:
             -archivePath build/${PROJECT_NAME}.xcarchive \
             -destination "generic/platform=iOS" \
             archive \
+            MARKETING_VERSION="${MARKETING_VERSION}" \
+            CURRENT_PROJECT_VERSION="${CURRENT_PROJECT_VERSION}" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
@@ -81,6 +105,29 @@ jobs:
             exit 1
           fi
           echo "✓ FiveflightWidget.appex found"
+
+          # Widget must declare its extension point, or iOS refuses to install the whole app
+          WIDGET_PLIST="$APP_PATH/PlugIns/FiveflightWidget.appex/Info.plist"
+          EXT_POINT=$(/usr/libexec/PlistBuddy -c "Print NSExtension:NSExtensionPointIdentifier" "$WIDGET_PLIST" 2>/dev/null || echo "")
+          if [ "$EXT_POINT" != "com.apple.widgetkit-extension" ]; then
+            echo "ERROR: widget Info.plist has no NSExtension:NSExtensionPointIdentifier (got '$EXT_POINT')"
+            exit 1
+          fi
+          echo "✓ Widget NSExtension: $EXT_POINT"
+
+          # Orientations must be an array of real values, not one comma-joined string
+          if ! /usr/libexec/PlistBuddy -c "Print UISupportedInterfaceOrientations:0" "$APP_PATH/Info.plist" | grep -qx "UIInterfaceOrientationPortrait"; then
+            echo "ERROR: UISupportedInterfaceOrientations is malformed"
+            exit 1
+          fi
+          echo "✓ Orientations OK"
+
+          # Bundled CSVs must be US-only (scripts/filter_us_csv.py)
+          if ! python3 -c 'import csv,sys; r=csv.DictReader(open(sys.argv[1], newline="", encoding="utf-8")); sys.exit(0 if all(x["iso_country"]=="US" for x in r) else 1)' "$APP_PATH/airports.csv"; then
+            echo "ERROR: airports.csv contains non-US airports"
+            exit 1
+          fi
+          echo "✓ airports.csv is US-only"
 
           # Info.plist checks
           INFO_PLIST="$APP_PATH/Info.plist"

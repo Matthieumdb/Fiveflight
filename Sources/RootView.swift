@@ -2,50 +2,26 @@ import SwiftUI
 import UIKit
 
 struct RootView: View {
-    @StateObject private var store = AirportStore()
-    @StateObject private var location = LocationManager()
-    @StateObject private var model = AppModel()
-
-    init() {
-        // Dark, slightly translucent tab bar that matches the cockpit theme.
-        let tab = UITabBarAppearance()
-        tab.configureWithDefaultBackground()
-        tab.backgroundColor = UIColor(Theme.bgElevated).withAlphaComponent(0.92)
-        UITabBar.appearance().standardAppearance = tab
-        UITabBar.appearance().scrollEdgeAppearance = tab
-
-        let nav = UINavigationBarAppearance()
-        nav.configureWithTransparentBackground()
-        nav.backgroundColor = UIColor(Theme.bg).withAlphaComponent(0.6)
-        nav.titleTextAttributes = [.foregroundColor: UIColor(Theme.textPrimary)]
-        nav.largeTitleTextAttributes = [.foregroundColor: UIColor(Theme.textPrimary)]
-        UINavigationBar.appearance().standardAppearance = nav
-        UINavigationBar.appearance().scrollEdgeAppearance = nav
-    }
+    // Single source of truth: the instances created once in FiveflightApp.
+    // (RootView used to create its own copies, so Settings changed a different AppModel than the one the app read.)
+    @EnvironmentObject private var store: AirportStore
+    @EnvironmentObject private var location: LocationManager
+    @EnvironmentObject private var model: AppModel
 
     var body: some View {
         ZStack {
-            Theme.background.ignoresSafeArea()
             if store.ready {
                 TabView {
                     MapScreen()
                         .tabItem { Label("Carte", systemImage: "map.fill") }
+                    FlightPlanScreen()
+                        .tabItem { Label("Plan", systemImage: "list.bullet.clipboard.fill") }
                     WeatherScreen()
                         .tabItem { Label("Météo", systemImage: "cloud.sun.fill") }
                     AirspaceScreen()
-                        .tabItem { Label("Espace", systemImage: "shield.fill") }
-                    CalculatorsScreen()
-                        .tabItem { Label("Calculs", systemImage: "function") }
-                    FlightPlanScreen()
-                        .tabItem { Label("Plan", systemImage: "list.bullet.clipboard.fill") }
-                    FavoritesScreen()
-                        .tabItem { Label("Favoris", systemImage: "star.fill") }
-                    LogbookScreen()
-                        .tabItem { Label("Carnet", systemImage: "book.fill") }
-                    ChecklistScreen()
-                        .tabItem { Label("Checklist", systemImage: "checklist") }
-                    SettingsScreen()
-                        .tabItem { Label("Réglages", systemImage: "gearshape.fill") }
+                        .tabItem { Label("Espaces", systemImage: "shield.lefthalf.filled") }
+                    MoreScreen()
+                        .tabItem { Label("Plus", systemImage: "ellipsis.circle.fill") }
                 }
             } else {
                 LoadingView(progress: store.progress)
@@ -53,13 +29,33 @@ struct RootView: View {
         }
         .colorMultiply(model.nightMode ? Color(red: 1.0, green: 0.30, blue: 0.30) : .white)
         .animation(.easeInOut, value: model.nightMode)
-        .tint(Theme.accent)
-        .environmentObject(store)
-        .environmentObject(location)
-        .environmentObject(model)
+        .onReceive(location.$location) { coordinate in
+            // Feed the GPS fix to the map, nearest-airport lists and widget.
+            if let coordinate { model.userLocation = coordinate }
+        }
         .task {
             location.start()
             await store.load()
+        }
+    }
+}
+
+/// Secondary tools, grouped like the system "More" pattern but with a single navigation stack.
+struct MoreScreen: View {
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    NavigationLink { FavoritesScreen() } label: { Label("Favoris", systemImage: "star.fill") }
+                    NavigationLink { LogbookScreen() } label: { Label("Carnet de vol", systemImage: "book.fill") }
+                    NavigationLink { ChecklistScreen() } label: { Label("Checklists", systemImage: "checklist") }
+                    NavigationLink { CalculatorsScreen() } label: { Label("Calculateurs", systemImage: "function") }
+                }
+                Section {
+                    NavigationLink { SettingsScreen() } label: { Label("Réglages", systemImage: "gearshape.fill") }
+                }
+            }
+            .navigationTitle("Plus")
         }
     }
 }

@@ -345,7 +345,11 @@ final class FiveflightTests: XCTestCase {
 
     @MainActor
     func testAppModelMapRegionPersistence() async throws {
-        let model = AppModel()
+        // Isolated storage: the test host app is running and saves its own map region to .standard.
+        let suite = "FiveflightTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(defaults: defaults)
         let testRegion = MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 27.5, longitude: -80.5),
             span: MKCoordinateSpan(latitudeDelta: 1.0, longitudeDelta: 1.0)
@@ -357,10 +361,87 @@ final class FiveflightTests: XCTestCase {
         try await Task.sleep(nanoseconds: 1_500_000_000)
 
         // Create new model instance (simulates app restart)
-        let model2 = AppModel()
+        let model2 = AppModel(defaults: defaults)
 
         // Region should be restored
         XCTAssertEqual(model2.mapRegion.center.latitude, testRegion.center.latitude, accuracy: 0.001)
         XCTAssertEqual(model2.mapRegion.center.longitude, testRegion.center.longitude, accuracy: 0.001)
+    }
+
+    // MARK: - v1.0.39 regression tests
+
+    func testAirspaceTypeUsesSnapshotJSONFormat() throws {
+        let json = #"[{"id":"X","name":"Test B","type":{"classAirspace":"B"},"polygons":[[{"latitude":27,"longitude":-80},{"latitude":27.1,"longitude":-80},{"latitude":27.1,"longitude":-80.1}]],"floor":0,"ceiling":7000,"controllingAgency":null,"frequency":null,"isActive":true,"schedule":null},{"id":"Y","name":"R-2901","type":{"sua":"RESTRICTED"},"polygons":[],"floor":0,"ceiling":18000,"controllingAgency":null,"frequency":null,"isActive":true,"schedule":null},{"id":"Z","name":"E2","type":{"classESurface":true},"polygons":[],"floor":0,"ceiling":17999,"controllingAgency":null,"frequency":null,"isActive":true,"schedule":null}]"#
+        let decoded = try JSONDecoder().decode([Airspace].self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.count, 3)
+        XCTAssertEqual(decoded[0].type, .classAirspace(.B))
+        XCTAssertEqual(decoded[1].type, .sua(.restricted))
+        XCTAssertEqual(decoded[2].type, .classESurface)
+        // Round trip keeps the same readable format.
+        let again = try JSONDecoder().decode([Airspace].self, from: JSONEncoder().encode(decoded))
+        XCTAssertEqual(again.map(\.type), decoded.map(\.type))
+    }
+
+    func testBundledAirspaceSnapshotDecodesWithRealFloridaData() throws {
+        guard let url = Bundle.main.url(forResource: "airspace_snapshot", withExtension: "json") else {
+            throw XCTSkip("snapshot not bundled in this test host")
+        }
+        let airspaces = try JSONDecoder().decode([Airspace].self, from: Data(contentsOf: url))
+        XCTAssertGreaterThan(airspaces.count, 100)
+        let miamiB = airspaces.filter { $0.name.uppercased().contains("MIAMI") && $0.type == .classAirspace(.B) }
+        XCTAssertFalse(miamiB.isEmpty)
+        XCTAssertTrue(miamiB.allSatisfy { $0.ceiling == 7000 })
+    }
+
+    func testFAAGeoJSONParser() throws {
+        let geojson = #"{"type":"FeatureCollection","exceededTransferLimit":true,"features":[{"type":"Feature","properties":{"OBJECTID":19,"IDENT":"MIA","NAME":"MIAMI CLASS B","CLASS":"B","LOCAL_TYPE":"CLASS_B","UPPER_VAL":7000,"UPPER_UOM":"FT","UPPER_CODE":"MSL","LOWER_VAL":1500,"LOWER_UOM":"FT","LOWER_CODE":"MSL"},"geometry":{"type":"Polygon","coordinates":[[[-80.3,25.7],[-80.2,25.8],[-80.1,25.7],[-80.3,25.7]]]}},{"type":"Feature","properties":{"OBJECTID":20,"CLASS":"Other","LOCAL_TYPE":"MODE C","UPPER_VAL":10000},"geometry":{"type":"Polygon","coordinates":[[[-80.3,25.7],[-80.2,25.8],[-80.1,25.7],[-80.3,25.7]]]}}]}"#
+        let page = try FAAAirspaceParser.parse(Data(geojson.utf8), layer: .classAirspace)
+        XCTAssertEqual(page.featureCount, 2)
+        XCTAssertTrue(page.exceededTransferLimit)
+        XCTAssertEqual(page.airspaces.count, 1)           // Mode C veil is not an airspace class
+        XCTAssertEqual(page.airspaces[0].floor, 1500)
+        XCTAssertEqual(page.airspaces[0].ceiling, 7000)
+        XCTAssertEqual(page.airspaces[0].polygons[0][0].latitude, 25.7, accuracy: 0.0001)
+
+        let sua = #"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"OBJECTID":2,"NAME":"R-2901A","TYPE_CODE":"R","UPPER_VAL":"180","UPPER_UOM":"FL","LOWER_VAL":"0","LOWER_CODE":"SFC"},"geometry":{"type":"MultiPolygon","coordinates":[[[[-81,27],[-81,27.1],[-80.9,27],[-81,27]]]]}}]}"#
+        let suaPage = try FAAAirspaceParser.parse(Data(sua.utf8), layer: .specialUse)
+        XCTAssertEqual(suaPage.airspaces.first?.type, .sua(.restricted))
+        XCTAssertEqual(suaPage.airspaces.first?.ceiling, 18000)
+        XCTAssertEqual(suaPage.airspaces.first?.floor, 0)
+    }
+
+    @MainActor
+    func testMapShowsOnlyAirportsInViewWithLimit() {
+        func apt(_ id: String, _ type: String, _ lat: Double, _ lon: Double) -> Airport {
+            Airport(id: id, name: id, type: type, icao: nil, iata: nil, municipality: nil, elevationFt: nil,
+                    coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon))
+        }
+        var all = [apt("KFPR", "medium_airport", 27.4975, -80.3726),
+                   apt("KJFK", "large_airport", 40.64, -73.78),          // far outside
+                   apt("FD01", "heliport", 27.60, -80.20)]
+        for i in 0..<1000 { all.append(apt("S\(i)", "small_airport", 27.4 + Double(i) * 0.0001, -80.4)) }
+
+        let wide = MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 27.5, longitude: -80.4),
+                                      span: MKCoordinateSpan(latitudeDelta: 2, longitudeDelta: 2))
+        let shown = MapScreen.airportsToShow(all, in: wide)
+        XCTAssertEqual(shown.count, 300)                       // capped
+        XCTAssertEqual(shown.first?.id, "KFPR")                // larger airports first
+        XCTAssertFalse(shown.contains { $0.id == "KJFK" })     // outside the view
+        XCTAssertFalse(shown.contains { $0.id == "FD01" })     // heliports only when zoomed in
+
+        // Zoomed in around the heliport (the 1000 small airports are outside this view).
+        let close = MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 27.60, longitude: -80.20),
+                                       span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1))
+        XCTAssertTrue(MapScreen.airportsToShow(all, in: close).contains { $0.id == "FD01" })
+    }
+
+    func testUSFilterKeepsOnlyUSAirportsAndTheirData() {
+        let texts = [
+            "airports": "id,ident,type,name,lat,lon,elev,continent,iso_country\n1,KFPR,medium_airport,Fort Pierce,27.4,-80.3,24,NA,US\n2,LFPG,large_airport,CDG,49,2.5,392,EU,FR\n3,XCLO,closed,Old,27,-80,0,NA,US\n",
+            "runways": "id,airport_ref,airport_ident\n1,1,KFPR\n2,2,LFPG\n",
+            "airport-frequencies": "id,airport_ref,airport_ident\n1,1,KFPR\n2,2,LFPG\n"
+        ]
+        // Below the 1000-airport sanity threshold a download is rejected...
+        XCTAssertNil(AirportDataRefresher.filterUS(texts))
     }
 }

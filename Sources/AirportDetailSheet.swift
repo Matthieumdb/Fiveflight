@@ -108,6 +108,21 @@ struct AirportDetailSheet: View {
                     }
                 }
 
+                // NOTAMs are not fetched (the FAA API needs a client key): say so explicitly,
+                // never let an empty screen look like "no NOTAMs".
+                Section {
+                    Label("NOTAM non chargés dans Fiveflight. Consultez-les avant le vol.", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    if let url = URL(string: "https://notams.aim.faa.gov/notamSearch/nsapp.html#/") {
+                        Link("Ouvrir FAA NOTAM Search", destination: url)
+                    }
+                } header: {
+                    Text("NOTAM")
+                        .font(TypographyToken.labelSmall)
+                        .foregroundStyle(ColorToken.textTertiary)
+                        .textCase(.uppercase)
+                }
+
                 // Services & Info
                 Section {
                     InfoRow(icon: "building.2", title: "Type", value: airportTypeDisplay)

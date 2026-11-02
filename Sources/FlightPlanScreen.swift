@@ -48,7 +48,7 @@ struct FlightPlanScreen: View {
                 }
             }
             .sheet(isPresented: $showFlightPlanSheet) {
-                SearchSheet(nearest: store.nearest(to: model.userLocation ?? CLLocationCoordinate2D(latitude: 39.8283, longitude: -98.5795), limit: 20), onSelect: { airport in
+                SearchSheet(nearest: store.nearest(to: model.userLocation ?? AppModel.homeCoordinate, limit: 20), onSelect: { airport in
                     model.waypoints.append(airport)
                 })
             }

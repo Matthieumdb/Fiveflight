@@ -41,11 +41,20 @@ jobs:
             -scheme Fiveflight \
             -destination "platform=iOS Simulator,name=${IOS_SIMULATOR},OS=latest" \
             -configuration Debug \
+            -resultBundlePath build/test-results/Tests.xcresult \
             build test \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             | xcpretty --color --simple
+
+      - name: Print crash reports (on failure)
+        if: failure()
+        run: |
+          for f in $(find ~/Library/Logs/DiagnosticReports -name "Fiveflight*" -newer project.yml 2>/dev/null | head -3); do
+            echo "=== $f"; head -c 20000 "$f"; echo
+          done
+          xcrun xcresulttool get test-results summary --path build/test-results/Tests.xcresult 2>/dev/null | head -100 || true
 
       - name: Upload Test Results
         if: always()
@@ -53,7 +62,7 @@ jobs:
         with:
           name: test-results
           path: |
-            **/test-results/*.xcresult
+            build/test-results/Tests.xcresult
           retention-days: 7
 
   lint:

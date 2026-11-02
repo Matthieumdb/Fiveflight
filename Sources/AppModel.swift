@@ -67,10 +67,9 @@ final class AppModel: ObservableObject {
     @Published var cruiseAlt: Int = 5500 { didSet { defaults.set(cruiseAlt, forKey: "cruiseAlt") } }
 
     // Map state
-    @Published var mapRegion = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 39.8283, longitude: -98.5795),
-        span: MKCoordinateSpan(latitudeDelta: 10, longitudeDelta: 10)
-    ) {
+    /// Last map region. Deliberately *not* @Published: the map reports a new region at the end of
+    /// every pan, and publishing it re-rendered every screen observing AppModel. Saved with a 1 s debounce.
+    var mapRegion = AppModel.homeRegion {
         didSet {
             mapRegionSaveTask?.cancel()
             mapRegionSaveTask = Task {
@@ -81,6 +80,14 @@ final class AppModel: ObservableObject {
             }
         }
     }
+
+    /// Home base KFPR (Fort Pierce, FL), used for the first launch and as a fallback position.
+    static let homeCoordinate = CLLocationCoordinate2D(latitude: 27.4975, longitude: -80.3726)
+    static let homeRegion = MKCoordinateRegion(
+        center: homeCoordinate,
+        span: MKCoordinateSpan(latitudeDelta: 1.2, longitudeDelta: 1.2)
+    )
+
     @Published var userLocation: CLLocationCoordinate2D?
     @Published var showUserLocation = true
     @Published var followUser = false
@@ -111,11 +118,15 @@ final class AppModel: ObservableObject {
     @Published var fuelBurn = 8.0    { didSet { saveProfile() } }
     @Published var reserveMin = 45.0 { didSet { saveProfile() } }
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
 
     static let shared = AppModel()
 
-    init() { load() }
+    /// `defaults` is injectable so tests don't share (and race with) the running app's storage.
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        load()
+    }
 
     // Favorites
     func isFavorite(_ id: String) -> Bool { favorites.contains(id) }

@@ -35,6 +35,7 @@ jobs:
         run: xcodegen generate
       - name: Build Archive (no signing)
         run: |
+          set -o pipefail
           xcodebuild \
             -scheme ${SCHEME_NAME} \
             -configuration Release \
@@ -45,12 +46,85 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             | xcpretty --color --simple
-      - name: Debug Archive Contents
+      - name: Verify Archive Contents
         run: |
-          echo "=== Archive structure ==="
-          find build/${PROJECT_NAME}.xcarchive -type d -name "*.app" | head -5
-          ls -la build/${PROJECT_NAME}.xcarchive/Products/Applications/ 2>/dev/null || echo "No Products/Applications"
-          ls -la build/${PROJECT_NAME}.xcarchive/Products/ 2>/dev/null || echo "No Products"
+          set -euo pipefail
+          APP_PATH=$(find build/${PROJECT_NAME}.xcarchive -type d -name "*.app" | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app found in archive"
+            exit 1
+          fi
+          echo "Found app at: $APP_PATH"
+
+          # Check for required files
+          echo "=== Verifying archive contents ==="
+
+          # Assets.car
+          if [ ! -f "$APP_PATH/Assets.car" ]; then
+            echo "ERROR: Assets.car missing from app bundle"
+            exit 1
+          fi
+          echo "✓ Assets.car found"
+
+          # 3 CSV files
+          CSV_COUNT=$(find "$APP_PATH" -name "*.csv" | wc -l)
+          if [ "$CSV_COUNT" -lt 3 ]; then
+            echo "ERROR: Expected at least 3 CSV files, found $CSV_COUNT"
+            find "$APP_PATH" -name "*.csv"
+            exit 1
+          fi
+          echo "✓ $CSV_COUNT CSV files found"
+
+          # Widget extension
+          if [ ! -d "$APP_PATH/PlugIns/FiveflightWidget.appex" ]; then
+            echo "ERROR: FiveflightWidget.appex missing from PlugIns"
+            exit 1
+          fi
+          echo "✓ FiveflightWidget.appex found"
+
+          # Info.plist checks
+          INFO_PLIST="$APP_PATH/Info.plist"
+          if [ ! -f "$INFO_PLIST" ]; then
+            echo "ERROR: Info.plist missing"
+            exit 1
+          fi
+
+          # Check CFBundleShortVersionString
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$INFO_PLIST" 2>/dev/null || echo "")
+          if [ -z "$VERSION" ]; then
+            echo "ERROR: CFBundleShortVersionString missing from Info.plist"
+            exit 1
+          fi
+          echo "✓ CFBundleShortVersionString: $VERSION"
+
+          # Check UILaunchScreen
+          if ! /usr/libexec/PlistBuddy -c "Print UILaunchScreen" "$INFO_PLIST" >/dev/null 2>&1; then
+            echo "ERROR: UILaunchScreen missing from Info.plist"
+            exit 1
+          fi
+          echo "✓ UILaunchScreen present"
+
+          # Check arm64 only (no armv7)
+          ARCHS=$(/usr/libexec/PlistBuddy -c "Print UIRequiredDeviceCapabilities" "$INFO_PLIST" 2>/dev/null | grep -c "arm64" || echo "0")
+          if [ "$ARCHS" -eq 0 ]; then
+            echo "WARNING: arm64 not explicitly required in UIRequiredDeviceCapabilities"
+          fi
+
+          # Check no ATS arbitrary loads
+          if /usr/libexec/PlistBuddy -c "Print NSAppTransportSecurity:NSAllowsArbitraryLoads" "$INFO_PLIST" 2>/dev/null | grep -q "true"; then
+            echo "ERROR: NSAllowsArbitraryLoads is true (ATS arbitrary loads enabled)"
+            exit 1
+          fi
+          echo "✓ No ATS arbitrary loads"
+
+          # Check no background location
+          if /usr/libexec/PlistBuddy -c "Print UIBackgroundModes" "$INFO_PLIST" 2>/dev/null | grep -q "location"; then
+            echo "ERROR: Background location mode enabled"
+            exit 1
+          fi
+          echo "✓ No background location"
+
+          echo "=== All archive checks passed ==="
       - name: Create Unsigned IPA
         run: |
           set -euo pipefail
@@ -79,22 +153,24 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Fiveflight ${{ github.ref_name }}
           body: |
-            ## Fiveflight ${{ github.ref_name }} (Unsigned IPA for Jailbroken)
+            ## Fiveflight ${{ github.ref_name }} (Unsigned IPA)
 
             **Build:** ${{ github.run_number }}
-            **Date:** $(date -u +"%Y-%m-%d %H:%M UTC")
+            **Date:** ${{ github.event.head_commit.timestamp }}
 
-            ### ⚠️ Unsigned IPA - Jailbroken Only
-            This IPA has **no code signature**. Only install on jailbroken devices.
+            ### ⚠️ IPA non signée
+            Cette IPA n'est **pas signée**. Pour l'installer, utilisez **Sideloadly** ou **AltStore** qui la re-signeront avec votre Apple ID.
 
             ### Installation
-            1. Download `Fiveflight-${{ github.ref_name }}.ipa` below
-            2. Install via Filza, IPA Installer, or SSH to `/var/mobile/Applications/`
-            3. Respring if needed
+            1. Téléchargez `Fiveflight-${{ github.ref_name }}.ipa` ci-dessous
+            2. Installez via Sideloadly (Windows/macOS) ou AltStore (macOS/iOS)
+            3. L'app sera signée avec votre identifiant Apple (valide 7 jours gratuit, 1 an payant)
 
-            ### Requirements
-            - Jailbroken iOS 17.0+
-            - iPhone or iPad
+            ### Prérequis
+            - iOS 17.0+ / iPadOS 17.0+
+            - iPhone ou iPad
+            - Compte Apple ID (gratuit)
+
           files: |
             build/ipa/Fiveflight-${{ github.ref_name }}.ipa
           draft: false

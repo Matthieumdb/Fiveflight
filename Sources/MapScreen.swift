@@ -9,7 +9,7 @@ struct MapScreen: View {
     @EnvironmentObject private var airspaceManager: AirspaceDataManager
     @EnvironmentObject private var routingEngine: RoutingEngine
     @EnvironmentObject private var weatherService: WeatherService
-    @StateObject private var locationManager = LocationManager()
+    @EnvironmentObject private var locationManager: LocationManager
 
     @State private var regionVersion = 0
     @State private var showFlightPlanPanel = false
@@ -102,7 +102,6 @@ struct MapScreen: View {
             SearchSheet(nearest: store.nearest(to: model.userLocation ?? CLLocationCoordinate2D(latitude: 39.8283, longitude: -98.5795), limit: 20))
         }
         .onAppear {
-            locationManager.start()
             Task {
                 await calculateAndUpdateRoute()
             }

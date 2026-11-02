@@ -70,23 +70,35 @@ final class AppModel: ObservableObject {
     @Published var mapRegion = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 39.8283, longitude: -98.5795),
         span: MKCoordinateSpan(latitudeDelta: 10, longitudeDelta: 10)
-    ) { didSet { saveMapRegion() } }
+    ) {
+        didSet {
+            mapRegionSaveTask?.cancel()
+            mapRegionSaveTask = Task {
+                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second debounce
+                if !Task.isCancelled {
+                    await MainActor.run { saveMapRegion() }
+                }
+            }
+        }
+    }
     @Published var userLocation: CLLocationCoordinate2D?
     @Published var showUserLocation = true
     @Published var followUser = false
 
+    private var mapRegionSaveTask: Task<Void, Never>?
+
     // Map layer visibility (persisted)
-    @AppStorage("showSectional") var showSectional: Bool = true
-    @AppStorage("showRadar") var showRadar: Bool = false
-    @AppStorage("showAirspace") var showAirspace: Bool = true
-    @AppStorage("showTFRs") var showTFRs: Bool = true
-    @AppStorage("showWindsAloft") var showWindsAloft: Bool = true
-    @AppStorage("showPIREPs") var showPIREPs: Bool = true
-    @AppStorage("showAIRMETs") var showAIRMETs: Bool = true
-    @AppStorage("showAirways") var showAirways: Bool = true
+    @Published var showSectional: Bool = true { didSet { defaults.set(showSectional, forKey: "showSectional") } }
+    @Published var showRadar: Bool = false { didSet { defaults.set(showRadar, forKey: "showRadar") } }
+    @Published var showAirspace: Bool = true { didSet { defaults.set(showAirspace, forKey: "showAirspace") } }
+    @Published var showTFRs: Bool = true { didSet { defaults.set(showTFRs, forKey: "showTFRs") } }
+    @Published var showWindsAloft: Bool = true { didSet { defaults.set(showWindsAloft, forKey: "showWindsAloft") } }
+    @Published var showPIREPs: Bool = true { didSet { defaults.set(showPIREPs, forKey: "showPIREPs") } }
+    @Published var showAIRMETs: Bool = true { didSet { defaults.set(showAIRMETs, forKey: "showAIRMETs") } }
+    @Published var showAirways: Bool = true { didSet { defaults.set(showAirways, forKey: "showAirways") } }
 
     // Appearance (persisted): 0 = System, 1 = Light, 2 = Dark
-    @AppStorage("appearanceMode") var appearanceMode: Int = 0
+    @Published var appearanceMode: Int = 0 { didSet { defaults.set(appearanceMode, forKey: "appearanceMode") } }
 
     // UI state
     @Published var selectedAirport: Airport?
@@ -174,6 +186,16 @@ final class AppModel: ObservableObject {
            let region = try? JSONDecoder().decode(MKCoordinateRegionCodable.self, from: data) {
             mapRegion = region.region
         }
+        // Load map layer settings
+        showSectional = defaults.object(forKey: "showSectional") as? Bool ?? true
+        showRadar = defaults.object(forKey: "showRadar") as? Bool ?? false
+        showAirspace = defaults.object(forKey: "showAirspace") as? Bool ?? true
+        showTFRs = defaults.object(forKey: "showTFRs") as? Bool ?? true
+        showWindsAloft = defaults.object(forKey: "showWindsAloft") as? Bool ?? true
+        showPIREPs = defaults.object(forKey: "showPIREPs") as? Bool ?? true
+        showAIRMETs = defaults.object(forKey: "showAIRMETs") as? Bool ?? true
+        showAirways = defaults.object(forKey: "showAirways") as? Bool ?? true
+        appearanceMode = defaults.object(forKey: "appearanceMode") as? Int ?? 0
     }
 
     private func saveMapRegion() {

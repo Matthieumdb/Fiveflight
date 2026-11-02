@@ -11,6 +11,7 @@ final class AirportStore: ObservableObject {
 
     private(set) var airports: [Airport] = []
     private var byId: [String: Airport] = [:]
+    private var byIata: [String: Airport] = [:]
     private var runwaysByIdent: [String: [Runway]] = [:]
     private var freqsByIdent: [String: [Frequency]] = [:]
 
@@ -19,6 +20,9 @@ final class AirportStore: ObservableObject {
 
     /// Look up an airport by its identifier (ICAO), case-insensitive.
     func airport(_ ident: String) -> Airport? { byId[ident.uppercased()] }
+
+    /// Look up an airport by IATA code, case-insensitive.
+    func airport(iata: String) -> Airport? { byIata[iata.uppercased()] }
 
     func load() async {
         guard !ready else { return }
@@ -71,6 +75,22 @@ final class AirportStore: ObservableObject {
     private func apply(parsed: Parsed) {
         airports = parsed.airports
         byId = Dictionary(parsed.airports.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+
+        // Build IATA index, handling duplicates by preferring larger airports
+        byIata = [:]
+        let sortedByType = parsed.airports.sorted { a1, a2 in
+            // Prefer large_airport > medium_airport > small_airport > heliport
+            let typeOrder = ["large_airport": 0, "medium_airport": 1, "small_airport": 2, "heliport": 3]
+            return (typeOrder[a1.type] ?? 99) < (typeOrder[a2.type] ?? 99)
+        }
+        for airport in sortedByType {
+            if let iata = airport.iata?.uppercased(), !iata.isEmpty {
+                if byIata[iata] == nil {
+                    byIata[iata] = airport
+                }
+            }
+        }
+
         runwaysByIdent = parsed.runways
         freqsByIdent = parsed.freqs
     }

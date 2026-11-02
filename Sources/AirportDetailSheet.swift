@@ -227,9 +227,6 @@ struct AirportHeaderView: View {
             HStack(spacing: SpacingToken.space2) {
                 BadgeView(text: airportTypeDisplay, color: ColorToken.brandPrimary)
                 BadgeView(text: airport.elevationFt.map { "\($0) ft MSL" } ?? "— ft MSL", color: ColorToken.info)
-                if airport.type != "heliport" && airport.type != "seaplane_base" {
-                    BadgeView(text: "VFR", color: ColorToken.success)
-                }
             }
         }
         .padding(SpacingToken.cardPadding)

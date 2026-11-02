@@ -385,6 +385,39 @@ final class FiveflightTests: XCTestCase {
         }
     }
 
+    /// Avoid mode must really go around Class B/C/D: KFPR → KBCT passes West Palm Beach Class C.
+    @MainActor
+    func testAvoidControlledRoutesAroundRealAirspace() async throws {
+        guard let url = Bundle.main.url(forResource: "airspace_snapshot", withExtension: "json") else {
+            throw XCTSkip("snapshot not bundled in this test host")
+        }
+        let airspaces = try JSONDecoder().decode([Airspace].self, from: Data(contentsOf: url))
+        let kfpr = Airport(id: "KFPR", name: "Treasure Coast", type: "medium_airport", icao: "KFPR", iata: nil,
+                           municipality: nil, elevationFt: 24, coordinate: CLLocationCoordinate2D(latitude: 27.4975, longitude: -80.3726))
+        let kbct = Airport(id: "KBCT", name: "Boca Raton", type: "medium_airport", icao: "KBCT", iata: nil,
+                           municipality: nil, elevationFt: 13, coordinate: CLLocationCoordinate2D(latitude: 26.3785, longitude: -80.1077))
+
+        let direct = await RoutingEngine.shared.calculateRoute(waypoints: [kfpr, kbct], cruiseAltitude: 3500,
+                                                               mode: .direct, airspaces: airspaces)
+        XCTAssertTrue(direct!.legs[0].airspaceWarnings.contains { $0.airspace.name.contains("WEST PALM") })
+
+        for alt in [3500, 5500] {
+            let result = await RoutingEngine.shared.calculateRoute(waypoints: [kfpr, kbct], cruiseAltitude: alt,
+                                                                   mode: .avoidControlled, airspaces: airspaces)
+            let routed = try XCTUnwrap(result)
+            let path = routed.legs[0].waypoints
+            XCTAssertGreaterThan(path.count, 2, "no detour at \(alt) ft")
+            XCTAssertEqual(path.first!.latitude, kfpr.coordinate.latitude, accuracy: 1e-9)
+            XCTAssertEqual(path.last!.latitude, kbct.coordinate.latitude, accuracy: 1e-9)
+            let blockers = RoutingEngine.blockingRings(airspaces, from: kfpr.coordinate, to: kbct.coordinate,
+                                                       altitude: alt, mode: .avoidControlled)
+            for i in 1..<path.count {
+                XCTAssertFalse(blockers.contains { $0.crosses(path[i - 1], path[i]) }, "segment \(i) enters controlled airspace at \(alt) ft")
+            }
+            XCTAssertLessThan(routed.totalDistanceNM, direct!.totalDistanceNM * 1.5)
+        }
+    }
+
     // MARK: - Airspace CSV Parsing Tests
 
     func testAirspaceCSVParse() {

@@ -89,7 +89,7 @@ struct METAR: Identifiable, Codable, Hashable {
             }
         }
         if let vis = d.visibility {
-            d.visibilityStr = vis >= 10 ? "10+" : String(format: vis == vis.rounded() ? "%.0f" : "%.1f", vis)
+            d.visibilityStr = (vis >= 10 ? "10+" : String(format: vis == vis.rounded() ? "%.0f" : "%.1f", vis)) + " SM"
         }
         if let ceil = d.ceiling { d.ceilingStr = "\(ceil) ft" }
         if let t = d.temperature, let dp = d.dewpoint {

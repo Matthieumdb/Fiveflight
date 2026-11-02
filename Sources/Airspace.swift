@@ -274,7 +274,7 @@ struct Airspace: Identifiable, Codable, Hashable {
         return segmentIntersectsPolygonInternal(a, b, polygon: clPolygon)
     }
 
-    private static func segmentIntersectsPolygonInternal(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, polygon: [CLLocationCoordinate2D]) -> Bool {
+    static func segmentIntersectsPolygonInternal(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, polygon: [CLLocationCoordinate2D]) -> Bool {
         let count = polygon.count
         guard count >= 3 else { return false }
 
@@ -292,7 +292,7 @@ struct Airspace: Identifiable, Codable, Hashable {
         return false
     }
 
-    private static func pointInPolygonStatic(_ point: CLLocationCoordinate2D, polygon: [CLLocationCoordinate2D]) -> Bool {
+    static func pointInPolygonStatic(_ point: CLLocationCoordinate2D, polygon: [CLLocationCoordinate2D]) -> Bool {
         var inside = false
         let count = polygon.count
         var j = count - 1

@@ -51,7 +51,7 @@ struct CalculatorsScreen: View {
     ]
 
     var body: some View {
-        NavigationStack {
+        Group { // pushed inside MoreScreen's NavigationStack
             VStack(spacing: 0) {
                 // Calculator picker
                 ScrollView(.horizontal, showsIndicators: false) {

@@ -1,8 +1,52 @@
 import SwiftUI
 import MapKit
 
-// Distinguish the two tile layers so the renderer can style them differently.
-final class SectionalTileOverlay: MKTileOverlay {}
+/// FAA VFR Sectional tiles. When a zoom level is not published by the FAA tile cache
+/// (404 or not an image), the tile is cut out of its nearest available parent and upscaled,
+/// so zooming in past the chart's native resolution never leaves a grey map.
+final class SectionalTileOverlay: MKTileOverlay {
+    private static let maxFallbackDepth = 5
+
+    override func loadTile(at path: MKTileOverlayPath, result: @escaping (Data?, Error?) -> Void) {
+        load(path, depth: 0, result: result)
+    }
+
+    private func load(_ path: MKTileOverlayPath, depth: Int, result: @escaping (Data?, Error?) -> Void) {
+        var parent = path
+        parent.x = path.x >> depth
+        parent.y = path.y >> depth
+        parent.z = path.z - depth
+        let url = self.url(forTilePath: parent)
+        URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+            let ok = (response as? HTTPURLResponse)?.statusCode == 200
+            if ok, let data, let image = UIImage(data: data) {
+                if depth == 0 {
+                    result(data, nil)
+                } else {
+                    result(Self.crop(image, path: path, depth: depth, tileSize: self?.tileSize ?? CGSize(width: 256, height: 256)), nil)
+                }
+            } else if depth < Self.maxFallbackDepth, path.z - depth > 1, let self {
+                self.load(path, depth: depth + 1, result: result)
+            } else {
+                result(nil, error)
+            }
+        }.resume()
+    }
+
+    /// Cuts the quadrant of `image` (a tile `depth` levels above `path`) that covers `path`, scaled to one tile.
+    private static func crop(_ image: UIImage, path: MKTileOverlayPath, depth: Int, tileSize: CGSize) -> Data? {
+        let factor = CGFloat(1 << depth)
+        let subX = CGFloat(path.x - ((path.x >> depth) << depth))
+        let subY = CGFloat(path.y - ((path.y >> depth) << depth))
+        let renderer = UIGraphicsImageRenderer(size: tileSize)
+        let tile = renderer.image { _ in
+            image.draw(in: CGRect(x: -subX * tileSize.width, y: -subY * tileSize.height,
+                                  width: tileSize.width * factor, height: tileSize.height * factor))
+        }
+        return tile.pngData()
+    }
+}
+
 final class WeatherTileOverlay: MKTileOverlay {}
 final class AirspacePolygonOverlay: MKPolygon {
     let airspaceColor: UIColor
@@ -40,13 +84,18 @@ final class AirportAnnotation: NSObject, MKAnnotation {
 }
 
 /// MapKit map that can overlay FAA VFR sectional tiles and NEXRAD weather,
-/// draw a multi-waypoint route, and show nearby airports. SwiftUI Map can't do
+/// draw the planned route, and show the airports in view. SwiftUI Map can't do
 /// custom tile overlays, so this wraps MKMapView.
+///
+/// `updateUIView` runs on every SwiftUI render, so each layer is only touched when its own
+/// inputs changed (the previous version rebuilt every overlay and annotation each time).
 struct VFRMapView: UIViewRepresentable {
     var showSectional: Bool
     var showWeather: Bool
     var nearest: [Airport]
     var waypoints: [Airport]
+    /// Route computed by RoutingEngine (may detour around airspace); straight legs when empty.
+    var route: [CLLocationCoordinate2D] = []
     var categories: [String: String]
     var userCoord: CLLocationCoordinate2D?
     var region: MKCoordinateRegion
@@ -58,10 +107,10 @@ struct VFRMapView: UIViewRepresentable {
     var showTFRs: Bool = true
 
     // FAA official VFR sectional (ArcGIS, updated per chart cycle); ArcGIS tile = {z}/{y}/{x}.
-    private static let sectionalURL =
+    fileprivate static let sectionalURL =
         "https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}"
     // NEXRAD base reflectivity (Iowa Environmental Mesonet), standard {z}/{x}/{y}.
-    private static let nexradURL =
+    fileprivate static let nexradURL =
         "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png"
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -70,36 +119,42 @@ struct VFRMapView: UIViewRepresentable {
         let mv = MKMapView()
         mv.delegate = context.coordinator
         mv.showsUserLocation = true
+        mv.showsCompass = true
+        mv.showsScale = true
         mv.pointOfInterestFilter = .excludingAll
-        // VFR sectionals are light charts; keep the map base light for legibility and
-        // to avoid a dark-trait tile-render glitch, while the app chrome stays dark.
+        // VFR sectionals are light charts; keep the map base light for legibility.
         mv.overrideUserInterfaceStyle = .light
         mv.setRegion(region, animated: false)
         context.coordinator.lastVersion = regionVersion
+
+        // Native "locate me / follow" button.
+        let tracking = MKUserTrackingButton(mapView: mv)
+        tracking.translatesAutoresizingMaskIntoConstraints = false
+        tracking.backgroundColor = .systemBackground
+        tracking.layer.cornerRadius = 8
+        tracking.layer.masksToBounds = true
+        mv.addSubview(tracking)
+        NSLayoutConstraint.activate([
+            tracking.trailingAnchor.constraint(equalTo: mv.safeAreaLayoutGuide.trailingAnchor, constant: -12),
+            tracking.bottomAnchor.constraint(equalTo: mv.safeAreaLayoutGuide.bottomAnchor, constant: -16)
+        ])
         return mv
     }
 
     func updateUIView(_ mv: MKMapView, context: Context) {
-        context.coordinator.parent = self
-
-        // Update tile overlays only when toggles change
-        context.coordinator.updateTileOverlays(on: mv, showSectional: showSectional, showWeather: showWeather)
-
-        // Update route polyline
-        context.coordinator.updateRoutePolyline(on: mv, waypoints: waypoints)
-
-        // Update user location circles
-        context.coordinator.updateUserCircles(on: mv, userCoord: userCoord, waypoints: waypoints)
-
-        // Update airspace polygons (single pass, no dual TFR loop)
-        context.coordinator.updateAirspacePolygons(on: mv, airspaces: airspaces, showAirspace: showAirspace, showTFRs: showTFRs, colorFor: airspaceColor, isTFR: airspaceTypeIsTFR)
-
-        // Update annotations only when data changes
-        context.coordinator.updateAnnotations(on: mv, nearest: nearest, waypoints: waypoints, categories: categories)
+        let c = context.coordinator
+        c.parent = self
+        c.updateTileOverlays(on: mv, showSectional: showSectional, showWeather: showWeather)
+        c.updateRoute(on: mv, coordinates: route.count >= 2 ? route : waypoints.map(\.coordinate))
+        c.updateUserCircles(on: mv, userCoord: waypoints.isEmpty ? userCoord : nil)
+        c.updateAirspacePolygons(on: mv, airspaces: airspaces, showAirspace: showAirspace, showTFRs: showTFRs,
+                                 colorFor: airspaceColor, isTFR: airspaceTypeIsTFR)
+        c.updateAnnotations(on: mv, nearest: nearest, waypoints: waypoints)
+        c.updateCategoryColors(on: mv, categories: categories)
 
         // Recenter only when SwiftUI bumps the version.
-        if context.coordinator.lastVersion != regionVersion {
-            context.coordinator.lastVersion = regionVersion
+        if c.lastVersion != regionVersion {
+            c.lastVersion = regionVersion
             mv.setRegion(region, animated: true)
         }
     }
@@ -140,126 +195,153 @@ struct VFRMapView: UIViewRepresentable {
     final class Coordinator: NSObject, MKMapViewDelegate {
         var parent: VFRMapView
         var lastVersion = -1
-        var sectionalOverlay: SectionalTileOverlay?
-        var weatherOverlay: WeatherTileOverlay?
-        var routePolyline: MKPolyline?
-        var userCircles: [MKCircle] = []
-        var airspaceOverlays: [MKPolygon] = []
-        var airportAnnotations: [AirportAnnotation] = []
-        var waypointAnnotations: [AirportAnnotation] = []
+        private var sectionalOverlay: SectionalTileOverlay?
+        private var weatherOverlay: WeatherTileOverlay?
+        private var routeOverlay: MKPolyline?
+        private var routeKey = ""
+        private var userCircles: [MKCircle] = []
+        private var circleCenter: CLLocation?
+        private var airspaceOverlays: [MKPolygon] = []
+        private var airspaceKey = ""
+        private var annotationsByKey: [String: AirportAnnotation] = [:]
+        private var lastCategories: [String: String] = [:]
 
         init(_ parent: VFRMapView) { self.parent = parent }
 
         func updateTileOverlays(on mv: MKMapView, showSectional: Bool, showWeather: Bool) {
-            // Sectional
-            if showSectional {
-                if sectionalOverlay == nil {
-                    let o = SectionalTileOverlay(urlTemplate: VFRMapView.sectionalURL)
-                    o.canReplaceMapContent = true
-                    o.minimumZ = 6
-                    o.maximumZ = 16
-                    sectionalOverlay = o
-                    mv.addOverlay(o, level: .aboveLabels)
-                }
-            } else if let overlay = sectionalOverlay {
-                mv.removeOverlay(overlay)
+            if showSectional, sectionalOverlay == nil {
+                let o = SectionalTileOverlay(urlTemplate: VFRMapView.sectionalURL)
+                o.canReplaceMapContent = true
+                sectionalOverlay = o
+                mv.insertOverlay(o, at: 0, level: .aboveLabels)
+            } else if !showSectional, let o = sectionalOverlay {
+                mv.removeOverlay(o)
                 sectionalOverlay = nil
             }
 
-            // Weather
-            if showWeather {
-                if weatherOverlay == nil {
-                    let o = WeatherTileOverlay(urlTemplate: VFRMapView.nexradURL)
-                    o.canReplaceMapContent = false
-                    weatherOverlay = o
-                    mv.addOverlay(o, level: .aboveLabels)
+            if showWeather, weatherOverlay == nil {
+                let o = WeatherTileOverlay(urlTemplate: VFRMapView.nexradURL)
+                o.canReplaceMapContent = false
+                weatherOverlay = o
+                if let s = sectionalOverlay {
+                    mv.insertOverlay(o, above: s)
+                } else {
+                    mv.insertOverlay(o, at: 0, level: .aboveLabels)
                 }
-            } else if let overlay = weatherOverlay {
-                mv.removeOverlay(overlay)
+            } else if !showWeather, let o = weatherOverlay {
+                mv.removeOverlay(o)
                 weatherOverlay = nil
             }
         }
 
-        func updateRoutePolyline(on mv: MKMapView, waypoints: [Airport]) {
-            if let existing = routePolyline {
+        func updateRoute(on mv: MKMapView, coordinates: [CLLocationCoordinate2D]) {
+            let key = coordinates.map { String(format: "%.5f,%.5f", $0.latitude, $0.longitude) }.joined(separator: ";")
+            guard key != routeKey else { return }
+            routeKey = key
+            if let existing = routeOverlay {
                 mv.removeOverlay(existing)
-                routePolyline = nil
+                routeOverlay = nil
             }
-            if waypoints.count >= 2 {
-                let coords = waypoints.map(\.coordinate)
-                let polyline = MKPolyline(coordinates: coords, count: coords.count)
-                routePolyline = polyline
-                mv.addOverlay(polyline, level: .aboveLabels)
-            }
+            guard coordinates.count >= 2 else { return }
+            let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
+            routeOverlay = polyline
+            mv.addOverlay(polyline, level: .aboveLabels)
         }
 
-        func updateUserCircles(on mv: MKMapView, userCoord: CLLocationCoordinate2D?, waypoints: [Airport]) {
-            for circle in userCircles {
-                mv.removeOverlay(circle)
+        /// 10 and 25 NM range rings around the aircraft, redrawn only after it moved 200 m or more.
+        func updateUserCircles(on mv: MKMapView, userCoord: CLLocationCoordinate2D?) {
+            let newCenter = userCoord.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
+            switch (circleCenter, newCenter) {
+            case (nil, nil):
+                return
+            case let (old?, new?) where old.distance(from: new) < 200:
+                return
+            default:
+                break
             }
+            mv.removeOverlays(userCircles)
             userCircles.removeAll()
-
-            if let uc = userCoord, waypoints.isEmpty {
-                for nm in [10.0, 25.0] {
-                    let circle = MKCircle(center: uc, radius: nm * 1852)
-                    userCircles.append(circle)
-                    mv.addOverlay(circle, level: .aboveLabels)
-                }
+            circleCenter = newCenter
+            guard let uc = userCoord else { return }
+            for nm in [10.0, 25.0] {
+                let circle = MKCircle(center: uc, radius: nm * 1852)
+                userCircles.append(circle)
+                mv.addOverlay(circle, level: .aboveLabels)
             }
         }
 
-        func updateAirspacePolygons(on mv: MKMapView, airspaces: [Airspace], showAirspace: Bool, showTFRs: Bool, colorFor: (Airspace) -> UIColor, isTFR: (Airspace) -> Bool) {
-            // Remove existing
-            for overlay in airspaceOverlays {
-                mv.removeOverlay(overlay)
-            }
-            airspaceOverlays.removeAll()
+        func updateAirspacePolygons(on mv: MKMapView, airspaces: [Airspace], showAirspace: Bool, showTFRs: Bool,
+                                    colorFor: (Airspace) -> UIColor, isTFR: (Airspace) -> Bool) {
+            let key = "\(showAirspace)|\(showTFRs)|" + airspaces.map(\.id).joined(separator: ",")
+            guard key != airspaceKey else { return }
+            airspaceKey = key
 
+            mv.removeOverlays(airspaceOverlays)
+            airspaceOverlays.removeAll()
             guard showAirspace || showTFRs else { return }
 
-            for airspace in airspaces {
-                guard airspace.isActive else { continue }
-
+            for airspace in airspaces where airspace.isActive {
                 let tf = isTFR(airspace)
-                let shouldShow = (!tf && showAirspace) || (tf && showTFRs)
-                guard shouldShow else { continue }
-
+                guard (tf && showTFRs) || (!tf && showAirspace) else { continue }
                 let color = tf ? UIColor(ColorToken.tfr) : colorFor(airspace)
-
-                for polygon in airspace.polygons {
-                    guard polygon.count >= 3 else { continue }
-                    let coords = polygon.map(\.clCoordinate)
-                    let overlay = makeAirspaceOverlay(coords: coords, color: color, isTFR: tf)
+                for polygon in airspace.polygons where polygon.count >= 3 {
+                    let overlay = makeAirspaceOverlay(coords: polygon.map(\.clCoordinate), color: color, isTFR: tf)
                     airspaceOverlays.append(overlay)
-                    mv.addOverlay(overlay, level: .aboveLabels)
                 }
             }
+            mv.addOverlays(airspaceOverlays, level: .aboveLabels)
         }
 
         private func makeAirspaceOverlay(coords: [CLLocationCoordinate2D], color: UIColor, isTFR: Bool) -> AirspacePolygonOverlay {
             AirspacePolygonOverlay(coordinates: coords, count: coords.count, airspaceColor: color, isTFR: isTFR)
         }
 
-        func updateAnnotations(on mv: MKMapView, nearest: [Airport], waypoints: [Airport], categories: [String: String]) {
-            // Check if annotations actually changed
-            let newNearestIds = Set(nearest.map(\.id))
-            let newWaypointIds = Set(waypoints.map(\.id))
-            let currentNearestIds = Set(airportAnnotations.map { $0.airport.id })
-            let currentWaypointIds = Set(waypointAnnotations.map { $0.airport.id })
+        /// Adds/removes only the annotations that changed (keyed by role + airport id).
+        func updateAnnotations(on mv: MKMapView, nearest: [Airport], waypoints: [Airport]) {
+            let waypointIds = Set(waypoints.map(\.id))
+            var wanted: [String: (Airport, AirportAnnotation.Role)] = [:]
+            for a in nearest where !waypointIds.contains(a.id) { wanted["n:\(a.id)"] = (a, .nearest) }
+            for a in waypoints { wanted["w:\(a.id)"] = (a, .waypoint) }
 
-            if newNearestIds == currentNearestIds && newWaypointIds == currentWaypointIds {
-                return // No change
+            let stale = annotationsByKey.filter { wanted[$0.key] == nil }
+            if !stale.isEmpty {
+                mv.removeAnnotations(Array(stale.values))
+                for key in stale.keys { annotationsByKey.removeValue(forKey: key) }
             }
+            var added: [AirportAnnotation] = []
+            for (key, value) in wanted where annotationsByKey[key] == nil {
+                let annotation = AirportAnnotation(value.0, role: value.1)
+                annotationsByKey[key] = annotation
+                added.append(annotation)
+            }
+            if !added.isEmpty { mv.addAnnotations(added) }
+        }
 
-            // Remove old annotations (except user location)
-            let toRemove = mv.annotations.filter { !($0 is MKUserLocation) }
-            mv.removeAnnotations(toRemove)
+        /// Recolours visible markers when new METARs arrive, without re-adding them.
+        func updateCategoryColors(on mv: MKMapView, categories: [String: String]) {
+            guard categories != lastCategories else { return }
+            lastCategories = categories
+            for annotation in annotationsByKey.values where annotation.role == .nearest {
+                if let view = mv.view(for: annotation) as? MKMarkerAnnotationView {
+                    style(view, for: annotation)
+                }
+            }
+        }
 
-            // Add new annotations
-            airportAnnotations = nearest.map { AirportAnnotation($0, role: .nearest) }
-            waypointAnnotations = waypoints.map { AirportAnnotation($0, role: .waypoint) }
-            mv.addAnnotations(airportAnnotations)
-            mv.addAnnotations(waypointAnnotations)
+        private func style(_ v: MKMarkerAnnotationView, for a: AirportAnnotation) {
+            switch a.role {
+            case .waypoint:
+                v.markerTintColor = .systemGreen
+                v.glyphImage = UIImage(systemName: "mappin")
+                v.displayPriority = .required
+            case .nearest:
+                let category = parent.categories[a.airport.id]
+                v.markerTintColor = Self.categoryColor(category)
+                    ?? (a.airport.type == "large_airport" ? .systemBlue : .systemTeal)
+                v.glyphImage = UIImage(systemName: a.airport.type == "heliport" ? "h.circle" : "airplane")
+                v.displayPriority = a.airport.type == "large_airport" || a.airport.type == "medium_airport"
+                    ? .defaultHigh : .defaultLow
+            }
         }
 
         func mapView(_ mv: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
@@ -302,29 +384,22 @@ struct VFRMapView: UIViewRepresentable {
             let v = (mv.dequeueReusableAnnotationView(withIdentifier: id) as? MKMarkerAnnotationView)
                 ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: id)
             v.annotation = annotation
-            v.canShowCallout = true
-            v.rightCalloutAccessoryView = UIButton(type: .detailDisclosure)
-            switch a.role {
-            case .waypoint:
-                v.markerTintColor = .systemGreen
-                v.glyphImage = UIImage(systemName: "mappin")
-                v.displayPriority = .required
-            case .nearest:
-                v.markerTintColor = Self.categoryColor(parent.categories[a.airport.id])
-                    ?? (a.airport.type == "large_airport" ? .systemBlue : .systemTeal)
-                v.glyphImage = UIImage(systemName: "airplane")
-                v.displayPriority = parent.categories[a.airport.id] != nil ? .required : .defaultLow
-            }
+            v.canShowCallout = false   // one tap opens the airport sheet directly
+            v.titleVisibility = .adaptive
+            style(v, for: a)
             return v
         }
 
-        func mapView(_ mv: MKMapView, annotationView view: MKAnnotationView,
-                     calloutAccessoryControlTapped control: UIControl) {
-            if let a = view.annotation as? AirportAnnotation { parent.onSelect(a.airport) }
+        func mapView(_ mv: MKMapView, didSelect view: MKAnnotationView) {
+            guard let a = view.annotation as? AirportAnnotation else { return }
+            mv.deselectAnnotation(a, animated: false)
+            parent.onSelect(a.airport)
         }
 
         func mapView(_ mv: MKMapView, regionDidChangeAnimated animated: Bool) {
-            parent.onRegionChange(mv.region)
+            let region = mv.region
+            // Defer so SwiftUI state is never mutated in the middle of a view update.
+            DispatchQueue.main.async { [weak self] in self?.parent.onRegionChange(region) }
         }
 
         static func categoryColor(_ cat: String?) -> UIColor? {

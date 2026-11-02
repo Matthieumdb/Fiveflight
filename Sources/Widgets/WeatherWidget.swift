@@ -33,7 +33,8 @@ struct WeatherSummary: Codable {
 
 /// Provider that reads cached data from App Group shared defaults.
 struct FiveflightProvider: TimelineProvider {
-    let sharedDefaults = UserDefaults(suiteName: "group.com.fiveflight.app")!
+    // Falls back to standard defaults when the App Group is unavailable (unsigned / re-signed build).
+    let sharedDefaults = UserDefaults(suiteName: "group.com.fiveflight.app") ?? .standard
 
     func placeholder(in context: Context) -> FiveflightEntry {
         FiveflightEntry(date: Date(), nearest: [], activeRoute: nil, weather: nil)

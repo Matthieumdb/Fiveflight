@@ -26,20 +26,19 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
     @Published var accuracy: Double = 0
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published var isUpdating = false
-    @Published var isBackgroundModeEnabled = false
 
     private let manager = CLLocationManager()
     private var lastLocation: CLLocation?
-    private var isSignificantChangeMonitoring = false
 
-    override init() {
+    private override init() {
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
         manager.distanceFilter = 10
         manager.headingFilter = 5
-        manager.pausesLocationUpdatesAutomatically = true
-        manager.allowsBackgroundLocationUpdates = false // Set to true when background mode enabled
+        // In flight, never let iOS pause GPS updates; foreground use only (no UIBackgroundModes).
+        manager.activityType = .airborne
+        manager.pausesLocationUpdatesAutomatically = false
         authorizationStatus = manager.authorizationStatus
     }
 
@@ -62,31 +61,7 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
     func stop() {
         manager.stopUpdatingLocation()
         manager.stopUpdatingHeading()
-        if isSignificantChangeMonitoring {
-            manager.stopMonitoringSignificantLocationChanges()
-            isSignificantChangeMonitoring = false
-        }
         isUpdating = false
-    }
-
-    func enableBackgroundMode(_ enabled: Bool) {
-        guard isBackgroundModeEnabled != enabled else { return }
-        isBackgroundModeEnabled = enabled
-
-        if enabled {
-            manager.allowsBackgroundLocationUpdates = true
-            // Start significant change monitoring for background updates
-            if !isSignificantChangeMonitoring {
-                manager.startMonitoringSignificantLocationChanges()
-                isSignificantChangeMonitoring = true
-            }
-        } else {
-            manager.allowsBackgroundLocationUpdates = false
-            if isSignificantChangeMonitoring {
-                manager.stopMonitoringSignificantLocationChanges()
-                isSignificantChangeMonitoring = false
-            }
-        }
     }
 
     private func startUpdating() {
@@ -137,11 +112,6 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("Location error: \(error.localizedDescription)")
-    }
-
-    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation], isSignificantChange: Bool) {
-        // Called for significant location changes (background mode)
-        handleLocations(locations)
     }
 }
 
@@ -238,6 +208,22 @@ final class WeatherService: ObservableObject {
                 let metar = METAR(from: metarResponse)
                 metars[metar.station] = metar
             }
+        }
+    }
+
+    /// Last fetch time per station, so the map can ask often without hammering aviationweather.gov.
+    private var lastMetarFetch: [String: Date] = [:]
+
+    /// Fetches METARs for the stations currently on the map (stale > 5 min only, batches of 50),
+    /// which feeds the VFR/MVFR/IFR/LIFR marker colours.
+    func refreshMETARs(forVisible stations: [String]) async {
+        let now = Date()
+        let stale = stations.filter { now.timeIntervalSince(lastMetarFetch[$0] ?? .distantPast) > 300 }
+        guard !stale.isEmpty else { return }
+        for id in stale { lastMetarFetch[id] = now }
+        for chunk in stale.chunked(into: 50) {
+            if Task.isCancelled { return }
+            await fetchMETARs(for: chunk)
         }
     }
 

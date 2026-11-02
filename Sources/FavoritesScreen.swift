@@ -10,7 +10,7 @@ struct FavoritesScreen: View {
     }
 
     var body: some View {
-        NavigationStack {
+        Group { // pushed inside MoreScreen's NavigationStack
             Group {
                 if favAirports.isEmpty {
                     ContentUnavailableView("Aucun favori",

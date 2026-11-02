@@ -207,6 +207,7 @@ struct VFRMapView: UIViewRepresentable {
             }
         }
 
+        @_optimize(none)
         func updateAirspacePolygons(on mv: MKMapView, airspaces: [Airspace], showAirspace: Bool, showTFRs: Bool, colorFor: (Airspace) -> UIColor, isTFR: (Airspace) -> Bool) {
             // Remove existing
             for overlay in airspaceOverlays {

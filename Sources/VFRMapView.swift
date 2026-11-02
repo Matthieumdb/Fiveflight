@@ -81,62 +81,20 @@ struct VFRMapView: UIViewRepresentable {
     func updateUIView(_ mv: MKMapView, context: Context) {
         context.coordinator.parent = self
 
-        // Overlays: rebuild from toggles.
-        mv.removeOverlays(mv.overlays)
-        if showSectional {
-            let o = SectionalTileOverlay(urlTemplate: Self.sectionalURL)
-            o.canReplaceMapContent = true
-            mv.addOverlay(o, level: .aboveLabels)
-        }
-        if showWeather {
-            let o = WeatherTileOverlay(urlTemplate: Self.nexradURL)
-            o.canReplaceMapContent = false
-            mv.addOverlay(o, level: .aboveLabels)
-        }
-        if waypoints.count >= 2 {
-            let coords = waypoints.map(\.coordinate)
-            mv.addOverlay(MKPolyline(coordinates: coords, count: coords.count), level: .aboveLabels)
-        }
-        if let uc = userCoord, waypoints.isEmpty {
-            for nm in [10.0, 25.0] {
-                mv.addOverlay(MKCircle(center: uc, radius: nm * 1852), level: .aboveLabels)
-            }
-        }
+        // Update tile overlays only when toggles change
+        context.coordinator.updateTileOverlays(on: mv, showSectional: showSectional, showWeather: showWeather)
 
-        // Airspace polygons
-        if showAirspace {
-            for airspace in airspaces {
-                guard airspace.isActive else { continue }
-                let color = airspaceColor(airspace)
-                // Add each polygon ring
-                for polygon in airspace.polygons {
-                    guard polygon.count >= 3 else { continue }
-                    let coords = polygon.map(\.clCoordinate)
-                    let overlay = MKPolygon(coordinates: coords, count: coords.count)
-                    // Store color in renderer via coordinator lookup
-                    context.coordinator.airspaceColors[overlay] = color
-                    mv.addOverlay(overlay, level: .aboveLabels)
-                }
-            }
-        }
-        if showTFRs {
-            for airspace in airspaces {
-                guard airspace.isActive, airspaceTypeIsTFR(airspace) else { continue }
-                let color = UIColor(ColorToken.tfr)
-                for polygon in airspace.polygons {
-                    guard polygon.count >= 3 else { continue }
-                    let coords = polygon.map(\.clCoordinate)
-                    let overlay = MKPolygon(coordinates: coords, count: coords.count)
-                    context.coordinator.airspaceColors[overlay] = color
-                    mv.addOverlay(overlay, level: .aboveLabels)
-                }
-            }
-        }
+        // Update route polyline
+        context.coordinator.updateRoutePolyline(on: mv, waypoints: waypoints)
 
-        // Annotations: nearest + waypoints (drop and rebuild).
-        mv.removeAnnotations(mv.annotations.filter { !($0 is MKUserLocation) })
-        mv.addAnnotations(nearest.map { AirportAnnotation($0, role: .nearest) })
-        mv.addAnnotations(waypoints.map { AirportAnnotation($0, role: .waypoint) })
+        // Update user location circles
+        context.coordinator.updateUserCircles(on: mv, userCoord: userCoord, waypoints: waypoints)
+
+        // Update airspace polygons (single pass, no dual TFR loop)
+        context.coordinator.updateAirspacePolygons(on: mv, airspaces: airspaces, showAirspace: showAirspace, showTFRs: showTFRs, colorFor: airspaceColor, isTFR: airspaceTypeIsTFR)
+
+        // Update annotations only when data changes
+        context.coordinator.updateAnnotations(on: mv, nearest: nearest, waypoints: waypoints, categories: categories)
 
         // Recenter only when SwiftUI bumps the version.
         if context.coordinator.lastVersion != regionVersion {
@@ -181,8 +139,123 @@ struct VFRMapView: UIViewRepresentable {
     final class Coordinator: NSObject, MKMapViewDelegate {
         var parent: VFRMapView
         var lastVersion = -1
-        var airspaceColors: [MKPolygon: UIColor] = [:]
+        var sectionalOverlay: SectionalTileOverlay?
+        var weatherOverlay: WeatherTileOverlay?
+        var routePolyline: MKPolyline?
+        var userCircles: [MKCircle] = []
+        var airspaceOverlays: [MKPolygon] = []
+        var airportAnnotations: [AirportAnnotation] = []
+        var waypointAnnotations: [AirportAnnotation] = []
+
         init(_ parent: VFRMapView) { self.parent = parent }
+
+        func updateTileOverlays(on mv: MKMapView, showSectional: Bool, showWeather: Bool) {
+            // Sectional
+            if showSectional {
+                if sectionalOverlay == nil {
+                    let o = SectionalTileOverlay(urlTemplate: VFRMapView.sectionalURL)
+                    o.canReplaceMapContent = true
+                    o.minimumZ = 6
+                    o.maximumZ = 16
+                    sectionalOverlay = o
+                    mv.addOverlay(o, level: .aboveLabels)
+                }
+            } else if let overlay = sectionalOverlay {
+                mv.removeOverlay(overlay)
+                sectionalOverlay = nil
+            }
+
+            // Weather
+            if showWeather {
+                if weatherOverlay == nil {
+                    let o = WeatherTileOverlay(urlTemplate: VFRMapView.nexradURL)
+                    o.canReplaceMapContent = false
+                    weatherOverlay = o
+                    mv.addOverlay(o, level: .aboveLabels)
+                }
+            } else if let overlay = weatherOverlay {
+                mv.removeOverlay(overlay)
+                weatherOverlay = nil
+            }
+        }
+
+        func updateRoutePolyline(on mv: MKMapView, waypoints: [Airport]) {
+            if let existing = routePolyline {
+                mv.removeOverlay(existing)
+                routePolyline = nil
+            }
+            if waypoints.count >= 2 {
+                let coords = waypoints.map(\.coordinate)
+                let polyline = MKPolyline(coordinates: coords, count: coords.count)
+                routePolyline = polyline
+                mv.addOverlay(polyline, level: .aboveLabels)
+            }
+        }
+
+        func updateUserCircles(on mv: MKMapView, userCoord: CLLocationCoordinate2D?, waypoints: [Airport]) {
+            for circle in userCircles {
+                mv.removeOverlay(circle)
+            }
+            userCircles.removeAll()
+
+            if let uc = userCoord, waypoints.isEmpty {
+                for nm in [10.0, 25.0] {
+                    let circle = MKCircle(center: uc, radius: nm * 1852)
+                    userCircles.append(circle)
+                    mv.addOverlay(circle, level: .aboveLabels)
+                }
+            }
+        }
+
+        func updateAirspacePolygons(on mv: MKMapView, airspaces: [Airspace], showAirspace: Bool, showTFRs: Bool, colorFor: (Airspace) -> UIColor, isTFR: (Airspace) -> Bool) {
+            // Remove existing
+            for overlay in airspaceOverlays {
+                mv.removeOverlay(overlay)
+            }
+            airspaceOverlays.removeAll()
+
+            guard showAirspace || showTFRs else { return }
+
+            for airspace in airspaces {
+                guard airspace.isActive else { continue }
+
+                let tf = isTFR(airspace)
+                let shouldShow = (!tf && showAirspace) || (tf && showTFRs)
+                guard shouldShow else { continue }
+
+                let color = tf ? UIColor(ColorToken.tfr) : colorFor(airspace)
+
+                for polygon in airspace.polygons {
+                    guard polygon.count >= 3 else { continue }
+                    let coords = polygon.map(\.clCoordinate)
+                    let overlay = AirspacePolygonOverlay(coordinates: coords, count: coords.count, airspaceColor: color, isTFR: tf)
+                    airspaceOverlays.append(overlay)
+                    mv.addOverlay(overlay, level: .aboveLabels)
+                }
+            }
+        }
+
+        func updateAnnotations(on mv: MKMapView, nearest: [Airport], waypoints: [Airport], categories: [String: String]) {
+            // Check if annotations actually changed
+            let newNearestIds = Set(nearest.map(\.id))
+            let newWaypointIds = Set(waypoints.map(\.id))
+            let currentNearestIds = Set(airportAnnotations.map { $0.airport.id })
+            let currentWaypointIds = Set(waypointAnnotations.map { $0.airport.id })
+
+            if newNearestIds == currentNearestIds && newWaypointIds == currentWaypointIds {
+                return // No change
+            }
+
+            // Remove old annotations (except user location)
+            let toRemove = mv.annotations.filter { !($0 is MKUserLocation) }
+            mv.removeAnnotations(toRemove)
+
+            // Add new annotations
+            airportAnnotations = nearest.map { AirportAnnotation($0, role: .nearest) }
+            waypointAnnotations = waypoints.map { AirportAnnotation($0, role: .waypoint) }
+            mv.addAnnotations(airportAnnotations)
+            mv.addAnnotations(waypointAnnotations)
+        }
 
         func mapView(_ mv: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let line = overlay as? MKPolyline {
@@ -207,13 +280,12 @@ struct VFRMapView: UIViewRepresentable {
             if let tile = overlay as? MKTileOverlay {
                 return MKTileOverlayRenderer(tileOverlay: tile)
             }
-            if let polygon = overlay as? MKPolygon {
+            if let polygon = overlay as? AirspacePolygonOverlay {
                 let r = MKPolygonRenderer(polygon: polygon)
-                let color = airspaceColors[polygon] ?? .systemBlue
-                r.fillColor = color.withAlphaComponent(0.15)
-                r.strokeColor = color
-                r.lineWidth = 1.5
-                r.lineDashPattern = [8, 4]
+                r.fillColor = polygon.airspaceColor.withAlphaComponent(polygon.fillAlpha)
+                r.strokeColor = polygon.strokeColor
+                r.lineWidth = polygon.lineWidth
+                r.lineDashPattern = polygon.dashPattern
                 return r
             }
             return MKOverlayRenderer(overlay: overlay)

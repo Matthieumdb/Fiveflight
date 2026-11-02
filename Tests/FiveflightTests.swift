@@ -345,7 +345,11 @@ final class FiveflightTests: XCTestCase {
 
     @MainActor
     func testAppModelMapRegionPersistence() async throws {
-        let model = AppModel()
+        // Isolated storage: the test host app is running and saves its own map region to .standard.
+        let suite = "FiveflightTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(defaults: defaults)
         let testRegion = MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 27.5, longitude: -80.5),
             span: MKCoordinateSpan(latitudeDelta: 1.0, longitudeDelta: 1.0)
@@ -357,7 +361,7 @@ final class FiveflightTests: XCTestCase {
         try await Task.sleep(nanoseconds: 1_500_000_000)
 
         // Create new model instance (simulates app restart)
-        let model2 = AppModel()
+        let model2 = AppModel(defaults: defaults)
 
         // Region should be restored
         XCTAssertEqual(model2.mapRegion.center.latitude, testRegion.center.latitude, accuracy: 0.001)

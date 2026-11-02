@@ -118,11 +118,15 @@ final class AppModel: ObservableObject {
     @Published var fuelBurn = 8.0    { didSet { saveProfile() } }
     @Published var reserveMin = 45.0 { didSet { saveProfile() } }
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
 
     static let shared = AppModel()
 
-    init() { load() }
+    /// `defaults` is injectable so tests don't share (and race with) the running app's storage.
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        load()
+    }
 
     // Favorites
     func isFavorite(_ id: String) -> Bool { favorites.contains(id) }

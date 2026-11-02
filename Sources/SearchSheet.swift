@@ -5,6 +5,7 @@ struct SearchSheet: View {
     @EnvironmentObject private var store: AirportStore
     @EnvironmentObject private var model: AppModel
     var nearest: [Airport]
+    var onSelect: ((Airport) -> Void)?
     @State private var query = ""
 
     private var results: [Airport] {
@@ -32,22 +33,20 @@ struct SearchSheet: View {
     var body: some View {
         NavigationStack {
             List(results) { a in
-                NavigationLink {
-                    AirportDetailView(airport: a,
-                                      runways: store.runways(for: a),
-                                      frequencies: store.frequencies(for: a))
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "airplane.circle.fill")
-                            .foregroundStyle(Theme.accent).font(.title3)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(a.id).font(.headline.monospaced())
-                            Text(a.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                        Spacer()
-                        if let m = a.municipality {
-                            Text(m).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
-                        }
+                if let onSelect = onSelect {
+                    Button {
+                        onSelect(a)
+                    } label: {
+                        airportRow(a)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    NavigationLink {
+                        AirportDetailView(airport: a,
+                                          runways: store.runways(for: a),
+                                          frequencies: store.frequencies(for: a))
+                    } label: {
+                        airportRow(a)
                     }
                 }
             }
@@ -57,6 +56,21 @@ struct SearchSheet: View {
             .textInputAutocapitalization(.characters)
             .overlay {
                 if !query.isEmpty && results.isEmpty { ContentUnavailableView.search(text: query) }
+            }
+        }
+    }
+
+    private func airportRow(_ a: Airport) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "airplane.circle.fill")
+                .foregroundStyle(Theme.accent).font(.title3)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(a.id).font(.headline.monospaced())
+                Text(a.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer()
+            if let m = a.municipality {
+                Text(m).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
             }
         }
     }

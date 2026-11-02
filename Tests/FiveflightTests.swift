@@ -1,5 +1,6 @@
 import XCTest
 import CoreLocation
+import MapKit
 @testable import Fiveflight
 
 final class FiveflightTests: XCTestCase {
@@ -203,6 +204,7 @@ final class FiveflightTests: XCTestCase {
             dewp: "22",
             wspd: "10",
             wdir: "120",
+            wgst: nil,
             visib: "10",
             altim: "3001",
             clouds: [
@@ -232,6 +234,7 @@ final class FiveflightTests: XCTestCase {
             dewp: "15",
             wspd: "15",
             wdir: "270",
+            wgst: "25",
             visib: "10",
             altim: "2992",
             clouds: [
@@ -245,5 +248,119 @@ final class FiveflightTests: XCTestCase {
         XCTAssertEqual(metar.windSpeed, 15)
         XCTAssertEqual(metar.windGust, 25)
         XCTAssertEqual(metar.flightCategory, .ifr)
+    }
+
+    // MARK: - Route Calculation Tests
+
+    @MainActor
+    func testRoutingEngineDirectMode() async throws {
+        let routing = RoutingEngine.shared
+        let airspaces: [Airspace] = [] // No airspaces for direct mode
+
+        let kjfk = Airport(id: "KJFK", name: "JFK", type: "large_airport", icao: "KJFK", iata: "JFK", municipality: "New York", elevationFt: 13, coordinate: CLLocationCoordinate2D(latitude: 40.64, longitude: -73.78))
+        let kbost = Airport(id: "KBOS", name: "Logan", type: "large_airport", icao: "KBOS", iata: "BOS", municipality: "Boston", elevationFt: 20, coordinate: CLLocationCoordinate2D(latitude: 42.36, longitude: -71.01))
+
+        let result = await routing.calculateRoute(
+            waypoints: [kjfk, kbost],
+            cruiseAltitude: 5500,
+            mode: .direct,
+            airspaces: airspaces
+        )
+
+        XCTAssertNotNil(result)
+        if let result = result {
+            XCTAssertEqual(result.legs.count, 1)
+            XCTAssertGreaterThan(result.totalDistanceNM, 0)
+            XCTAssertEqual(result.totalDistanceNM, 162, accuracy: 10) // ~162 NM
+        }
+    }
+
+    @MainActor
+    func testRoutingEngineWithWaypoint() async throws {
+        let routing = RoutingEngine.shared
+        let airspaces: [Airspace] = []
+
+        let kjfk = Airport(id: "KJFK", name: "JFK", type: "large_airport", icao: "KJFK", iata: "JFK", municipality: "New York", elevationFt: 13, coordinate: CLLocationCoordinate2D(latitude: 40.64, longitude: -73.78))
+        let klga = Airport(id: "KLGA", name: "LaGuardia", type: "large_airport", icao: "KLGA", iata: "LGA", municipality: "New York", elevationFt: 21, coordinate: CLLocationCoordinate2D(latitude: 40.78, longitude: -73.87))
+        let kbost = Airport(id: "KBOS", name: "Logan", type: "large_airport", icao: "KBOS", iata: "BOS", municipality: "Boston", elevationFt: 20, coordinate: CLLocationCoordinate2D(latitude: 42.36, longitude: -71.01))
+
+        let result = await routing.calculateRoute(
+            waypoints: [kjfk, klga, kbost],
+            cruiseAltitude: 5500,
+            mode: .direct,
+            airspaces: airspaces
+        )
+
+        XCTAssertNotNil(result)
+        if let result = result {
+            XCTAssertEqual(result.legs.count, 2)
+            XCTAssertGreaterThan(result.totalDistanceNM, 0)
+        }
+    }
+
+    // MARK: - Airspace CSV Parsing Tests
+
+    func testAirspaceCSVParse() {
+        // Test basic airspace CSV parsing
+        let csv = """
+        id,name,type,floor,ceiling,latitude,longitude
+        1,KJFK Class B,classB,0,7000,40.64,-73.78
+        2,KMIA MOA,moa,1500,5000,25.79,-80.29
+        """
+        let lines = csv.split(separator: "\n", omittingEmptySubsequences: true).dropFirst()
+
+        var airspaces: [Airspace] = []
+        for line in lines {
+            let fields = CSV.parseLine(line)
+            guard fields.count >= 7 else { continue }
+
+            let name = fields[1]
+            let typeStr = fields[2]
+            let floor = Int(fields[3]) ?? 0
+            let ceiling = Int(fields[4]) ?? 0
+            let lat = Double(fields[5]) ?? 0
+            let lon = Double(fields[6]) ?? 0
+
+            let coord = Coordinate2D(CLLocationCoordinate2D(latitude: lat, longitude: lon))
+            let airspace = Airspace(
+                id: fields[0],
+                name: name,
+                type: .classAirspace(.B), // Simplified
+                polygons: [[coord]],
+                floor: floor,
+                ceiling: ceiling,
+                controllingAgency: nil,
+                frequency: nil,
+                isActive: true
+            )
+            airspaces.append(airspace)
+        }
+
+        XCTAssertEqual(airspaces.count, 2)
+        XCTAssertEqual(airspaces[0].name, "KJFK Class B")
+        XCTAssertEqual(airspaces[1].floor, 1500)
+    }
+
+    // MARK: - Map Region Persistence Tests
+
+    @MainActor
+    func testAppModelMapRegionPersistence() async throws {
+        let model = AppModel()
+        let testRegion = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 27.5, longitude: -80.5),
+            span: MKCoordinateSpan(latitudeDelta: 1.0, longitudeDelta: 1.0)
+        )
+
+        model.mapRegion = testRegion
+
+        // Wait for debounced save
+        try await Task.sleep(nanoseconds: 1_500_000_000)
+
+        // Create new model instance (simulates app restart)
+        let model2 = AppModel()
+
+        // Region should be restored
+        XCTAssertEqual(model2.mapRegion.center.latitude, testRegion.center.latitude, accuracy: 0.001)
+        XCTAssertEqual(model2.mapRegion.center.longitude, testRegion.center.longitude, accuracy: 0.001)
     }
 }

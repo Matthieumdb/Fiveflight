@@ -21,10 +21,15 @@ struct MapScreen: View {
     @State private var routeWarnings: [RouteWarning] = []
     @State private var visibleAirports: [Airport] = []
     @State private var lastFilterSpan: MKCoordinateSpan?
+    @State private var lastMaxDelta: Double = 0
 
     // Computed properties to avoid re-filtering on every render
     private var activeAirspaces: [Airspace] {
         airspaceManager.airspaces.filter { $0.isActive }
+    }
+
+    private var currentMaxDelta: Double {
+        max(model.mapRegion.span.latitudeDelta, model.mapRegion.span.longitudeDelta)
     }
 
     var body: some View {
@@ -113,13 +118,12 @@ struct MapScreen: View {
         .onChange(of: routingEngine.currentMode) { _, _ in
             Task { await calculateAndUpdateRoute() }
         }
-        .onChange(of: model.mapRegion.span) { oldSpan, newSpan in
+        .onChange(of: currentMaxDelta) { oldMax, newMax in
             // Only re-filter when zoom level changes significantly (not on pan)
-            let oldMax = max(oldSpan.latitudeDelta, oldSpan.longitudeDelta)
-            let newMax = max(newSpan.latitudeDelta, newSpan.longitudeDelta)
             if abs(oldMax - newMax) > 0.1 || lastFilterSpan == nil {
-                lastFilterSpan = newSpan
-                visibleAirports = store.airports.filter { shouldShowAirport($0, span: newSpan) }
+                lastMaxDelta = newMax
+                lastFilterSpan = model.mapRegion.span
+                visibleAirports = store.airports.filter { shouldShowAirport($0, span: model.mapRegion.span) }
             }
         }
     }

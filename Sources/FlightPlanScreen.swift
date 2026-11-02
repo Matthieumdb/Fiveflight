@@ -66,28 +66,7 @@ private struct FlightPlanContent: View {
             // Waypoints section
             Section {
                 ForEach(Array(model.waypoints.enumerated()), id: \.element.id) { index, airport in
-                    HStack {
-                        Text("\(index + 1)")
-                            .font(TypographyToken.monoMedium)
-                            .foregroundStyle(ColorToken.brandPrimary)
-                            .frame(width: 24)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(airport.id)
-                                .font(TypographyToken.bodyMedium)
-                                .foregroundStyle(ColorToken.textPrimary)
-                            Text(airport.name)
-                                .font(TypographyToken.captionSmall)
-                                .foregroundStyle(ColorToken.textTertiary)
-                                .lineLimit(1)
-                        }
-                        Spacer()
-                        if index < model.waypoints.count - 1 {
-                            Image(systemName: "arrow.down")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(ColorToken.textTertiary)
-                        }
-                    }
-                    .padding(.vertical, SpacingToken.space1)
+                    FlightPlanWaypointRow(index: index, airport: airport, totalCount: model.waypoints.count)
                 }
                 .onDelete { model.waypoints.remove(atOffsets: $0) }
                 .onMove { model.waypoints.move(fromOffsets: $0, toOffset: $1) }
@@ -245,6 +224,37 @@ private struct RouteSummaryRow: View {
             Text(value)
                 .font(TypographyToken.monoMedium)
                 .foregroundStyle(ColorToken.textPrimary)
+        }
+        .padding(.vertical, SpacingToken.space1)
+    }
+}
+
+private struct FlightPlanWaypointRow: View {
+    let index: Int
+    let airport: Airport
+    let totalCount: Int
+
+    var body: some View {
+        HStack {
+            Text("\(index + 1)")
+                .font(TypographyToken.monoMedium)
+                .foregroundStyle(ColorToken.brandPrimary)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(airport.id)
+                    .font(TypographyToken.bodyMedium)
+                    .foregroundStyle(ColorToken.textPrimary)
+                Text(airport.name)
+                    .font(TypographyToken.labelSmall)
+                    .foregroundStyle(ColorToken.textTertiary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            if index < totalCount - 1 {
+                Image(systemName: "arrow.down")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(ColorToken.textTertiary)
+            }
         }
         .padding(.vertical, SpacingToken.space1)
     }

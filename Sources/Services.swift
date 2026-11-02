@@ -106,7 +106,7 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
         }
     }
 
-    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+    nonisolated private func handleLocations(_ locations: [CLLocation]) {
         guard let location = locations.last else { return }
         Task { @MainActor in
             self.location = location.coordinate
@@ -123,6 +123,10 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
         }
     }
 
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        handleLocations(locations)
+    }
+
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
         Task { @MainActor in
             if newHeading.headingAccuracy > 0 {
@@ -137,7 +141,7 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation], isSignificantChange: Bool) {
         // Called for significant location changes (background mode)
-        didUpdateLocations(locations)
+        handleLocations(locations)
     }
 }
 
@@ -463,6 +467,7 @@ struct METARResponse: Codable {
     let dewp: String?
     let wspd: String?
     let wdir: String?
+    let wgst: String?
     let visib: String?
     let altim: String?
     let clouds: [CloudLayer]?

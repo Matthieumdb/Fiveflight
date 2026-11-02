@@ -83,6 +83,9 @@ struct METAR: Identifiable, Codable, Hashable {
         if let wspdStr = response.wspd, let wspd = Int(wspdStr) {
             decodedData.windSpeed = wspd
         }
+        if let wgstStr = response.wgst, let wgst = Int(wgstStr) {
+            decodedData.windGust = wgst
+        }
         if let visStr = response.visib, let vis = Double(visStr) {
             decodedData.visibility = vis
         }

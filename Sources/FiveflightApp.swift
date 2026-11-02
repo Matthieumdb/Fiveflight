@@ -18,7 +18,19 @@ struct FiveflightApp: App {
                 .environmentObject(routingEngine)
                 .environmentObject(weatherService)
                 .environmentObject(locationManager)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(model.colorScheme)
+        }
+    }
+}
+
+extension AppModel {
+    /// Returns the preferred color scheme based on the appearance mode setting.
+    /// 0 = System (nil), 1 = Light (.light), 2 = Dark (.dark)
+    var colorScheme: ColorScheme? {
+        switch appearanceMode {
+        case 1: return .light
+        case 2: return .dark
+        default: return nil
         }
     }
 }

@@ -112,12 +112,9 @@ struct AirportDetailSheet: View {
                 Section {
                     InfoRow(icon: "building.2", title: "Type", value: airportTypeDisplay)
                     InfoRow(icon: "mappin", title: "Coordinates", value: coordinateString)
-                    InfoRow(icon: "mountain.2", title: "Elevation", value: "\(airport.elevation) ft")
+                    InfoRow(icon: "mountain.2", title: "Elevation", value: airport.elevationFt.map { "\($0) ft" } ?? "—")
                     if let municipality = airport.municipality {
                         InfoRow(icon: "building", title: "City", value: municipality)
-                    }
-                    if let state = airport.state {
-                        InfoRow(icon: "map", title: "State", value: state)
                     }
                 } header: {
                     Text("Information")
@@ -213,7 +210,7 @@ struct AirportHeaderView: View {
             // Type badges
             HStack(spacing: SpacingToken.space2) {
                 BadgeView(text: airportTypeDisplay, color: ColorToken.brandPrimary)
-                BadgeView(text: "\(airport.elevation) ft MSL", color: ColorToken.info)
+                BadgeView(text: airport.elevationFt.map { "\($0) ft MSL" } ?? "— ft MSL", color: ColorToken.info)
                 if airport.type != "heliport" && airport.type != "seaplane_base" {
                     BadgeView(text: "VFR", color: ColorToken.success)
                 }
@@ -381,12 +378,14 @@ struct RunwayRow: View {
         HStack(spacing: SpacingToken.space3) {
             // Runway designation
             VStack(alignment: .leading, spacing: SpacingToken.space0) {
-                Text(runway.designation)
+                Text(runway.name)
                     .font(TypographyToken.monoLarge)
                     .foregroundStyle(ColorToken.brandPrimary)
-                Text("\(runway.length) × \(runway.width) ft")
-                    .font(TypographyToken.monoXSmall)
-                    .foregroundStyle(ColorToken.textTertiary)
+                if let length = runway.lengthFt, let width = runway.widthFt {
+                    Text("\(length) × \(width) ft")
+                        .font(TypographyToken.monoXSmall)
+                        .foregroundStyle(ColorToken.textTertiary)
+                }
             }
             .frame(width: 80, alignment: .leading)
 
@@ -395,7 +394,7 @@ struct RunwayRow: View {
                 Text("Surface")
                     .font(TypographyToken.labelXSmall)
                     .foregroundStyle(ColorToken.textTertiary)
-                Text(runway.surface)
+                Text(runway.surface ?? "—")
                     .font(TypographyToken.bodySmall)
                     .foregroundStyle(ColorToken.textPrimary)
             }
@@ -413,16 +412,6 @@ struct RunwayRow: View {
                         .foregroundStyle(ColorToken.warning)
                 }
             }
-
-            // Heading
-            VStack(alignment: .trailing, spacing: SpacingToken.space0) {
-                Text("Heading")
-                    .font(TypographyToken.labelXSmall)
-                    .foregroundStyle(ColorToken.textTertiary)
-                Text("\(runway.trueHeading)°T / \(runway.magneticHeading)°M")
-                    .font(TypographyToken.monoSmall)
-                    .foregroundStyle(ColorToken.textPrimary)
-            }
         }
         .padding(.vertical, SpacingToken.space1)
     }
@@ -436,7 +425,7 @@ struct FrequencyRow: View {
     var body: some View {
         HStack(spacing: SpacingToken.space3) {
             // Type badge
-            Text(frequency.typeShort)
+            Text(frequency.type)
                 .font(TypographyToken.monoXSmall)
                 .foregroundStyle(ColorToken.textOnBrand)
                 .padding(.horizontal, SpacingToken.space2)
@@ -444,7 +433,7 @@ struct FrequencyRow: View {
                 .background(frequencyTypeColor(frequency.type), in: Capsule())
 
             // Frequency value
-            Text(frequency.displayValue)
+            Text(frequency.mhz)
                 .font(TypographyToken.monoMedium)
                 .foregroundStyle(ColorToken.textPrimary)
 

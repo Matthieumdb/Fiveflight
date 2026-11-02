@@ -39,13 +39,16 @@ struct FlightPlanSidePanel: View {
                         .listRowBackground(Color.clear)
                         .frame(minHeight: 120)
                     } else {
-                        ForEach(Array(model.waypoints.enumerated()), id: \.element.id) { index, airport in
+                        let waypointsWithLegs = model.waypoints.enumerated().map { index, airport in
+                            (index, airport, index < model.legs.count ? model.legs[index] : nil)
+                        }
+                        ForEach(waypointsWithLegs, id: \.1.id) { index, airport, leg in
                             WaypointRow(
                                 index: index,
                                 airport: airport,
                                 isFirst: index == 0,
                                 isLast: index == model.waypoints.count - 1,
-                                leg: index < model.legs.count ? model.legs[index] : nil
+                                leg: leg
                             )
                             .listRowInsets(EdgeInsets(top: SpacingToken.space1, leading: SpacingToken.insetMedium, bottom: SpacingToken.space1, trailing: SpacingToken.insetMedium))
                         }
@@ -363,7 +366,7 @@ struct WaypointRow: View {
     let airport: Airport
     let isFirst: Bool
     let isLast: Bool
-    let leg: FlightLeg?
+    let leg: RouteLeg?
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
@@ -409,7 +412,7 @@ struct WaypointRow: View {
                     HStack(spacing: SpacingToken.space1) {
                         Image(systemName: "safari")
                             .font(.system(size: 9))
-                        Text(leg.courseString)
+                        Text(String(format: "%03d°", leg.trueCourse))
                             .font(TypographyToken.monoXSmall)
                     }
                     .foregroundStyle(ColorToken.textTertiary)
@@ -501,8 +504,8 @@ struct PerformanceCard: View {
                 ProfileSlider(
                     title: "Reserve",
                     value: Binding(
-                        get: { Double(model.reserveMin) },
-                        set: { model.reserveMin = Int($0) }
+                        get: { model.reserveMin },
+                        set: { model.reserveMin = $0 }
                     ),
                     range: 0...120,
                     step: 5,
@@ -913,7 +916,7 @@ struct NearbySidePanel: View {
 
     private var nearby: [Airport] {
         guard let loc = model.userLocation else { return [] }
-        return store.nearest(to: loc, maxCount: 20)
+        return store.nearest(to: loc, limit: 20)
     }
 
     var body: some View {
@@ -992,7 +995,7 @@ struct NearbyAirportRow: View {
 
                 VStack(alignment: .trailing, spacing: SpacingToken.space0) {
                     if let loc = model.userLocation {
-                        Text(String(format: "%.0f NM", airport.distanceNM(from: loc)))
+                        Text(String(format: "%.0f NM", airport.distanceNM(to: loc)))
                             .font(TypographyToken.monoSmall)
                             .foregroundStyle(ColorToken.textPrimary)
                     }

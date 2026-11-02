@@ -354,7 +354,7 @@ struct NearbyWeatherList: View {
 
     private var nearby: [Airport] {
         guard let loc = model.userLocation else { return [] }
-        return store.nearest(to: loc, maxCount: 10)
+        return store.nearest(to: loc, limit: 10)
     }
 
     var body: some View {

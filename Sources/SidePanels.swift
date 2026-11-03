@@ -779,6 +779,8 @@ struct LayersSidePanel: View {
                         .textCase(.uppercase)
                 }
 
+                OfflineChartsSection()
+
                 Section {
                     Button {
                         Task { await AirspaceDataManager.shared.refresh() }

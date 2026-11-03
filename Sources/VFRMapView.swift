@@ -17,8 +17,8 @@ final class SectionalTileOverlay: MKTileOverlay {
         parent.y = path.y >> depth
         parent.z = path.z - depth
         let url = self.url(forTilePath: parent)
-        URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
-            let ok = (response as? HTTPURLResponse)?.statusCode == 200
+        let cached = TileCache.file(for: url)
+        let handle: (Data?, Bool, Error?) -> Void = { [weak self] data, ok, error in
             if ok, let data, let image = UIImage(data: data) {
                 if depth == 0 {
                     result(data, nil)
@@ -30,6 +30,13 @@ final class SectionalTileOverlay: MKTileOverlay {
             } else {
                 result(nil, error)
             }
+        }
+        // Offline copy first (downloaded region or a tile seen before), then the network.
+        if let data = try? Data(contentsOf: cached) { handle(data, true, nil); return }
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            let ok = (response as? HTTPURLResponse)?.statusCode == 200
+            if ok, let data { TileCache.store(data, at: cached) }
+            handle(data, ok, error)
         }.resume()
     }
 

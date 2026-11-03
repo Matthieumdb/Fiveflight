@@ -43,6 +43,13 @@ struct MapScreen: View {
             .sorted()
     }
 
+    /// Split out of the button label so the type checker stays fast.
+    private var radarButtonTitle: String {
+        guard radarPlaying else { return "Animer radar" }
+        let minutesAgo: Int = 10 * (VFRMapView.radarFrames.count - 1 - radarFrame)
+        return "-\(minutesAgo) min"
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             // MARK: - Full Screen Map (VFRMapView with MKTileOverlay)
@@ -113,8 +120,7 @@ struct MapScreen: View {
                         radarPlaying.toggle()
                         if !radarPlaying { radarFrame = VFRMapView.radarFrames.count - 1 }
                     } label: {
-                        Label(radarPlaying ? "-\(10 * (VFRMapView.radarFrames.count - 1 - radarFrame)) min" : "Animer radar",
-                              systemImage: radarPlaying ? "stop.fill" : "play.fill")
+                        Label(radarButtonTitle, systemImage: radarPlaying ? "stop.fill" : "play.fill")
                             .font(TypographyToken.labelSmall)
                             .padding(.horizontal, SpacingToken.space3)
                             .padding(.vertical, SpacingToken.space2)

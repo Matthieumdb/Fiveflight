@@ -115,6 +115,7 @@ struct AirportDetailSheet: View {
         if let metar {
             Section { METARCard(metar: metar) } header: { FFHeader("METAR") }
         }
+        FuelPriceSection(airport: airport, store: store)
         AirportDocumentsSection(ident: airport.id)
     }
 
@@ -127,6 +128,10 @@ struct AirportDetailSheet: View {
         }
         if let taf {
             Section { TAFCard(taf: taf) } header: { FFHeader("TAF") }
+        } else if let fisbTAF = FISBStore.shared.report("TAF", at: airport.id) {
+            Section {
+                Text(fisbTAF.text).font(.caption.monospaced()).textSelection(.enabled)
+            } header: { FFHeader("TAF (reçu par ADS-B)") }
         }
     }
 

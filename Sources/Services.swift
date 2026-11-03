@@ -166,15 +166,9 @@ final class WeatherService: ObservableObject {
 
         for attempt in 0...maxRetries {
             do {
-                let (data, response) = try await session.data(from: url)
-
-                // Check for HTTP errors
-                if let httpResponse = response as? HTTPURLResponse,
-                   httpResponse.statusCode >= 400 {
-                    throw URLError(.badServerResponse)
-                }
-
-                return try decode(data)
+                // Network first, saved copy when offline (NetCache).
+                let fetched = try await NetCache.fetch(URLRequest(url: url))
+                return try decode(fetched.data)
             } catch {
                 lastError = error
                 if attempt < maxRetries {
@@ -202,10 +196,10 @@ final class WeatherService: ObservableObject {
 
         if let metarResponse = result?.first {
             let metar = METAR(from: metarResponse)
-            metars[station] = metar
-            return metar
+            store(metar, as: station)
+            return metars[station]
         }
-        return nil
+        return metars[station]   // e.g. received over ADS-B (FIS-B)
     }
 
     func fetchMETARs(for stations: [String]) async {
@@ -220,9 +214,15 @@ final class WeatherService: ObservableObject {
         if let response = result {
             for metarResponse in response {
                 let metar = METAR(from: metarResponse)
-                metars[metar.station] = metar
+                store(metar, as: metar.station)
             }
         }
+    }
+
+    /// Keeps the newest observation: a saved (offline) copy never replaces a fresher FIS-B METAR.
+    func store(_ metar: METAR, as station: String) {
+        if let old = metars[station], old.observationTime > metar.observationTime { return }
+        metars[station] = metar
     }
 
     /// Last fetch time per station, so the map can ask often without hammering aviationweather.gov.
@@ -444,7 +444,7 @@ final class WeatherService: ObservableObject {
             guard let url = URL(string: urlString) else { continue }
 
             do {
-                let (data, _) = try await URLSession.shared.data(from: url)
+                let data = try await NetCache.data(from: url)
                 let response = try JSONDecoder().decode([MetarDTO].self, from: data)
                 for m in response {
                     if let id = m.icaoId, let cat = m.fltCat {

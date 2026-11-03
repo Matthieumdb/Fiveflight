@@ -21,9 +21,13 @@ struct MapScreen: View {
     @State private var radarFrame = VFRMapView.radarFrames.count - 1
     @State private var radarPlaying = false
 
+    @ObservedObject private var fisb = FISBStore.shared
+
     private var weatherLayers: [String] {
         (model.showIR ? ["goes-east-ir-4km-900913"] : [])
             + (model.showRadar ? ["nexrad-n0q-900913" + VFRMapView.radarFrames[radarFrame]] : [])
+            + (model.showFISBRadar ? ["fisb-radar-\(fisb.radarVersion)"] : [])
+            + (model.showLightning ? ["lightning"] : [])
     }
     @State private var selectedAirport: Airport?
     @State private var routePolyline: [CLLocationCoordinate2D] = []

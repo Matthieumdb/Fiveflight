@@ -45,7 +45,7 @@ enum FAADocuments {
 
     private static func links(page: String, pattern: String) async -> [AirportDocument] {
         guard let url = URL(string: page),
-              let (data, _) = try? await URLSession.shared.data(from: url),
+              let data = try? await NetCache.data(from: url),
               let html = String(data: data, encoding: .utf8),
               let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
         var seen = Set<URL>()
@@ -57,6 +57,17 @@ enum FAADocuments {
             let title = m.numberOfRanges > 2 ? Range(m.range(at: 2), in: html).map { String(html[$0]) } : nil
             return AirportDocument(title: title?.replacingOccurrences(of: "&amp;", with: "&") ?? u.lastPathComponent, url: u)
         }
+    }
+
+    static var pdfDirectory: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("faa-pdf")
+    }
+
+    static func cacheMB() -> Double {
+        let files = FileManager.default.enumerator(at: pdfDirectory, includingPropertiesForKeys: [.fileSizeKey])
+        var bytes = 0
+        while let f = files?.nextObject() as? URL { bytes += (try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0 }
+        return Double(bytes) / 1_048_576
     }
 
     /// Local copy of a FAA PDF, downloaded on first use.
@@ -87,7 +98,15 @@ struct AirportDocumentsSection: View {
                     Text("Aucune plaque FAA pour ce terrain").foregroundStyle(ColorToken.textTertiary)
                 }
                 ForEach(docs) { doc in
-                    NavigationLink(doc.title) { PDFDocumentScreen(document: doc) }
+                    if doc.title.localizedCaseInsensitiveContains("diagram") {
+                        NavigationLink {
+                            GeoDiagramScreen(document: doc, ident: ident)
+                        } label: {
+                            Label(doc.title, systemImage: "location.viewfinder")
+                        }
+                    } else {
+                        NavigationLink(doc.title) { PDFDocumentScreen(document: doc) }
+                    }
                 }
             } else {
                 HStack { ProgressView(); Text("Chargement des plaques…").foregroundStyle(ColorToken.textTertiary) }

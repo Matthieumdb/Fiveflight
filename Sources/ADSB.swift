@@ -36,6 +36,8 @@ enum GDL90 {
         case ownship(TrafficTarget)
         case traffic(TrafficTarget)
         case ahrs(AHRSAttitude)
+        /// FIS-B uplink: the 432-byte UAT payload after the 3-byte time of reception.
+        case uplink([UInt8])
     }
 
     /// Splits a datagram into messages: 0x7E-delimited frames, 0x7D escapes, CRC-16 checked.
@@ -76,6 +78,7 @@ enum GDL90 {
         case 0x00 where p.count >= 3: return .heartbeat(gpsValid: p[1] & 0x80 != 0)
         case 0x0A where p.count >= 28: return report(p).map { .ownship($0) }
         case 0x14 where p.count >= 28: return report(p).map { .traffic($0) }
+        case 0x07 where p.count >= 436: return .uplink(Array(p[4..<436]))
         case 0x4C where p.count >= 16 && p[1] == 0x45 && p[2] == 0x01: return stratuxAHRS(p).map { .ahrs($0) }
         case 0x65 where p.count >= 8 && p[1] == 0x01: return foreFlightAHRS(p).map { .ahrs($0) }
         default: return nil
@@ -184,6 +187,7 @@ final class ADSBReceiver: ObservableObject {
             case .ownship(let t): ownship = t
             case .traffic(let t): byID[t.id] = t
             case .ahrs(let a): ahrs = a
+            case .uplink(let payload): FISBStore.shared.ingest(payload)
             }
         }
         byID = byID.filter { Date.now.timeIntervalSince($0.value.updated) < 30 }   // drop stale targets

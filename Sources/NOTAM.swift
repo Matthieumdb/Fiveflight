@@ -44,8 +44,15 @@ enum NOTAMService {
         do {
             list = try await fetchPublic(location: key)
         } catch {
-            guard credentials != nil else { throw error }
-            list = try await fetchAPI(icao: key)
+            // Then the FAA API (if a key is saved), then NOTAMs received over ADS-B (FIS-B).
+            let fisb = FISBStore.shared.notams(at: key)
+            if credentials != nil, let api = try? await fetchAPI(icao: key) {
+                list = api
+            } else if !fisb.isEmpty {
+                return fisb
+            } else {
+                throw error
+            }
         }
         cache[key] = (.now, list)
         return list
@@ -89,8 +96,7 @@ enum NOTAMService {
             .map { "\($0.0)=\($0.1.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")" }
             .joined(separator: "&")
             .data(using: .utf8)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+        let data = try await NetCache.fetch(request).data   // saved copy when offline
         return try parsePublic(data)
     }
 

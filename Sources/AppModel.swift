@@ -234,6 +234,10 @@ final class AppModel: ObservableObject {
     @Published var showSatellite: Bool = false { didSet { defaults.set(showSatellite, forKey: "showSatellite") } }
     /// GOES infrared cloud imagery over the map.
     @Published var showIR: Bool = false { didSet { defaults.set(showIR, forKey: "showIR") } }
+    /// Lightning strikes (NOAA nowCOAST) on the map.
+    @Published var showLightning: Bool = false { didSet { defaults.set(showLightning, forKey: "showLightning") } }
+    /// Radar received over ADS-B (FIS-B), works without internet.
+    @Published var showFISBRadar: Bool = false { didSet { defaults.set(showFISBRadar, forKey: "showFISBRadar") } }
     /// Listen for a GDL 90 ADS-B receiver (Stratux, Sentry…) on UDP 4000.
     @Published var adsbEnabled: Bool = false {
         didSet {
@@ -499,6 +503,8 @@ final class AppModel: ObservableObject {
         mapChart = defaults.string(forKey: "mapChart") ?? MapChart.sectional.rawValue
         showSatellite = defaults.bool(forKey: "showSatellite")
         showIR = defaults.bool(forKey: "showIR")
+        showLightning = defaults.bool(forKey: "showLightning")
+        showFISBRadar = defaults.bool(forKey: "showFISBRadar")
         adsbEnabled = defaults.bool(forKey: "adsbEnabled")
         fuelOnBoard = defaults.double(forKey: "fuelOnBoard")
         showInstruments = defaults.bool(forKey: "showInstruments")

@@ -767,6 +767,22 @@ struct LayersSidePanel: View {
                     )
 
                     LayerToggleRow(
+                        title: "Foudre",
+                        subtitle: "Impacts des 15 dernières min (NOAA)",
+                        icon: "bolt.fill",
+                        isOn: $model.showLightning,
+                        color: ColorToken.warning
+                    )
+
+                    LayerToggleRow(
+                        title: "Radar ADS-B (FIS-B)",
+                        subtitle: "Reçu en vol par le récepteur, sans internet",
+                        icon: "dot.radiowaves.up.forward",
+                        isOn: $model.showFISBRadar,
+                        color: ColorToken.success
+                    )
+
+                    LayerToggleRow(
                         title: "Satellite infrarouge",
                         subtitle: "Nuages GOES (Iowa State)",
                         icon: "cloud.fill",
@@ -1025,15 +1041,22 @@ struct ADSBSection: View {
             Toggle("Récepteur ADS-B (GDL 90)", isOn: $model.adsbEnabled)
             if model.adsbEnabled {
                 TimelineView(.periodic(from: .now, by: 2)) { _ in
-                    Label(adsb.connected ? "Connecté · \(adsb.traffic.count) trafic(s)" : "En attente du récepteur…",
-                          systemImage: adsb.connected ? "dot.radiowaves.left.and.right" : "wifi.exclamationmark")
-                        .foregroundStyle(adsb.connected ? ColorToken.success : ColorToken.textTertiary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(adsb.connected ? "Connecté · \(adsb.traffic.count) trafic(s)" : "En attente du récepteur…",
+                              systemImage: adsb.connected ? "dot.radiowaves.left.and.right" : "wifi.exclamationmark")
+                            .foregroundStyle(adsb.connected ? ColorToken.success : ColorToken.textTertiary)
+                        Label(FISBStore.shared.connected ? "Météo FIS-B reçue" : "Pas de météo FIS-B (au sol, normal hors portée)",
+                              systemImage: "cloud.sun.bolt")
+                            .font(.caption)
+                            .foregroundStyle(FISBStore.shared.connected ? ColorToken.success : ColorToken.textTertiary)
+                    }
                 }
+                NavigationLink("Météo ADS-B (FIS-B)") { FISBWeatherScreen() }
             }
         } header: {
             Text("Trafic")
         } footer: {
-            Text("Connecte l'iPhone au Wi-Fi du récepteur (Stratux, Sentry, SkyEcho). Le trafic s'affiche en orange sur la carte.")
+            Text("Connecte l'iPhone au Wi-Fi du récepteur (Stratux, Sentry, SkyEcho). Le trafic s'affiche en orange sur la carte, la météo FIS-B (METAR, TAF, NOTAM, radar) est utilisée sans internet.")
         }
     }
 }

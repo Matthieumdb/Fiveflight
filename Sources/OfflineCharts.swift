@@ -79,29 +79,53 @@ final class OfflineDownloader: ObservableObject {
     func clear() { TileCache.clear(); sizeMB = 0 }
 }
 
-/// Layers panel section: download the visible area, see and clear the offline store.
+/// Layers panel section: prepare a flight (or all Florida) for offline use, see and clear the stores.
 struct OfflineChartsSection: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var store: AirportStore
     @ObservedObject private var downloader = OfflineDownloader.shared
+    @ObservedObject private var preparer = OfflinePreparer.shared
+    @ObservedObject private var offline = OfflineState.shared
+    @State private var dataMB = NetCache.sizeMB()
 
     var body: some View {
         Section {
-            if let p = downloader.progress {
+            if let since = offline.showingCacheFrom {
+                Label(since == .distantPast ? "Hors ligne" : "Hors ligne · données du \(since.formatted(date: .abbreviated, time: .shortened))",
+                      systemImage: "wifi.slash")
+                    .foregroundStyle(ColorToken.warning)
+            }
+            if let step = preparer.step {
+                ProgressView(value: downloader.progress ?? preparer.progress) { Text("Préparation : \(step)…") }
+            } else if let p = downloader.progress {
                 ProgressView(value: p) { Text("Téléchargement… \(Int(p * 100)) %") }
             } else {
+                Button(model.waypoints.count >= 2 ? "Préparer ce vol hors ligne" : "Préparer la zone hors ligne",
+                       systemImage: "airplane.circle") {
+                    Task { await preparer.prepare(model: model, store: store, wholeFlorida: false); dataMB = NetCache.sizeMB() }
+                }
+                Button("Tout télécharger : Floride entière", systemImage: "map") {
+                    Task { await preparer.prepare(model: model, store: store, wholeFlorida: true); dataMB = NetCache.sizeMB() }
+                }
                 let count = OfflineDownloader.tiles(for: model.mapRegion, zooms: 5...11).count
-                Button("Télécharger la zone affichée (\(count) tuiles)", systemImage: "arrow.down.circle") {
+                Button("Cartes de la zone affichée (\(count) tuiles)", systemImage: "arrow.down.circle") {
                     Task { await downloader.download(region: model.mapRegion, chart: model.mapChart) }
                 }
                 .disabled(count > 20_000)
                 if count > 20_000 { Text("Zoome un peu : zone trop grande.").font(.caption).foregroundStyle(.secondary) }
             }
-            LabeledContent("Stocké hors ligne", value: String(format: "%.0f Mo", downloader.sizeMB))
-            Button("Effacer les cartes hors ligne", role: .destructive) { downloader.clear() }
+            if let report = preparer.lastReport, let at = preparer.preparedAt {
+                Text("\(report) (\(at.formatted(date: .abbreviated, time: .shortened)))").font(.caption).foregroundStyle(.secondary)
+            }
+            LabeledContent("Cartes hors ligne", value: String(format: "%.0f Mo", downloader.sizeMB))
+            LabeledContent("Météo, NOTAM, plaques", value: String(format: "%.0f Mo", dataMB + FAADocuments.cacheMB()))
+            Button("Effacer les données hors ligne", role: .destructive) {
+                downloader.clear(); NetCache.clear(); dataMB = 0
+            }
         } header: {
             Text("Hors ligne")
         } footer: {
-            Text("La carte choisie (Sectional, TAC ou IFR) est enregistrée du zoom 5 au zoom 11. Les plaques ouvertes restent aussi disponibles.")
+            Text("« Préparer » enregistre les cartes (Sectional et carte choisie, zoom 5 à 11) de la route ou de la Floride, la météo (METAR, TAF, vents, AIRMET, PIREP), les NOTAM et TFR, les plaques et diagrammes des terrains de la route et les prix carburant. Sans réseau, l'app affiche automatiquement ces dernières données, et la météo FIS-B du récepteur ADS-B en vol.")
         }
     }
 }

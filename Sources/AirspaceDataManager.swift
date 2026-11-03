@@ -365,7 +365,7 @@ extension AirspaceDataManager {
     /// Current and upcoming Florida TFRs from tfr.faa.gov. A failed download keeps the previous list.
     func refreshTFRs() async {
         guard let listURL = URL(string: "https://tfr.faa.gov/tfrapi/exportTfrList"),
-              let (data, _) = try? await URLSession.shared.data(from: listURL),
+              let data = try? await NetCache.data(from: listURL),
               let list = try? JSONDecoder().decode([TFRListItem].self, from: data) else { return }
         var result: [Airspace] = []
         await withTaskGroup(of: Airspace?.self) { group in
@@ -373,7 +373,7 @@ extension AirspaceDataManager {
                 group.addTask {
                     let file = item.notam_id.replacingOccurrences(of: "/", with: "_")
                     guard let url = URL(string: "https://tfr.faa.gov/download/detail_\(file).xml"),
-                          let (xml, _) = try? await URLSession.shared.data(from: url) else { return nil }
+                          let xml = try? await NetCache.data(from: url) else { return nil }
                     return TFRParser.parse(xml, id: item.notam_id, type: item.type)
                 }
             }

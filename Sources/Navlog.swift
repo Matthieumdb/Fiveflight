@@ -55,13 +55,67 @@ struct NavlogSegment: Hashable {
     }
 }
 
+/// Climb and descent performance of the aircraft flown.
+struct VerticalPerformance: Hashable {
+    var climbTAS: Double
+    var climbFPM: Double
+    var climbBurn: Double
+    var descentTAS: Double
+    var descentFPM: Double
+
+    init(climbTAS: Double, climbFPM: Double, climbBurn: Double, descentTAS: Double, descentFPM: Double) {
+        self.climbTAS = climbTAS; self.climbFPM = climbFPM; self.climbBurn = climbBurn
+        self.descentTAS = descentTAS; self.descentFPM = descentFPM
+    }
+
+    init(_ a: AircraftProfile) {
+        self.init(climbTAS: a.climbSpeed, climbFPM: a.climbRate, climbBurn: a.climbBurn,
+                  descentTAS: a.descentSpeed, descentFPM: a.descentRate)
+    }
+}
+
+/// Top of climb and top of descent along the route.
+struct VerticalProfile: Hashable {
+    /// Distance from departure to the top of climb, NM.
+    let tocNM: Double
+    /// Distance before the destination where the descent starts, NM.
+    let todNM: Double
+    let climbMinutes: Double
+    let descentMinutes: Double
+    /// Pattern altitude reached at the end of the descent (destination elevation + 1000 ft).
+    let patternAltitude: Int
+
+    /// Climb from the departure elevation, descent to 1000 ft above the destination. When the route is
+    /// too short to reach cruise, both are shortened in proportion.
+    static func make(totalNM: Double, cruiseAlt: Int, departureElevation: Int, arrivalElevation: Int,
+                     perf: VerticalPerformance) -> VerticalProfile {
+        let climbFt = Double(max(0, cruiseAlt - departureElevation))
+        let pattern = arrivalElevation + 1000
+        let descentFt = Double(max(0, cruiseAlt - pattern))
+        var climbMin = perf.climbFPM > 0 ? climbFt / perf.climbFPM : 0
+        var descentMin = perf.descentFPM > 0 ? descentFt / perf.descentFPM : 0
+        var toc = perf.climbTAS * climbMin / 60
+        var tod = perf.descentTAS * descentMin / 60
+        if toc + tod > totalNM, toc + tod > 0 {
+            let k = totalNM / (toc + tod)
+            toc *= k; tod *= k; climbMin *= k; descentMin *= k
+        }
+        return VerticalProfile(tocNM: toc, todNM: tod, climbMinutes: climbMin, descentMinutes: descentMin,
+                               patternAltitude: pattern)
+    }
+}
+
 /// Wind triangle and navlog built from the FAA winds aloft (FD) forecast.
 enum Navlog {
     /// Builds the log flown at `tas` and `altitude`, departing at `departure`.
     /// Each leg takes its wind from the FD period (6/12/24 h) whose "FOR USE" window covers the leg's mid time.
     /// Without wind data the ground speed is the true airspeed.
+    /// With `vertical`, the stretch before the top of climb is flown at the climb speed and burn, and the
+    /// stretch after the top of descent at the descent speed (burn = 70 % of cruise).
     static func build(segments: [NavlogSegment], tas: Double, altitude: Int, fuelBurn: Double,
-                      winds: [WindsAloft], departure: Date = .now, fuelOnBoard: Double = 0) -> [NavLogLeg] {
+                      winds: [WindsAloft], departure: Date = .now, fuelOnBoard: Double = 0,
+                      vertical: VerticalPerformance? = nil, departureElevation: Int = 0,
+                      arrivalElevation: Int = 0) -> [NavLogLeg] {
         guard tas > 0 else { return [] }
         // Flatten into straight pieces first so the remaining distance is known.
         var pieces: [(from: String, to: String, a: CLLocationCoordinate2D, b: CLLocationCoordinate2D, nm: Double)] = []
@@ -80,6 +134,10 @@ enum Navlog {
             }
         }
         let total = pieces.reduce(0) { $0 + $1.nm }
+        let profile = vertical.map {
+            VerticalProfile.make(totalNM: total, cruiseAlt: altitude, departureElevation: departureElevation,
+                                 arrivalElevation: arrivalElevation, perf: $0)
+        }
         var flown = 0.0, elapsed = 0.0, burned = 0.0
         var rows: [NavLogLeg] = []
         for p in pieces {
@@ -90,10 +148,22 @@ enum Navlog {
             let guessMid = departure.addingTimeInterval((elapsed + p.nm / tas * 30) * 60)
             let set = windSet(for: guessMid, from: winds)
             let w = wind(at: mid, altitude: altitude, winds: set.winds)
-            let (wca, gs) = solve(trueCourse: tc, tas: tas, windFrom: Double(w?.direction ?? 0), windSpeed: Double(w?.speed ?? 0))
-            let minutes = p.nm / gs * 60
+            let windFrom = Double(w?.direction ?? 0), windSpeed = Double(w?.speed ?? 0)
+            let (wca, gs) = solve(trueCourse: tc, tas: tas, windFrom: windFrom, windSpeed: windSpeed)
+            var minutes = p.nm / gs * 60
+            var fuel = minutes / 60 * fuelBurn
+            if let v = vertical, let profile {
+                func overlap(_ lo: Double, _ hi: Double) -> Double { max(0, min(flown + p.nm, hi) - max(flown, lo)) }
+                let climbNM = overlap(0, profile.tocNM)
+                let descentNM = overlap(total - profile.todNM, total)
+                let cruiseNM = max(0, p.nm - climbNM - descentNM)
+                let gsClimb = solve(trueCourse: tc, tas: max(30, v.climbTAS), windFrom: windFrom, windSpeed: windSpeed).gs
+                let gsDescent = solve(trueCourse: tc, tas: max(30, v.descentTAS), windFrom: windFrom, windSpeed: windSpeed).gs
+                let mClimb = climbNM / gsClimb * 60, mDescent = descentNM / gsDescent * 60, mCruise = cruiseNM / gs * 60
+                minutes = mClimb + mCruise + mDescent
+                fuel = (mClimb * v.climbBurn + mCruise * fuelBurn + mDescent * fuelBurn * 0.7) / 60
+            }
             flown += p.nm; elapsed += minutes
-            let fuel = minutes / 60 * fuelBurn
             burned += fuel
             let station = nearestStation(mid, set.winds)
             rows.append(NavLogLeg(
@@ -109,7 +179,7 @@ enum Navlog {
                 windSpeed: w?.speed,
                 temperature: temperature(at: mid, altitude: altitude, winds: set.winds),
                 tas: tas,
-                groundSpeed: gs,
+                groundSpeed: minutes > 0 ? p.nm / minutes * 60 : gs,
                 minutes: minutes,
                 cumulativeMinutes: elapsed,
                 eta: departure.addingTimeInterval(elapsed * 60),

@@ -135,7 +135,9 @@ struct FlightPlanSidePanel: View {
                                 from: model.waypoints.first!.id,
                                 to: model.waypoints.last!.id,
                                 nm: Int(model.totalDistanceNM.rounded()),
-                                eteMinutes: Int(model.totalTimeMinutes.rounded())
+                                eteMinutes: Int(model.totalTimeMinutes.rounded()),
+                                departure: model.waypoints.first?.coordinate,
+                                arrival: model.waypoints.last?.coordinate
                             )
                         } label: {
                             Label("Log Flight", systemImage: "book.fill")

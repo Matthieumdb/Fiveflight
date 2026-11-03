@@ -66,6 +66,23 @@ private struct AircraftEditor: View {
                     number("Consommation (gal/h)", $profile.fuelBurn)
                     number("Capacité carburant (gal)", $profile.capacityGal)
                 }
+                Section {
+                    number("Vitesse de montée (kt)", $profile.climbSpeed)
+                    number("Taux de montée (ft/min)", $profile.climbRate)
+                    number("Conso en montée (gal/h)", $profile.climbBurn)
+                    number("Vitesse de descente (kt)", $profile.descentSpeed)
+                    number("Taux de descente (ft/min)", $profile.descentRate)
+                } header: { Text("Montée et descente") } footer: {
+                    Text("Utilisés par le navlog pour le haut de montée (TOC) et le début de descente (TOD).")
+                }
+                Section {
+                    number("Décollage, roulage (ft)", $profile.takeoffRoll)
+                    number("Décollage, passage 50 ft (ft)", $profile.takeoff50ft)
+                    number("Atterrissage, roulage (ft)", $profile.landingRoll)
+                    number("Atterrissage, depuis 50 ft (ft)", $profile.landing50ft)
+                } header: { Text("Distances POH") } footer: {
+                    Text("Niveau de la mer, 15 °C, masse max, sans vent, piste en dur. Corrigées par aérodrome dans l'onglet Pistes.")
+                }
                 Section("Masse et centrage") {
                     number("Masse max (lb)", $profile.maxWeight)
                     number("Centrage avant (in)", $profile.cgForward)

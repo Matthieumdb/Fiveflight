@@ -152,6 +152,18 @@ private struct FlightPlanContent: View {
                                 .foregroundStyle(ColorToken.textPrimary)
                         }
                     }
+                    Stepper(value: $model.fuelOnBoard, in: 0...300, step: 1) {
+                        HStack {
+                            Image(systemName: "drop.fill")
+                                .foregroundStyle(ColorToken.brandPrimary)
+                                .frame(width: 24)
+                            Text("Carburant au départ")
+                            Spacer()
+                            Text(model.fuelOnBoard > 0 ? "\(Int(model.fuelOnBoard)) gal" : "—")
+                                .font(TypographyToken.monoMedium)
+                                .foregroundStyle(ColorToken.textPrimary)
+                        }
+                    }
                 } header: {
                     Text("Performance")
                         .font(TypographyToken.labelSmall)

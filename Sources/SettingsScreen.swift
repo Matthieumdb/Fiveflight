@@ -16,6 +16,9 @@ struct SettingsScreen: View {
                     Stepper(value: $model.reserveMin, in: 0.0...120.0, step: 5.0) {
                         Text("Réserve : \(Int(model.reserveMin)) min")
                     }
+                    Stepper(value: $model.fuelOnBoard, in: 0.0...300.0, step: 1.0) {
+                        Text(model.fuelOnBoard > 0 ? "Carburant au départ : \(Int(model.fuelOnBoard)) gal" : "Carburant au départ : non saisi")
+                    }
                 } header: {
                     Text("Profil avion")
                 } footer: {

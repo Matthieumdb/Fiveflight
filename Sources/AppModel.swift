@@ -140,6 +140,10 @@ final class AppModel: ObservableObject {
     @Published var cruiseGS = 110.0 { didSet { saveProfile() } }
     @Published var fuelBurn = 8.0    { didSet { saveProfile() } }
     @Published var reserveMin = 45.0 { didSet { saveProfile() } }
+    /// Fuel loaded before departure (gal); 0 = not entered, no fuel alert.
+    @Published var fuelOnBoard = 0.0 { didSet { defaults.set(fuelOnBoard, forKey: "fuelOnBoard") } }
+    /// Show the GPS instrument strip even on the ground.
+    @Published var showInstruments = false { didSet { defaults.set(showInstruments, forKey: "showInstruments") } }
 
     private let defaults: UserDefaults
 
@@ -239,6 +243,8 @@ final class AppModel: ObservableObject {
         showRadar = defaults.object(forKey: "showRadar") as? Bool ?? false
         mapChart = defaults.string(forKey: "mapChart") ?? MapChart.sectional.rawValue
         showSatellite = defaults.bool(forKey: "showSatellite")
+        fuelOnBoard = defaults.double(forKey: "fuelOnBoard")
+        showInstruments = defaults.bool(forKey: "showInstruments")
         showAirspace = defaults.object(forKey: "showAirspace") as? Bool ?? true
         appearanceMode = defaults.object(forKey: "appearanceMode") as? Int ?? 0
     }

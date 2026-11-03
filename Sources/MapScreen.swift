@@ -15,6 +15,7 @@ struct MapScreen: View {
     @State private var showLayersPanel = false
     @State private var showNearbyPanel = false
     @State private var showSearch = false
+    @State private var showNearest = false
     @State private var selectedAirport: Airport?
     @State private var routePolyline: [CLLocationCoordinate2D] = []
     @State private var routeWarnings: [RouteWarning] = []
@@ -93,7 +94,19 @@ struct MapScreen: View {
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                     .zIndex(10)
             }
+
+            // MARK: - GPS instruments (in flight, or on demand)
+            if model.showInstruments || locationManager.speed > FlightMonitor.airborneSpeed {
+                VStack {
+                    Spacer()
+                    InstrumentStrip(showNearest: $showNearest)
+                        .padding(.horizontal, SpacingToken.space3)
+                        .padding(.bottom, 96)
+                }
+                .zIndex(5)
+            }
         }
+        .sheet(isPresented: $showNearest) { NearestSheet() }
         .animation(AnimationToken.transition, value: showFlightPlanPanel)
         .animation(AnimationToken.transition, value: showLayersPanel)
         .animation(AnimationToken.transition, value: showNearbyPanel)

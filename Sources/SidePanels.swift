@@ -734,6 +734,14 @@ struct LayersSidePanel: View {
                     }
 
                     LayerToggleRow(
+                        title: "Instruments GPS",
+                        subtitle: "GS, altitude, route, vario, prochain point",
+                        icon: "gauge.with.dots.needle.33percent",
+                        isOn: $model.showInstruments,
+                        color: ColorToken.warning
+                    )
+
+                    LayerToggleRow(
                         title: "Satellite",
                         subtitle: "Imagerie Apple sous la carte",
                         icon: "globe.americas",

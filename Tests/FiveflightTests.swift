@@ -602,8 +602,10 @@ final class FiveflightTests: XCTestCase {
 
         model.mapRegion = testRegion
 
-        // Wait for debounced save
-        try await Task.sleep(nanoseconds: 1_500_000_000)
+        // Wait for the 1 s debounced save (polled: CI simulators can run the save task late)
+        for _ in 0..<50 where defaults.data(forKey: "mapRegion") == nil {
+            try await Task.sleep(nanoseconds: 200_000_000)
+        }
 
         // Create new model instance (simulates app restart)
         let model2 = AppModel(defaults: defaults)

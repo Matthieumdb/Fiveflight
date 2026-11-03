@@ -110,6 +110,7 @@ struct MapScreen: View {
                 showNearbyPanel: $showNearbyPanel,
                 showSearch: $showSearch
             )
+            .zIndex(20)   // ForeFlight: the toolbar stays on top of the panels it opens
 
             // MARK: - Side Panels
             if showFlightPlanPanel {
@@ -118,18 +119,21 @@ struct MapScreen: View {
                     routePolyline: $routePolyline,
                     routeWarnings: $routeWarnings
                 )
+                .padding(.top, 48)
                 .transition(.move(edge: .leading).combined(with: .opacity))
                 .zIndex(10)
             }
 
             if showLayersPanel {
                 LayersSidePanel(isPresented: $showLayersPanel)
+                    .padding(.top, 48)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                     .zIndex(10)
             }
 
             if showNearbyPanel {
                 NearbySidePanel(isPresented: $showNearbyPanel)
+                    .padding(.top, 48)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                     .zIndex(10)
             }
@@ -161,7 +165,7 @@ struct MapScreen: View {
                     Spacer()
                     InstrumentStrip(showNearest: $showNearest)
                         .padding(.horizontal, SpacingToken.space3)
-                        .padding(.bottom, 96)
+                        .padding(.bottom, 8)
                 }
                 .zIndex(5)
             }
@@ -289,9 +293,8 @@ struct MapScreen: View {
             routePolyline = result.legs.flatMap { $0.waypoints }
             model.routedDistanceNM = result.totalDistanceNM
             model.routePath = routePolyline
-            if weatherService.windsAloft.isEmpty { await weatherService.fetchWindsAloft() }
-            model.navlog = Navlog.build(legs: result.legs, tas: model.cruiseGS, altitude: model.cruiseAlt,
-                                        fuelBurn: model.fuelBurn, winds: weatherService.windsAloft)
+            // The navlog follows the routed path (rebuilt in RootView when the segments change).
+            model.routeSegments = result.legs.map { NavlogSegment(from: $0.from, to: $0.to, points: $0.waypoints) }
             routeWarnings = result.airspaceWarnings.map { warning in
                 RouteWarning(
                     legIndex: warning.legIndex,
@@ -314,118 +317,79 @@ struct TopMapBar: View {
     @Binding var showNearbyPanel: Bool
     @Binding var showSearch: Bool
 
+    private var chartLabel: String {
+        MapChart(rawValue: model.mapChart)?.label ?? "Carte"
+    }
+
+    /// ForeFlight map toolbar: one charcoal bar with the layer selector, FPL and the map tools.
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: SpacingToken.space3) {
-                // Flight plan button
-                Button {
+            HStack(spacing: 8) {
+                FFBarButton(title: chartLabel, icon: "chevron.down", active: showLayersPanel) {
+                    withAnimation(AnimationToken.spring) { showLayersPanel.toggle() }
+                    showFlightPlanPanel = false
+                    showNearbyPanel = false
+                }
+                FFBarButton(title: "FPL", icon: nil, active: showFlightPlanPanel) {
                     withAnimation(AnimationToken.spring) { showFlightPlanPanel.toggle() }
                     showLayersPanel = false
                     showNearbyPanel = false
-                } label: {
-                    Image(systemName: "list.bullet.clipboard")
-                        .font(.system(size: 20, weight: .medium))
                 }
-                .mapControlButton(selected: showFlightPlanPanel)
-
-                Spacer()
-
-                // Search button
-                Button { showSearch = true } label: {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 20, weight: .medium))
+                Spacer(minLength: 0)
+                FFBarButton(title: nil, icon: "magnifyingglass") { showSearch = true }
+                FFBarButton(title: "Proches", icon: nil, active: showNearbyPanel) {
+                    withAnimation(AnimationToken.spring) { showNearbyPanel.toggle() }
+                    showFlightPlanPanel = false
+                    showLayersPanel = false
                 }
-                .mapControlButton()
-
-                // GPS button
-                Button {
+                FFBarButton(title: nil, icon: model.followUser ? "location.fill" : "location", active: model.followUser) {
                     if let loc = model.userLocation ?? locationManager.location {
                         model.moveMap(to: loc)
                     } else {
                         locationManager.start()
                     }
-                } label: {
-                    Image(systemName: model.followUser ? "location.fill" : "location")
-                        .font(.system(size: 20, weight: .medium))
                 }
-                .mapControlButton(selected: model.followUser)
-
-                Spacer()
-
-                // Layers button
-                Button {
-                    withAnimation(AnimationToken.spring) { showLayersPanel.toggle() }
-                    showFlightPlanPanel = false
-                    showNearbyPanel = false
-                } label: {
-                    Image(systemName: "square.3.layers.3d")
-                        .font(.system(size: 20, weight: .medium))
-                }
-                .mapControlButton(selected: showLayersPanel)
-
-                // Nearby button
-                Button {
-                    withAnimation(AnimationToken.spring) { showNearbyPanel.toggle() }
-                    showFlightPlanPanel = false
-                    showLayersPanel = false
-                } label: {
-                    Image(systemName: "location.circle")
-                        .font(.system(size: 20, weight: .medium))
-                }
-                .mapControlButton(selected: showNearbyPanel)
             }
-            .padding(.horizontal, SpacingToken.insetMedium)
-            .padding(.top, SpacingToken.insetMedium)
-            .padding(.bottom, SpacingToken.space3)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(FF.bar.ignoresSafeArea(edges: .top))
 
-            // Route info bar
-            if !model.waypoints.isEmpty {
+            if model.waypoints.count >= 2 {
                 RouteInfoBar()
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .background(
-            LinearGradient(
-                colors: [ColorToken.surfaceBase.opacity(0.95), ColorToken.surfaceBase.opacity(0.0)],
-                startPoint: .top, endPoint: .bottom
-            )
-            .ignoresSafeArea()
-        )
     }
 }
 
+/// ForeFlight route strip under the toolbar: the route string, then Dist · ETE · ETA · Carb.
 struct RouteInfoBar: View {
     @EnvironmentObject private var model: AppModel
-    @EnvironmentObject private var routingEngine: RoutingEngine
 
-    /// Compact enough for an iPhone in portrait (the old bar truncated every value to "0…").
     var body: some View {
-        HStack(spacing: SpacingToken.space3) {
-            Text("\(model.waypoints.first?.id ?? "—")→\(model.waypoints.last?.id ?? "—")")
-                .foregroundStyle(ColorToken.textPrimary)
-                .layoutPriority(-1)
-            Spacer(minLength: 0)
-            Text(String(format: "%.0f NM", model.totalDistanceNM)).fixedSize()
-            Text(model.formattedTotalTime).fixedSize()
-            Label(String(format: "%.1f gal", model.totalFuelGallons), systemImage: "fuelpump")
-                .labelStyle(.titleAndIcon).fixedSize()
-            Image(systemName: routingEngine.currentMode.icon)
-                .foregroundStyle(ColorToken.brandPrimary)
+        VStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(Array(model.waypoints.enumerated()), id: \.element.id) { i, w in
+                        Text(w.id)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(i == 0 || i == model.waypoints.count - 1 ? FF.accent : FF.magenta.opacity(0.85),
+                                        in: RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+            }
+            .background(FF.barSecondary)
+            FFDataStrip(items: [
+                ("Dist", String(format: "%.0f nm", model.totalDistanceNM)),
+                ("ETE", ffDuration(model.totalTimeMinutes)),
+                ("ETA", model.arrivalTime.formatted(date: .omitted, time: .shortened)),
+                ("Carb", String(format: "%.1f gal", model.totalFuelGallons))
+            ])
         }
-        .font(TypographyToken.monoSmall)
-        .foregroundStyle(ColorToken.textPrimary)
-        .lineLimit(1)
-        .minimumScaleFactor(0.6)
-        .padding(.horizontal, SpacingToken.insetMedium)
-        .padding(.vertical, SpacingToken.space2)
-        .background(ColorToken.surfaceElevated, in: RoundedRectangle(cornerRadius: RadiusToken.md))
-        .overlay(
-            RoundedRectangle(cornerRadius: RadiusToken.md)
-                .stroke(ColorToken.borderDefault, lineWidth: 0.5)
-        )
-        .shadow(ShadowToken.medium)
-        .padding(.horizontal, SpacingToken.insetMedium)
-        .padding(.bottom, SpacingToken.space3)
     }
 }
 

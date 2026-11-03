@@ -216,13 +216,19 @@ struct WindsAloft: Identifiable, Codable, Hashable {
     let longitude: Double
     let validTime: String
     let levels: [WindsAloftLevel]
+    /// "FOR USE hhmm-hhmmZ" window of the FD product, when it could be read.
+    var useFrom: Date?
+    var useTo: Date?
 
-    init(station: String, latitude: Double, longitude: Double, validTime: String, levels: [WindsAloftLevel]) {
+    init(station: String, latitude: Double, longitude: Double, validTime: String, levels: [WindsAloftLevel],
+         useFrom: Date? = nil, useTo: Date? = nil) {
         self.station = station
         self.latitude = latitude
         self.longitude = longitude
         self.validTime = validTime
         self.levels = levels
+        self.useFrom = useFrom
+        self.useTo = useTo
     }
 }
 

@@ -101,7 +101,19 @@ final class AppModel: ObservableObject {
     }
 
     // Flight plan
-    @Published var waypoints: [Airport] = [] { didSet { routedDistanceNM = nil; navlog = []; routePath = waypoints.map(\.coordinate) } }
+    @Published var waypoints: [Airport] = [] {
+        didSet {
+            routedDistanceNM = nil; routeSegments = []; routePath = waypoints.map(\.coordinate)
+        }
+    }
+    /// Planned departure time (ETD). Drives the winds used by the navlog, the ETA and the briefing.
+    @Published var departureTime: Date = Date.now.addingTimeInterval(30 * 60)
+    /// Route as computed by the routing engine (with detours); empty = straight legs between waypoints.
+    @Published var routeSegments: [NavlogSegment] = []
+    /// True while the forecast winds for the navlog are being downloaded.
+    @Published var navlogLoadingWinds = false
+    /// FD winds were available for the last navlog build.
+    @Published var navlogHasWinds = false
     /// Length of the computed route (with airspace detours); straight-line legs until it is known.
     @Published var routedDistanceNM: Double?
     /// Wind-corrected log of the computed route; empty until the route is calculated.
@@ -481,6 +493,51 @@ final class AppModel: ObservableObject {
         let h = totalMinutes / 60
         let m = totalMinutes % 60
         return h > 0 ? "\(h)h \(m)min" : "\(m)min"
+    }
+
+    /// Estimated time of arrival from the planned departure.
+    var arrivalTime: Date { departureTime.addingTimeInterval(totalTimeMinutes * 60) }
+
+    /// Everything the navlog depends on; the navlog is rebuilt whenever it changes.
+    struct NavlogInputs: Hashable {
+        let ids: [String]
+        let segments: [NavlogSegment]
+        let alt: Int, tas: Double, burn: Double, fob: Double
+        let departure: Date
+    }
+    var navlogInputs: NavlogInputs {
+        NavlogInputs(ids: waypoints.map(\.id), segments: navlogSegments, alt: cruiseAlt, tas: cruiseGS,
+                     burn: fuelBurn, fob: fuelOnBoard, departure: departureTime)
+    }
+
+    /// Routed segments when known, else straight legs between waypoints.
+    var navlogSegments: [NavlogSegment] {
+        if !routeSegments.isEmpty { return routeSegments }
+        guard waypoints.count >= 2 else { return [] }
+        return (1..<waypoints.count).map {
+            NavlogSegment(from: waypoints[$0 - 1].id, to: waypoints[$0].id,
+                          points: [waypoints[$0 - 1].coordinate, waypoints[$0].coordinate])
+        }
+    }
+
+    /// Rebuilds the navlog for the current plan and departure time: first with the winds already
+    /// downloaded, then again once the FD forecasts (6/12/24 h) for that time are in.
+    func refreshNavlog(weather: WeatherService) async {
+        let inputs = navlogInputs
+        guard inputs.segments.count >= 1 else { navlog = []; return }
+        func build(_ winds: [WindsAloft]) {
+            navlog = Navlog.build(segments: inputs.segments, tas: inputs.tas, altitude: inputs.alt,
+                                  fuelBurn: inputs.burn, winds: winds, departure: inputs.departure,
+                                  fuelOnBoard: inputs.fob)
+            navlogHasWinds = !winds.isEmpty
+        }
+        let cached = weather.windsByPeriod.values.flatMap { $0 }
+        build(cached.isEmpty ? weather.windsAloft : cached)
+        navlogLoadingWinds = true
+        let fresh = await weather.fetchAllWindPeriods()
+        navlogLoadingWinds = false
+        guard !Task.isCancelled, navlogInputs == inputs, !fresh.isEmpty else { return }
+        build(fresh)
     }
 
     var totalFuelGallons: Double {

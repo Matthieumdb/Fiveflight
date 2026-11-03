@@ -460,15 +460,15 @@ struct VFRMapView: UIViewRepresentable {
         func mapView(_ mv: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let line = overlay as? MKPolyline, line === trackOverlay {
                 let r = MKPolylineRenderer(polyline: line)
-                r.strokeColor = .systemPink
+                r.strokeColor = UIColor.systemCyan.withAlphaComponent(0.85)   // ForeFlight-style breadcrumb
                 r.lineWidth = 3
                 return r
             }
             if let line = overlay as? MKPolyline {
+                // ForeFlight: solid magenta course line.
                 let r = MKPolylineRenderer(polyline: line)
-                r.strokeColor = .systemBlue
-                r.lineWidth = 3
-                r.lineDashPattern = [8, 4]
+                r.strokeColor = UIColor(red: 0.84, green: 0.23, blue: 0.98, alpha: 0.95)
+                r.lineWidth = 5
                 return r
             }
             if let circle = overlay as? MKCircle, circle === glideCircle {

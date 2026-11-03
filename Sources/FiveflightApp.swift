@@ -9,6 +9,8 @@ struct FiveflightApp: App {
     @StateObject private var weatherService = WeatherService.shared
     @StateObject private var locationManager = LocationManager.shared
 
+    init() { FF.applyAppearance() }
+
     var body: some Scene {
         WindowGroup {
             RootView()

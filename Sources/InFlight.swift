@@ -221,7 +221,7 @@ struct InstrumentStrip: View {
                 }
             }
             .padding(.vertical, SpacingToken.space2)
-            .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 12))
+            .background(FF.bar.opacity(0.95), in: RoundedRectangle(cornerRadius: 10))
         }
     }
 

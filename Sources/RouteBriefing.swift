@@ -73,6 +73,34 @@ enum RouteBriefing {
         list.filter { adv in adv.area.map { crosses($0, path: path) } ?? false }
     }
 
+    /// The TAF period in force at `date`: the last group (FM/BECMG/TEMPO) that covers it.
+    static func forecast(_ taf: TAF, at date: Date) -> TAFForecast? {
+        guard date >= taf.validFrom.addingTimeInterval(-3600), date <= taf.validTo else { return nil }
+        return taf.forecasts.last { $0.from <= date && date < $0.to } ?? taf.forecasts.first
+    }
+
+    /// Flight category from a TAF period (ceiling = lowest BKN/OVC/OVX, visibility in SM).
+    static func category(_ f: TAFForecast) -> FlightCategory {
+        let ceiling = f.clouds.filter { ["BKN", "OVC", "OVX", "VV"].contains($0.cover) }.map(\.base).min()
+        let vis = f.visibility
+        if (ceiling ?? 99999) < 500 || (vis ?? 99) < 1 { return .lifr }
+        if (ceiling ?? 99999) < 1000 || (vis ?? 99) < 3 { return .ifr }
+        if (ceiling ?? 99999) <= 3000 || (vis ?? 99) <= 5 { return .mvfr }
+        if ceiling == nil && vis == nil && f.clouds.isEmpty { return .unknown }
+        return .vfr
+    }
+
+    /// "Vent 090/12 · Vis 6 SM · SCT030 BKN050 · -RA"
+    static func describe(_ f: TAFForecast) -> String {
+        var parts: [String] = []
+        if let d = f.windDirection, let s = f.windSpeed { parts.append(String(format: "Vent %03d/%02d", d, s)) }
+        else if let s = f.windSpeed { parts.append("Vent VRB/\(s)") }
+        if let v = f.visibility { parts.append(v >= 6 ? "Vis 6+ SM" : String(format: "Vis %g SM", v)) }
+        if !f.clouds.isEmpty { parts.append(f.clouds.map { "\($0.cover)\(String(format: "%03d", $0.base / 100))" }.joined(separator: " ")) }
+        if let wx = f.weather, !wx.isEmpty { parts.append(wx) }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
+
     static func worst(_ cats: [FlightCategory]) -> FlightCategory {
         let order: [FlightCategory] = [.lifr, .ifr, .mvfr, .vfr]
         return order.first { cats.contains($0) } ?? .unknown
@@ -86,7 +114,9 @@ struct RouteBriefingScreen: View {
     @EnvironmentObject private var weather: WeatherService
     @EnvironmentObject private var airspaceManager: AirspaceDataManager
 
-    @State private var departure = Date.now.addingTimeInterval(30 * 60)
+    /// Shown inside the Flights tab (no own title / share button).
+    var embedded = false
+    private var departure: Date { model.departureTime }
     @State private var stations: [BriefingStation] = []
     @State private var notams: [String: [NOTAMService.NOTAM]] = [:]
     @State private var notamFailed: [String] = []
@@ -98,14 +128,15 @@ struct RouteBriefingScreen: View {
     }
     private var depAirport: Airport? { model.waypoints.first(where: \.isAirport) }
     private var destAirport: Airport? { model.waypoints.last(where: \.isAirport) }
-    private var eta: Date { departure.addingTimeInterval(model.totalTimeMinutes * 60) }
+    private var eta: Date { model.arrivalTime }
 
     private var tfrs: [Airspace] { RouteBriefing.airspacesCrossed(airspaceManager.tfrs, path: path, altitude: nil) }
     private var crossed: [Airspace] {
         RouteBriefing.airspacesCrossed(airspaceManager.airspaces.filter { $0.isActive && $0.type.needsAlert },
                                        path: path, altitude: model.cruiseAlt)
     }
-    private var advisories: [AirSigmet] { RouteBriefing.advisories(weather.airsigmets, path: path) }
+    /// Advisories in force at the planned departure time.
+    private var advisories: [AirSigmet] { RouteBriefing.advisories(weather.advisories(at: departure), path: path) }
     private var categories: [FlightCategory] { stations.compactMap { weather.metars[$0.airport.id]?.flightCategory } }
     private var importantNOTAMs: Int { notams.values.joined().filter(\.isImportant).count }
 
@@ -118,8 +149,8 @@ struct RouteBriefingScreen: View {
         List {
             summarySection
             Section {
-                DatePicker("Départ", selection: $departure)
-                LabeledContent("Arrivée estimée", value: eta.formatted(date: .omitted, time: .shortened))
+                DatePicker("Départ (ETD)", selection: $model.departureTime)
+                LabeledContent("Arrivée estimée (ETA)", value: "\(eta.formatted(date: .omitted, time: .shortened)) · \(eta.zulu)")
                 if let sunset {
                     LabeledContent("Coucher du soleil (dest.)", value: sunset.formatted(date: .omitted, time: .shortened))
                     if eta > sunset {
@@ -129,12 +160,38 @@ struct RouteBriefingScreen: View {
             } header: { Text("Horaires") }
 
             ForEach([depAirport, destAirport].compactMap { $0 }.uniqued(), id: \.id) { a in
+                let isDep = a.id == depAirport?.id
                 Section {
+                    forecastRow(a, at: isDep ? departure : eta)
                     airportWeather(a)
                 } header: {
-                    Text(a.id == depAirport?.id ? "Départ · \(a.id)" : "Destination · \(a.id)")
+                    Text(isDep ? "Départ · \(a.id) · \(departure.zulu)" : "Destination · \(a.id) · \(eta.zulu)")
                 }
             }
+
+            Section {
+                if model.navlog.isEmpty {
+                    Text("Navlog en cours de calcul…").foregroundStyle(ColorToken.textTertiary)
+                } else if !model.navlogHasWinds {
+                    Label("Vents en altitude indisponibles : vitesse sol = TAS", systemImage: "wind")
+                        .foregroundStyle(ColorToken.warning)
+                } else {
+                    ForEach(model.navlog) { leg in
+                        HStack {
+                            Text("\(leg.from) → \(leg.to)").font(TypographyToken.monoXSmall).lineLimit(1)
+                            Spacer()
+                            if let d = leg.windDirection, let sp = leg.windSpeed {
+                                Text(String(format: "%03d/%02d", d, sp)).font(TypographyToken.monoXSmall)
+                            }
+                            if let hw = leg.headwind {
+                                Text(hw >= 0 ? "-\(hw) kt" : "+\(-hw) kt")
+                                    .font(TypographyToken.monoXSmall)
+                                    .foregroundStyle(hw > 0 ? ColorToken.warning : ColorToken.success)
+                            }
+                        }
+                    }
+                }
+            } header: { Text("Vents prévus à \(model.cruiseAlt) ft (FD à l'heure de vol)") }
 
             Section {
                 if stations.isEmpty && !loading { Text("Aucune station sur le trajet").foregroundStyle(ColorToken.textTertiary) }
@@ -197,16 +254,23 @@ struct RouteBriefingScreen: View {
                 Text("Sources : aviationweather.gov, tfr.faa.gov, FAA NOTAM Search, FAA ADDS. Ce résumé ne remplace pas un briefing officiel (1800wxbrief.com).")
             }
         }
-        .navigationTitle("Briefing de route")
+        .navigationTitle(embedded ? "" : "Briefing de route")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                ShareLink(item: summaryText) { Image(systemName: "square.and.arrow.up") }
+            if !embedded {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ShareLink(item: summaryText) { Image(systemName: "square.and.arrow.up") }
+                }
             }
         }
         .overlay { if loading && stations.isEmpty { ProgressView("Préparation du briefing…") } }
         .refreshable { await load() }
-        .task { await load() }
+        // New departure time → new briefing (TAF period, advisories, winds), not just a new arrival time.
+        .task(id: model.departureTime) {
+            try? await Task.sleep(nanoseconds: 500_000_000)   // let the date picker settle
+            guard !Task.isCancelled else { return }
+            await load()
+        }
     }
 
     // MARK: Sections
@@ -235,6 +299,31 @@ struct RouteBriefingScreen: View {
             }
         } header: {
             Text(model.waypoints.map(\.id).joined(separator: " → "))
+        }
+    }
+
+    /// TAF period in force at `date`, decoded, with its flight category.
+    @ViewBuilder
+    private func forecastRow(_ a: Airport, at date: Date) -> some View {
+        if let taf = weather.tafs[a.id] {
+            if let f = RouteBriefing.forecast(taf, at: date) {
+                let cat = RouteBriefing.category(f)
+                HStack(alignment: .top) {
+                    categoryPill(cat)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Prévu à \(date.formatted(date: .omitted, time: .shortened))")
+                            .font(TypographyToken.labelSmall)
+                        Text(RouteBriefing.describe(f)).font(TypographyToken.monoXSmall)
+                            .foregroundStyle(ColorToken.textSecondary)
+                    }
+                }
+            } else {
+                Label("Heure hors validité du TAF (\(taf.validFrom.zulu)–\(taf.validTo.zulu))", systemImage: "clock.badge.exclamationmark")
+                    .font(TypographyToken.labelSmall).foregroundStyle(ColorToken.warning)
+            }
+        } else if !loading {
+            Text("Pas de TAF : prévision à l'heure indisponible").font(TypographyToken.labelSmall)
+                .foregroundStyle(ColorToken.textTertiary)
         }
     }
 

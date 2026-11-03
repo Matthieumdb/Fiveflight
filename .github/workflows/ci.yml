@@ -43,12 +43,27 @@ jobs:
             exit 1
           fi
 
+      - name: Pick a simulator
+        run: |
+          # Runner images change their simulator set; fall back to any available iPhone.
+          if ! xcrun simctl list devices available | grep -q "${IOS_SIMULATOR} ("; then
+            SIM=$(xcrun simctl list devices available | grep -oE "iPhone [^(]+" | sed 's/ *$//' | tail -1)
+            if [ -z "$SIM" ]; then
+              RUNTIME=$(xcrun simctl list runtimes available | grep -oE "com.apple.CoreSimulator.SimRuntime.iOS-[0-9-]+" | tail -1)
+              TYPE=$(xcrun simctl list devicetypes | grep -oE "com.apple.CoreSimulator.SimDeviceType.iPhone-[0-9]+" | tail -1)
+              xcrun simctl create "CI iPhone" "$TYPE" "$RUNTIME"
+              SIM="CI iPhone"
+            fi
+            echo "IOS_SIMULATOR=$SIM" >> "$GITHUB_ENV"
+          fi
+
       - name: Build and Test
         run: |
           set -o pipefail
+          echo "Simulator: ${IOS_SIMULATOR}"
           xcodebuild \
             -scheme Fiveflight \
-            -destination "platform=iOS Simulator,name=${IOS_SIMULATOR},OS=latest" \
+            -destination "platform=iOS Simulator,name=${IOS_SIMULATOR}" \
             -configuration Debug \
             -resultBundlePath build/test-results/Tests.xcresult \
             build test \

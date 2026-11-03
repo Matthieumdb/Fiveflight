@@ -63,7 +63,7 @@ enum TerrainProfile {
         let lons = pts.map { String(format: "%.4f", $0.0.longitude) }.joined(separator: ",")
         struct Response: Decodable { let elevation: [Double] }
         guard let url = URL(string: "https://api.open-meteo.com/v1/elevation?latitude=\(lats)&longitude=\(lons)"),
-              let (data, _) = try? await URLSession.shared.data(from: url),
+              let data = try? await NetCache.data(from: url),
               let r = try? JSONDecoder().decode(Response.self, from: data), r.elevation.count == pts.count else { return [] }
         return pts.indices.map { Sample(id: $0, distanceNM: pts[$0].1, groundFt: max(0, r.elevation[$0]) * 3.28084) }
     }

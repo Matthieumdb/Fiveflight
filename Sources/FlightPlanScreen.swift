@@ -79,7 +79,10 @@ struct FlightPlanScreen: View {
                         Image(systemName: "ellipsis.circle")
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if model.waypoints.count >= 2 {
+                        Button("Carte") { showOnMap() }
+                    }
                     Button { showSearch = true } label: { Image(systemName: "plus") }
                 }
             }
@@ -90,6 +93,17 @@ struct FlightPlanScreen: View {
                 })
             }
         }
+    }
+}
+
+extension FlightPlanScreen {
+    /// ForeFlight "Send to Maps": frame the whole route on the map tab.
+    fileprivate func showOnMap() {
+        let lats = model.waypoints.map(\.coordinate.latitude), lons = model.waypoints.map(\.coordinate.longitude)
+        guard let minLat = lats.min(), let maxLat = lats.max(), let minLon = lons.min(), let maxLon = lons.max() else { return }
+        model.moveMap(to: CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2),
+                      span: max(maxLat - minLat, maxLon - minLon) * 1.4 + 0.2)
+        FFRouter.shared.tab = .maps
     }
 }
 

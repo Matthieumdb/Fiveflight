@@ -54,7 +54,7 @@ final class SectionalTileOverlay: MKTileOverlay {
     }
 }
 
-final class WeatherTileOverlay: MKTileOverlay {}
+class WeatherTileOverlay: MKTileOverlay {}
 /// Styling for an airspace outline. MKPolygon cannot be subclassed with a custom initializer
 /// (its `init(coordinates:count:)` is a class factory, so `super.init` crashes with
 /// "unrecognized selector"), so the style is kept next to a plain MKPolygon instead.
@@ -298,7 +298,14 @@ struct VFRMapView: UIViewRepresentable {
                 weatherOverlays[layer] = nil
             }
             for layer in weatherLayers where weatherOverlays[layer] == nil {
-                let o = WeatherTileOverlay(urlTemplate: VFRMapView.mesonetURL(layer))
+                let o: WeatherTileOverlay
+                if layer.hasPrefix("fisb-radar") {
+                    o = FISBRadarOverlay(urlTemplate: nil)          // drawn from ADS-B blocks, no internet
+                } else if layer == "lightning" {
+                    o = LightningTileOverlay(urlTemplate: nil)      // NOAA nowCOAST, Blitzortung fallback
+                } else {
+                    o = WeatherTileOverlay(urlTemplate: VFRMapView.mesonetURL(layer))
+                }
                 o.canReplaceMapContent = false
                 weatherOverlays[layer] = o
                 if let s = sectionalOverlay {
@@ -487,7 +494,7 @@ struct VFRMapView: UIViewRepresentable {
             }
             if let weather = overlay as? WeatherTileOverlay {
                 let r = MKTileOverlayRenderer(tileOverlay: weather)
-                r.alpha = 0.55
+                r.alpha = weather is LightningTileOverlay ? 0.9 : weather is FISBRadarOverlay ? 0.8 : 0.55
                 return r
             }
             if let tile = overlay as? MKTileOverlay {

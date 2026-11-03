@@ -29,6 +29,14 @@ struct MapScreen: View {
     @State private var routePolyline: [CLLocationCoordinate2D] = []
     @State private var routeWarnings: [RouteWarning] = []
     @State private var visibleAirports: [Airport] = []
+    @State private var visibleNavaids: [Airport] = []
+    @State private var pressedPoint: PressedPoint?
+    @State private var selectedWaypoint: Airport?
+    @ObservedObject private var monitor = FlightMonitor.shared
+
+    private var glideRadius: Double? {
+        model.showGlideRing ? monitor.glideRangeNM : nil
+    }
 
     private var activeAirspaces: [Airspace] {
         airspaceManager.allAirspaces.filter { $0.isActive }
@@ -50,9 +58,8 @@ struct MapScreen: View {
         return "-\(minutesAgo) min"
     }
 
-    var body: some View {
-        ZStack(alignment: .top) {
-            // MARK: - Full Screen Map (VFRMapView with MKTileOverlay)
+    /// The map itself, split out of `body` so the type checker stays fast in Release builds.
+    private var mapLayer: some View {
             VFRMapView(
                 showSectional: model.showSectional,
                 nearest: visibleAirports,
@@ -64,12 +71,17 @@ struct MapScreen: View {
                 region: model.mapRegion,
                 regionVersion: model.mapRegionVersion,
                 onSelect: { airport in
-                    selectedAirport = airport
-                    model.selectedAirport = airport
+                    if airport.isAirport {
+                        selectedAirport = airport
+                        model.selectedAirport = airport
+                    } else {
+                        selectedWaypoint = airport
+                    }
                 },
                 onRegionChange: { region in
                     model.mapRegion = region
                     visibleAirports = Self.airportsToShow(store.airports, in: region)
+                    visibleNavaids = Self.navaidsToShow(in: region)
                 },
                 airspaces: activeAirspaces,
                 showAirspace: model.showAirspace,
@@ -77,9 +89,19 @@ struct MapScreen: View {
                 chart: model.mapChart,
                 satellite: model.showSatellite,
                 weatherLayers: weatherLayers,
-                traffic: adsb.traffic
+                traffic: adsb.traffic,
+                navaids: visibleNavaids,
+                glideRadiusNM: glideRadius,
+                onLongPress: { coord in pressedPoint = PressedPoint(coordinate: coord) },
+                onMoveWaypoint: { id, coord in model.moveWaypoint(id: id, to: coord) }
             )
             .ignoresSafeArea()
+    }
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            // MARK: - Full Screen Map (VFRMapView with MKTileOverlay)
+            mapLayer
 
             // MARK: - Top Bar
             TopMapBar(
@@ -145,6 +167,7 @@ struct MapScreen: View {
             }
         }
         .sheet(isPresented: $showNearest) { NearestSheet() }
+        .modifier(MapPointActions(pressedPoint: $pressedPoint, selectedWaypoint: $selectedWaypoint))
         .task(id: radarPlaying) {
             while radarPlaying, !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 900_000_000)
@@ -174,6 +197,7 @@ struct MapScreen: View {
         }
         .onAppear {
             visibleAirports = Self.airportsToShow(store.airports, in: model.mapRegion)
+            visibleNavaids = Self.navaidsToShow(in: model.mapRegion)
             Task { await calculateAndUpdateRoute() }
         }
         .onChange(of: model.waypoints) { _, _ in
@@ -203,6 +227,17 @@ struct MapScreen: View {
     }
 
     // MARK: - Helpers
+
+    /// VORs and VFR waypoints below ~90 NM of span, fixes too below ~35 NM.
+    nonisolated static func navaidsToShow(in region: MKCoordinateRegion) -> [Airport] {
+        let maxDelta = max(region.span.latitudeDelta, region.span.longitudeDelta)
+        guard maxDelta < 1.5 else { return [] }
+        let types: Set<String> = maxDelta < 0.6 ? ["vor", "ndb", "vfr_wp", "fix"] : ["vor", "vfr_wp"]
+        let latHalf = region.span.latitudeDelta * 0.6, lonHalf = region.span.longitudeDelta * 0.6
+        return NavaidStore.inRegion(minLat: region.center.latitude - latHalf, maxLat: region.center.latitude + latHalf,
+                                    minLon: region.center.longitude - lonHalf, maxLon: region.center.longitude + lonHalf,
+                                    types: types, limit: 150)
+    }
 
     /// Airports worth drawing for `region`: only those inside the visible area (plus a margin),
     /// smaller types only when zoomed in, capped so MapKit never gets thousands of annotations.
@@ -480,4 +515,92 @@ struct RouteWarning: Identifiable {
     let airspaceName: String
     let type: AirspaceWarningType
     let message: String
+}
+
+// MARK: - Long press & waypoint actions
+
+struct PressedPoint: Identifiable {
+    let id = UUID()
+    let coordinate: CLLocationCoordinate2D
+}
+
+/// Long press on the map → create a user waypoint (insert in route, append, Direct To);
+/// tap on a navaid/fix/user point → its card.
+struct MapPointActions: ViewModifier {
+    @EnvironmentObject private var model: AppModel
+    @Binding var pressedPoint: PressedPoint?
+    @Binding var selectedWaypoint: Airport?
+
+    private var showDialog: Binding<Bool> {
+        Binding(get: { pressedPoint != nil }, set: { if !$0 { pressedPoint = nil } })
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .confirmationDialog("Nouveau point", isPresented: showDialog, titleVisibility: .visible, presenting: pressedPoint) { p in
+                Button("Insérer dans la route") { model.insertIntoRoute(model.makeUserWaypoint(at: p.coordinate)) }
+                Button("Ajouter à la fin") { model.addWaypoint(model.makeUserWaypoint(at: p.coordinate)) }
+                Button("Direct To") { model.directTo(model.makeUserWaypoint(at: p.coordinate)) }
+                Button("Annuler", role: .cancel) {}
+            } message: { p in
+                Text(Airport(id: "", name: "", type: "user", icao: nil, iata: nil, municipality: nil,
+                             elevationFt: nil, coordinate: p.coordinate).coordinateText)
+            }
+            .sheet(item: $selectedWaypoint) { WaypointSheet(waypoint: $0) }
+    }
+}
+
+/// Card for a VOR, NDB, fix, VFR waypoint or user point: details and plan actions.
+struct WaypointSheet: View {
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var location: LocationManager
+    @Environment(\.dismiss) private var dismiss
+    let waypoint: Airport
+
+    private var inPlan: Bool { model.waypoints.contains { $0.id == waypoint.id } }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    LabeledContent("Type", value: waypoint.kindLabel)
+                    LabeledContent("Coordonnées", value: waypoint.coordinateText)
+                    if let here = location.location {
+                        LabeledContent("Depuis ma position",
+                                       value: String(format: "%03d°V · %.1f NM", Haversine.trueCourse(here, waypoint.coordinate),
+                                                     waypoint.distanceNM(to: here)))
+                    }
+                    if !waypoint.name.isEmpty { Text(waypoint.name).foregroundStyle(ColorToken.textSecondary) }
+                }
+                Section {
+                    if inPlan {
+                        Button("Retirer du plan", systemImage: "minus.circle", role: .destructive) {
+                            model.removeWaypoint(id: waypoint.id); dismiss()
+                        }
+                    } else {
+                        Button("Insérer dans la route", systemImage: "point.topleft.down.to.point.bottomright.curvepath") {
+                            model.insertIntoRoute(waypoint); dismiss()
+                        }
+                        Button("Ajouter à la fin", systemImage: "plus.circle") { model.addWaypoint(waypoint); dismiss() }
+                    }
+                    Button("Direct To", systemImage: "location.north.line") { model.directTo(waypoint); dismiss() }
+                } footer: {
+                    Text("Astuce : sur la carte, maintiens un point de la route puis fais-le glisser pour modifier le trajet.")
+                }
+                if waypoint.type == "user" {
+                    Section {
+                        Button("Supprimer ce point perso", systemImage: "trash", role: .destructive) {
+                            model.removeWaypoint(id: waypoint.id)
+                            model.deleteUserWaypoint(waypoint.id)
+                            dismiss()
+                        }
+                    }
+                }
+            }
+            .navigationTitle(waypoint.id)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("OK") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
+    }
 }

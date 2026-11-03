@@ -35,7 +35,7 @@ struct RootView: View {
                 model.userLocation = coordinate
                 FlightMonitor.shared.update(position: coordinate, groundSpeed: location.speed, course: location.course,
                                             altitudeFt: Int(location.altitude * 3.28084), model: model,
-                                            airspaces: AirspaceDataManager.shared.allAirspaces)
+                                            airspaces: AirspaceDataManager.shared.allAirspaces, store: store)
             }
         }
         .task {

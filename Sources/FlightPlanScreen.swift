@@ -105,6 +105,15 @@ private struct FlightPlanContent: View {
             // Route summary
             if model.waypoints.count >= 2 {
                 Section {
+                    NavigationLink { RouteBriefingScreen() } label: {
+                        Label("Briefing de route (météo, NOTAM, TFR)", systemImage: "doc.text.magnifyingglass")
+                    }
+                    NavigationLink { VFRFlightPlanFilingScreen() } label: {
+                        Label("Plan de vol VFR · dépôt Leidos", systemImage: "paperplane")
+                    }
+                }
+
+                Section {
                     RouteSummaryRow(title: "Distance", value: String(format: "%.0f NM", model.totalDistanceNM), icon: "point.topleft.down.curvedto.point.bottomright.forward")
                     RouteSummaryRow(title: "Time", value: model.formattedTotalTime, icon: "clock")
                     RouteSummaryRow(title: "Fuel", value: String(format: "%.1f gal", model.totalFuelGallons), icon: "fuelpump")
@@ -340,7 +349,7 @@ private struct SavedPlansSheet: View {
                 }
                 ForEach(model.savedPlans) { plan in
                     Button(plan.name) {
-                        model.waypoints = plan.waypointIDs.compactMap { store.airport($0) }
+                        model.waypoints = plan.points ?? plan.waypointIDs.compactMap { model.resolveWaypoint($0, store: store) }
                         dismiss()
                     }
                 }

@@ -25,6 +25,23 @@ struct SettingsScreen: View {
                     Text("Utilisé par le calculateur de vol et le plan.")
                 }
 
+                Section {
+                    Toggle(isOn: $model.voiceAlerts) {
+                        Label("Alertes vocales", systemImage: "speaker.wave.2.fill")
+                    }
+                    Button("Tester la voix", systemImage: "play.circle") { FlightMonitor.shared.testVoice() }
+                    Toggle(isOn: $model.showGlideRing) {
+                        Label("Anneau de plané", systemImage: "circle.dashed")
+                    }
+                    Stepper(value: $model.glideRatio, in: 5...20, step: 0.5) {
+                        Text("Finesse : \(model.glideRatio, specifier: "%.1f"):1")
+                    }
+                } header: {
+                    Text("Alertes en vol")
+                } footer: {
+                    Text("Annonce espaces aériens, obstacles, trafic ADS-B et carburant, tant que l'app est au premier plan. L'anneau vert montre la distance de plané sans vent depuis la hauteur GPS.")
+                }
+
                 FAAKeySection()
 
                 Section {
@@ -66,7 +83,7 @@ struct SettingsScreen: View {
                     LabeledContent("Carte VFR", value: "FAA sectionnelles")
                     LabeledContent("Météo", value: "NOAA + Iowa Mesonet")
                     LabeledContent("Espaces aériens", value: "FAA ArcGIS")
-                    LabeledContent("NOTAM", value: "Indisponibles (clé FAA requise)")
+                    LabeledContent("NOTAM", value: "FAA NOTAM Search (sans clé)")
                 }
 
                 Section {

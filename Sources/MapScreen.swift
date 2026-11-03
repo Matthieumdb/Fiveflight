@@ -57,7 +57,9 @@ struct MapScreen: View {
                 },
                 airspaces: activeAirspaces,
                 showAirspace: model.showAirspace,
-                showTFRs: model.showAirspace
+                showTFRs: model.showAirspace,
+                chart: model.mapChart,
+                satellite: model.showSatellite
             )
             .ignoresSafeArea()
 

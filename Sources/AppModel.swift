@@ -123,6 +123,8 @@ final class AppModel: ObservableObject {
     // Map layer visibility (persisted)
     @Published var showSectional: Bool = true { didSet { defaults.set(showSectional, forKey: "showSectional") } }
     @Published var showRadar: Bool = false { didSet { defaults.set(showRadar, forKey: "showRadar") } }
+    @Published var mapChart: String = MapChart.sectional.rawValue { didSet { defaults.set(mapChart, forKey: "mapChart") } }
+    @Published var showSatellite: Bool = false { didSet { defaults.set(showSatellite, forKey: "showSatellite") } }
     @Published var showAirspace: Bool = true { didSet { defaults.set(showAirspace, forKey: "showAirspace") } }
 
     // Appearance (persisted): 0 = System, 1 = Light, 2 = Dark
@@ -235,6 +237,8 @@ final class AppModel: ObservableObject {
         // Load map layer settings
         showSectional = defaults.object(forKey: "showSectional") as? Bool ?? true
         showRadar = defaults.object(forKey: "showRadar") as? Bool ?? false
+        mapChart = defaults.string(forKey: "mapChart") ?? MapChart.sectional.rawValue
+        showSatellite = defaults.bool(forKey: "showSatellite")
         showAirspace = defaults.object(forKey: "showAirspace") as? Bool ?? true
         appearanceMode = defaults.object(forKey: "appearanceMode") as? Int ?? 0
     }

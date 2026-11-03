@@ -720,11 +720,25 @@ struct LayersSidePanel: View {
             List {
                 Section {
                     LayerToggleRow(
-                        title: "Sectional Chart",
-                        subtitle: "FAA VFR Sectionals",
+                        title: "Carte FAA",
+                        subtitle: "Sectional, TAC ou IFR",
                         icon: "map",
                         isOn: $model.showSectional,
                         color: ColorToken.info
+                    )
+                    if model.showSectional {
+                        Picker("Carte", selection: $model.mapChart) {
+                            ForEach(MapChart.allCases) { Text($0.label).tag($0.rawValue) }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
+                    LayerToggleRow(
+                        title: "Satellite",
+                        subtitle: "Imagerie Apple sous la carte",
+                        icon: "globe.americas",
+                        isOn: $model.showSatellite,
+                        color: ColorToken.success
                     )
 
                     LayerToggleRow(

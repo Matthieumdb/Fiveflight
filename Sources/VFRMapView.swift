@@ -95,9 +95,15 @@ struct VFRMapView: UIViewRepresentable {
     /// No live TFR source is wired yet, so TFR polygons stay hidden rather than showing stale data.
     var showTFRs: Bool = false
 
-    // FAA official VFR sectional (ArcGIS, updated per chart cycle); ArcGIS tile = {z}/{y}/{x}.
-    fileprivate static let sectionalURL =
-        "https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}"
+    /// FAA chart service shown when `showSectional` is on: VFR_Sectional, VFR_Terminal, IFR_AreaLow or IFR_High.
+    var chart: String = MapChart.sectional.rawValue
+    /// Apple satellite imagery under the chart (or alone when the chart is off).
+    var satellite: Bool = false
+
+    // FAA official charts (ArcGIS, updated per chart cycle); ArcGIS tile = {z}/{y}/{x}.
+    fileprivate static func chartURL(_ service: String) -> String {
+        "https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/\(service)/MapServer/tile/{z}/{y}/{x}"
+    }
     // NEXRAD base reflectivity (Iowa Environmental Mesonet), standard {z}/{x}/{y}.
     fileprivate static let nexradURL =
         "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png"
@@ -133,7 +139,8 @@ struct VFRMapView: UIViewRepresentable {
     func updateUIView(_ mv: MKMapView, context: Context) {
         let c = context.coordinator
         c.parent = self
-        c.updateTileOverlays(on: mv, showSectional: showSectional, showWeather: showWeather)
+        mv.mapType = satellite ? .hybrid : .standard
+        c.updateTileOverlays(on: mv, showSectional: showSectional, showWeather: showWeather, chart: chart, satellite: satellite)
         c.updateRoute(on: mv, coordinates: route.count >= 2 ? route : waypoints.map(\.coordinate))
         c.updateTrack(on: mv, coordinates: track)
         c.updateUserCircles(on: mv, userCoord: waypoints.isEmpty ? userCoord : nil)
@@ -186,6 +193,7 @@ struct VFRMapView: UIViewRepresentable {
         var parent: VFRMapView
         var lastVersion = -1
         private var sectionalOverlay: SectionalTileOverlay?
+        private var chartKey = ""
         private var weatherOverlay: WeatherTileOverlay?
         private var routeOverlay: MKPolyline?
         private var routeKey = ""
@@ -201,10 +209,17 @@ struct VFRMapView: UIViewRepresentable {
 
         init(_ parent: VFRMapView) { self.parent = parent }
 
-        func updateTileOverlays(on mv: MKMapView, showSectional: Bool, showWeather: Bool) {
+        func updateTileOverlays(on mv: MKMapView, showSectional: Bool, showWeather: Bool, chart: String, satellite: Bool) {
+            let chartKey = "\(chart)|\(satellite)"
+            if let o = sectionalOverlay, chartKey != self.chartKey || !showSectional {
+                mv.removeOverlay(o)
+                sectionalOverlay = nil
+            }
+            self.chartKey = chartKey
             if showSectional, sectionalOverlay == nil {
-                let o = SectionalTileOverlay(urlTemplate: VFRMapView.sectionalURL)
-                o.canReplaceMapContent = true
+                let o = SectionalTileOverlay(urlTemplate: VFRMapView.chartURL(chart))
+                // TAC only exists around big airports: keep the base map visible elsewhere (and under satellite).
+                o.canReplaceMapContent = !satellite && chart != MapChart.terminal.rawValue
                 sectionalOverlay = o
                 mv.insertOverlay(o, at: 0, level: .aboveLabels)
             } else if !showSectional, let o = sectionalOverlay {
@@ -420,6 +435,20 @@ struct VFRMapView: UIViewRepresentable {
             case "LIFR": return UIColor(red: 0.75, green: 0.35, blue: 0.95, alpha: 1)
             default:     return nil
             }
+        }
+    }
+}
+
+/// FAA chart services offered on the map.
+enum MapChart: String, CaseIterable, Identifiable {
+    case sectional = "VFR_Sectional", terminal = "VFR_Terminal", ifrLow = "IFR_AreaLow", ifrHigh = "IFR_High"
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .sectional: return "Sectional"
+        case .terminal: return "TAC"
+        case .ifrLow: return "IFR bas"
+        case .ifrHigh: return "IFR haut"
         }
     }
 }

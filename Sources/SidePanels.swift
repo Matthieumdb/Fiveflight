@@ -284,13 +284,13 @@ struct ActiveRouteCard: View {
 
                 Picker("Mode", selection: $routingEngine.currentMode) {
                     ForEach(RoutingEngine.RoutingMode.allCases) { mode in
-                        HStack {
-                            Image(systemName: mode.icon)
-                            Text(mode.rawValue)
-                        }.tag(mode)
+                        Text(mode.rawValue).tag(mode)
                     }
                 }
                 .pickerStyle(.segmented)
+                Text(routingEngine.lastRoute?.summary ?? routingEngine.currentMode.description)
+                    .font(TypographyToken.labelSmall)
+                    .foregroundStyle(ColorToken.textTertiary)
             }
 
             // Warnings summary
@@ -593,7 +593,7 @@ struct RouteOptionsCard: View {
                 }
             }
             .pickerStyle(.menu)
-            Text(routingEngine.currentMode.description)
+            Text(routingEngine.lastRoute?.summary ?? routingEngine.currentMode.description)
                 .font(TypographyToken.labelSmall)
                 .foregroundStyle(ColorToken.textTertiary)
         }

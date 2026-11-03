@@ -9,8 +9,8 @@ final class RoutingEngine: ObservableObject {
 
     enum RoutingMode: String, CaseIterable, Identifiable {
         case direct = "Direct"
-        case avoidControlled = "Avoid Controlled Airspace"
-        case avoidAllSUA = "Avoid All SUA"
+        case avoidControlled = "Éviter B/C/D"
+        case avoidAllSUA = "Éviter tout"
 
         var id: String { rawValue }
 
@@ -24,9 +24,9 @@ final class RoutingEngine: ObservableObject {
 
         var description: String {
             switch self {
-            case .direct: return "Great circle route between waypoints"
-            case .avoidControlled: return "Route around Class B/C/D/E surface areas"
-            case .avoidAllSUA: return "Avoid MOAs, Restricted, Prohibited, TFRs"
+            case .direct: return "Ligne droite entre les points"
+            case .avoidControlled: return "Contourne les Class B, C, D et E surface"
+            case .avoidAllSUA: return "Contourne aussi R, P, MOA, zones d'alerte et TFR"
             }
         }
     }
@@ -94,7 +94,7 @@ final class RoutingEngine: ObservableObject {
             generatedAt: Date()
         )
 
-        lastRoute = result
+        if mode == currentMode { lastRoute = result } // a stale calculation must not overwrite the summary
         return result
     }
 
@@ -206,7 +206,7 @@ final class RoutingEngine: ObservableObject {
             case (.direct, _): return false
             case (_, .classAirspace(let cls)): return cls.requiresATC
             case (_, .classESurface): return true
-            case (.avoidAllSUA, .sua(let sua)): return sua.requiresPermission
+            case (.avoidAllSUA, .sua): return true
             default: return false
             }
         }
@@ -361,6 +361,23 @@ struct RouteResult: Identifiable {
 
     var formattedDistance: String {
         String(format: "%.0f NM", totalDistanceNM)
+    }
+
+    /// Extra distance flown versus straight legs between the waypoints.
+    var detourNM: Double {
+        totalDistanceNM - legs.reduce(0) { sum, leg in
+            guard let a = leg.waypoints.first, let b = leg.waypoints.last else { return sum }
+            return sum + Haversine.nauticalMiles(a, b)
+        }
+    }
+
+    /// One line telling the pilot what the selected mode did to this route.
+    var summary: String {
+        if mode == .direct { return mode.description }
+        if legs.contains(where: { $0.waypoints.count > 2 }) {
+            return String(format: "Détour de %.0f NM pour contourner les espaces", detourNM)
+        }
+        return "Rien à contourner : la directe est libre"
     }
 
     var formattedTime: String {

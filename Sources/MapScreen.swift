@@ -179,7 +179,9 @@ struct MapScreen: View {
             mode: routingEngine.currentMode,
             airspaces: airspaceManager.airspaces
         ) {
-            guard model.waypoints.map(\.id) == planned.map(\.id) else { return } // plan changed meanwhile
+            // Plan, mode or altitude changed meanwhile: a newer calculation will land.
+            guard model.waypoints.map(\.id) == planned.map(\.id), result.mode == routingEngine.currentMode,
+                  result.cruiseAltitude == model.cruiseAlt else { return }
             routePolyline = result.legs.flatMap { $0.waypoints }
             model.routedDistanceNM = result.totalDistanceNM
             routeWarnings = result.airspaceWarnings.map { warning in

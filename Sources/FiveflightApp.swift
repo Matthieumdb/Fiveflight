@@ -19,6 +19,17 @@ struct FiveflightApp: App {
                 .environmentObject(weatherService)
                 .environmentObject(locationManager)
                 .preferredColorScheme(model.colorScheme)
+                #if DEBUG
+                // Simulator check: launch with env PLAN=KFPR,KAPF to preload a flight plan.
+                .onChange(of: store.ready) { _, ready in
+                    guard ready, let plan = ProcessInfo.processInfo.environment["PLAN"] else { return }
+                    model.waypoints = plan.split(separator: ",").compactMap { store.airport(String($0)) }
+                    if let a = model.waypoints.first, let b = model.waypoints.last {
+                        model.moveMap(to: .init(latitude: (a.coordinate.latitude + b.coordinate.latitude) / 2,
+                                                longitude: (a.coordinate.longitude + b.coordinate.longitude) / 2), span: 2)
+                    }
+                }
+                #endif
         }
     }
 }

@@ -415,7 +415,29 @@ final class FiveflightTests: XCTestCase {
                 XCTAssertFalse(blockers.contains { $0.crosses(path[i - 1], path[i]) }, "segment \(i) enters controlled airspace at \(alt) ft")
             }
             XCTAssertLessThan(routed.totalDistanceNM, direct!.totalDistanceNM * 1.5)
+            XCTAssertTrue(routed.summary.hasPrefix("Détour"))
         }
+    }
+
+    /// KFPR → KAPF only crosses the departure and arrival Class D: avoid mode keeps the direct line and says so.
+    @MainActor
+    func testAvoidKeepsDirectWhenNothingToAvoid() async throws {
+        guard let url = Bundle.main.url(forResource: "airspace_snapshot", withExtension: "json") else {
+            throw XCTSkip("snapshot not bundled in this test host")
+        }
+        let airspaces = try JSONDecoder().decode([Airspace].self, from: Data(contentsOf: url))
+        let kfpr = Airport(id: "KFPR", name: "Treasure Coast", type: "medium_airport", icao: "KFPR", iata: nil,
+                           municipality: nil, elevationFt: 24, coordinate: CLLocationCoordinate2D(latitude: 27.4951, longitude: -80.3683))
+        let kapf = Airport(id: "KAPF", name: "Naples", type: "medium_airport", icao: "KAPF", iata: nil,
+                           municipality: nil, elevationFt: 8, coordinate: CLLocationCoordinate2D(latitude: 26.1526, longitude: -81.7753))
+        RoutingEngine.shared.currentMode = .avoidAllSUA
+        defer { RoutingEngine.shared.currentMode = .direct }
+        let result = await RoutingEngine.shared.calculateRoute(waypoints: [kfpr, kapf], cruiseAltitude: 5500,
+                                                               mode: .avoidAllSUA, airspaces: airspaces)
+        let routed = try XCTUnwrap(result)
+        XCTAssertEqual(routed.legs[0].waypoints.count, 2)
+        XCTAssertEqual(routed.detourNM, 0, accuracy: 0.01)
+        XCTAssertTrue(routed.summary.hasPrefix("Rien à contourner"))
     }
 
     // MARK: - Airspace CSV Parsing Tests

@@ -95,6 +95,13 @@ struct AircraftProfile: Codable, Identifiable, Hashable {
                         stations: stations(empty: 1750, emptyArm: 96, front: 90.6, rear: 128, fuel: 103.5, baggage: 153.1),
                         climbSpeed: 75, climbRate: 750, climbBurn: 10, descentSpeed: 120, descentRate: 500,
                         takeoffRoll: 1080, takeoff50ft: 1700, landingRoll: 1000, landing50ft: 1800),
+        // Tecnam spec sheet (MkII, IO-390 215 hp) + AFM Doc. 2010/100: datum = wing leading edge,
+        // CG 0.262–0.440 m, arms 133 / 1057 / 612 / 1599 mm; empty weight = AFM sample, enter your own.
+        AircraftProfile(name: "Tecnam P2010 MkII", type: "P210", cruiseSpeed: 140, fuelBurn: 11.0, capacityGal: 61,
+                        maxWeight: 2557, cgForward: 10.3, cgAft: 17.3,
+                        stations: stations(empty: 1708, emptyArm: 12.2, front: 5.2, rear: 41.6, fuel: 24.1, baggage: 63.0),
+                        climbSpeed: 85, climbRate: 900, climbBurn: 15, descentSpeed: 130, descentRate: 500,
+                        takeoffRoll: 951, takeoff50ft: 1558, landingRoll: 778, landing50ft: 1709),
     ]
 }
 
@@ -475,7 +482,12 @@ final class AppModel: ObservableObject {
            let v = try? JSONDecoder().decode([Checklist].self, from: d) { checklists = v }
         if checklists.isEmpty { checklists = Self.defaultChecklists }
         if let d = defaults.data(forKey: "aircraftProfiles"),
-           let v = try? JSONDecoder().decode([AircraftProfile].self, from: d), !v.isEmpty { aircraftProfiles = v }
+           let v = try? JSONDecoder().decode([AircraftProfile].self, from: d), !v.isEmpty {
+            // Defaults added in later versions show up once in saved lists; one the user deleted stays deleted.
+            let knownTypes = Set(defaults.stringArray(forKey: "knownDefaultAircraft") ?? ["C172", "PA28", "SR22", "DA40"])
+            aircraftProfiles = v + AircraftProfile.defaultProfiles.filter { !knownTypes.contains($0.type) }
+        }
+        defaults.set(AircraftProfile.defaultProfiles.map(\.type), forKey: "knownDefaultAircraft")
         let selectedID = defaults.string(forKey: "selectedAircraft")
         if let d = defaults.data(forKey: "savedPlans"),
            let v = try? JSONDecoder().decode([SavedPlan].self, from: d) { savedPlans = v }

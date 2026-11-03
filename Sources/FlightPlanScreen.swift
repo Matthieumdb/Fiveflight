@@ -116,6 +116,16 @@ private struct FlightPlanContent: View {
                         .textCase(.uppercase)
                 }
 
+                Section {
+                    VerticalProfileView(path: model.routePath, cruiseAlt: model.cruiseAlt,
+                                        airspaces: airspaceManager.allAirspaces)
+                } header: {
+                    Text("Profil vertical")
+                        .font(TypographyToken.labelSmall)
+                        .foregroundStyle(ColorToken.textTertiary)
+                        .textCase(.uppercase)
+                }
+
                 if !model.navlog.isEmpty {
                     Section {
                         ForEach(model.navlog) { NavLogRow(leg: $0) }

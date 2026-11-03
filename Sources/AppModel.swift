@@ -99,11 +99,13 @@ final class AppModel: ObservableObject {
     }
 
     // Flight plan
-    @Published var waypoints: [Airport] = [] { didSet { routedDistanceNM = nil; navlog = [] } }
+    @Published var waypoints: [Airport] = [] { didSet { routedDistanceNM = nil; navlog = []; routePath = waypoints.map(\.coordinate) } }
     /// Length of the computed route (with airspace detours); straight-line legs until it is known.
     @Published var routedDistanceNM: Double?
     /// Wind-corrected log of the computed route; empty until the route is calculated.
     @Published var navlog: [NavLogLeg] = []
+    /// Computed route (with detours); straight legs until it is calculated.
+    @Published var routePath: [CLLocationCoordinate2D] = []
     @Published var legs: [RouteLeg] = []
     @Published var cruiseAlt: Int = 5500 { didSet { defaults.set(cruiseAlt, forKey: "cruiseAlt") } }
 

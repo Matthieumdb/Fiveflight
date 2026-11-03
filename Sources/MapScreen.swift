@@ -245,6 +245,7 @@ struct MapScreen: View {
                   result.cruiseAltitude == model.cruiseAlt else { return }
             routePolyline = result.legs.flatMap { $0.waypoints }
             model.routedDistanceNM = result.totalDistanceNM
+            model.routePath = routePolyline
             if weatherService.windsAloft.isEmpty { await weatherService.fetchWindsAloft() }
             model.navlog = Navlog.build(legs: result.legs, tas: model.cruiseGS, altitude: model.cruiseAlt,
                                         fuelBurn: model.fuelBurn, winds: weatherService.windsAloft)

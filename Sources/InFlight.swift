@@ -48,6 +48,17 @@ final class FlightMonitor: ObservableObject {
                 }
             }
         }
+        // Obstacle ahead: within 2 NM of the track and less than 500 ft below the aircraft.
+        if groundSpeed > Self.airborneSpeed, course >= 0 {
+            let ahead = Haversine.destination(from: position, course: Int(course.rounded()), distanceNM: 2)
+            if let o = Obstacle.all.first(where: { o in
+                o.amslFt + 500 > altitudeFt
+                    && Haversine.nauticalMiles(position, o.coordinate) < 2
+                    && Haversine.nauticalMiles(ahead, o.coordinate) < Haversine.nauticalMiles(position, o.coordinate)
+            }) {
+                found.append("Obstacle \(o.amslFt) ft MSL à \(String(format: "%.1f", Haversine.nauticalMiles(position, o.coordinate))) NM")
+            }
+        }
         if let left = fuelRemaining(model: model), model.fuelBurn > 0 {
             let reserve = model.reserveMin / 60 * model.fuelBurn
             let needed = remainingMinutes(position: position, groundSpeed: groundSpeed, model: model) / 60 * model.fuelBurn

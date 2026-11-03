@@ -277,14 +277,14 @@ struct RouteEditorPanel: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 TextField("Départ, points, destination", text: $text)
-                    .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
                     .focused($editing)
                     .submitLabel(.done)
                     .onSubmit(apply)
                     .padding(.horizontal, 10)
-                    .frame(height: 36)
+                    .frame(height: 32)
                     .background(Color.white, in: RoundedRectangle(cornerRadius: 6))
                     .foregroundStyle(.black)
                 if editing {
@@ -303,39 +303,48 @@ struct RouteEditorPanel: View {
                     .padding(.top, 4)
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    FFBarButton(title: "Effacer", icon: nil) {
+            // One row that fits an iPhone: altitude, routing, navlog, profile, then the rest in a menu.
+            HStack(spacing: 6) {
+                Menu {
+                    ForEach(Self.vfrAltitudes, id: \.self) { alt in
+                        Button {
+                            model.cruiseAlt = alt
+                        } label: {
+                            if alt == model.cruiseAlt { Label("\(alt) ft", systemImage: "checkmark") } else { Text("\(alt) ft") }
+                        }
+                    }
+                } label: {
+                    barLabel("\(model.cruiseAlt) ft")
+                }
+                Menu {
+                    Picker("Routage", selection: $routingEngine.currentMode) {
+                        ForEach(RoutingEngine.RoutingMode.allCases) { Label($0.rawValue, systemImage: $0.icon).tag($0) }
+                    }
+                } label: {
+                    barLabel(routingEngine.currentMode.rawValue)
+                }
+                FFBarButton(title: "Navlog", icon: nil, active: drawer == .navlog) { toggle(.navlog) }
+                FFBarButton(title: "Profil", icon: nil, active: drawer == .profile) { toggle(.profile) }
+                Spacer(minLength: 0)
+                Menu {
+                    Button("Enregistrer", systemImage: "square.and.arrow.down") { model.savePlan() }
+                    Button("Inverser", systemImage: "arrow.left.arrow.right") { model.waypoints.reverse() }
+                    Button("Ouvrir dans Vols", systemImage: "airplane.departure") { FFRouter.shared.tab = .flights }
+                    Button("Effacer la route", systemImage: "trash", role: .destructive) {
                         model.clearFlightPlan()
                         drawer = nil
                     }
-                    FFBarButton(title: "Inverser", icon: nil) { model.waypoints.reverse() }
-                    Menu {
-                        ForEach(Self.vfrAltitudes, id: \.self) { alt in
-                            Button {
-                                model.cruiseAlt = alt
-                            } label: {
-                                if alt == model.cruiseAlt { Label("\(alt) ft", systemImage: "checkmark") } else { Text("\(alt) ft") }
-                            }
-                        }
-                    } label: {
-                        barLabel("\(model.cruiseAlt) ft")
-                    }
-                    Menu {
-                        Picker("Routage", selection: $routingEngine.currentMode) {
-                            ForEach(RoutingEngine.RoutingMode.allCases) { Label($0.rawValue, systemImage: $0.icon).tag($0) }
-                        }
-                    } label: {
-                        barLabel(routingEngine.currentMode.rawValue)
-                    }
-                    FFBarButton(title: "Navlog", icon: nil, active: drawer == .navlog) { toggle(.navlog) }
-                    FFBarButton(title: "Profil", icon: nil, active: drawer == .profile) { toggle(.profile) }
-                    FFBarButton(title: "Enregistrer", icon: nil) { model.savePlan() }
-                    FFBarButton(title: "Vols", icon: "arrow.up.right") { FFRouter.shared.tab = .flights }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 30)
+                        .background(FF.barSecondary, in: RoundedRectangle(cornerRadius: 6))
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
             }
+            .lineLimit(1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
 
             if model.waypoints.count >= 2 {
                 RouteInfoBar(showChips: false)
@@ -349,13 +358,13 @@ struct RouteEditorPanel: View {
     }
 
     private func barLabel(_ title: String) -> some View {
-        HStack(spacing: 4) {
-            Text(title).font(.system(size: 14, weight: .semibold))
-            Image(systemName: "chevron.down").font(.system(size: 10, weight: .bold))
+        HStack(spacing: 3) {
+            Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+            Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, 10)
-        .frame(height: 32)
+        .padding(.horizontal, 8)
+        .frame(height: 30)
         .background(FF.barSecondary, in: RoundedRectangle(cornerRadius: 6))
     }
 
@@ -421,8 +430,9 @@ struct MapBottomDrawer: View {
                             .padding(8)
                     }
                 }
-                .frame(height: 230)
+                .frame(height: 280)
                 .frame(maxWidth: .infinity)
+                .clipped()
                 .background(Color(.systemBackground))
             }
             .transition(.move(edge: .bottom))

@@ -98,14 +98,16 @@ struct AirportDocumentsSection: View {
                     Text("Aucune plaque FAA pour ce terrain").foregroundStyle(ColorToken.textTertiary)
                 }
                 ForEach(docs) { doc in
-                    if doc.title.localizedCaseInsensitiveContains("diagram") {
+                    if doc.title.hasPrefix("Chart Supplement") {
+                        NavigationLink(doc.title) { PDFDocumentScreen(document: doc) }
+                    } else {
+                        // Every plate shows the GPS position once georeferenced (PDF data, graduations or calibration).
                         NavigationLink {
                             GeoDiagramScreen(document: doc, ident: ident)
                         } label: {
-                            Label(doc.title, systemImage: "location.viewfinder")
+                            Label(doc.title, systemImage: doc.title.localizedCaseInsensitiveContains("diagram")
+                                  ? "location.viewfinder" : "doc.text.viewfinder")
                         }
-                    } else {
-                        NavigationLink(doc.title) { PDFDocumentScreen(document: doc) }
                     }
                 }
             } else {

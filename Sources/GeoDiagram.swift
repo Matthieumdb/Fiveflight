@@ -66,10 +66,10 @@ struct DiagramGeoref: Codable, Equatable {
 enum DiagramGeoreferencer {
     static func compute(page: PDFPage, airport: CLLocationCoordinate2D) -> DiagramGeoref? {
         let bounds = page.bounds(for: .mediaBox)
-        for candidate in [embedded(page), fromLabels(page)] {
+        for candidate in [embedded(page), lgiDict(page), fromLabels(page)] {
             guard let g = candidate else { continue }
-            // Sanity: the airport reference point must land on the page.
-            if bounds.insetBy(dx: -bounds.width * 0.1, dy: -bounds.height * 0.1).contains(g.point(airport)) { return g }
+            // Sanity: the airport reference point must land on (or near) the page.
+            if bounds.insetBy(dx: -bounds.width * 0.25, dy: -bounds.height * 0.25).contains(g.point(airport)) { return g }
         }
         return nil
     }
@@ -85,8 +85,13 @@ enum DiagramGeoreferencer {
             guard CGPDFArrayGetDictionary(vp, i, &viewport), let viewport else { continue }
             var measure: CGPDFDictionaryRef?
             guard CGPDFDictionaryGetDictionary(viewport, "Measure", &measure), let measure else { continue }
-            let bbox = numbers(viewport, "BBox"), gpts = numbers(measure, "GPTS"), lpts = numbers(measure, "LPTS")
-            guard bbox.count == 4, gpts.count >= 6, gpts.count / 2 == lpts.count / 2 else { continue }
+            let bbox = numbers(viewport, "BBox"), gpts = numbers(measure, "GPTS")
+            var lpts = numbers(measure, "LPTS")
+            guard bbox.count == 4, gpts.count >= 6 else { continue }
+            // LPTS is optional: default is the BBox corners in GPTS order (ISO 32000-2, 12.10).
+            let corners: [Double] = [0, 1, 0, 0, 1, 0, 1, 1]
+            if lpts.count != gpts.count { lpts = Array(corners.prefix(gpts.count)) }
+            guard lpts.count == gpts.count else { continue }
             let x0 = min(bbox[0], bbox[2]), y0 = min(bbox[1], bbox[3])
             let w = abs(bbox[2] - bbox[0]), h = abs(bbox[3] - bbox[1])
             var pairs: [(geo: CLLocationCoordinate2D, page: CGPoint)] = []
@@ -99,14 +104,80 @@ enum DiagramGeoreferencer {
         return nil
     }
 
+    // MARK: OGC GeoPDF (TerraGo /LGIDict, geographic projection only)
+
+    static func lgiDict(_ page: PDFPage) -> DiagramGeoref? {
+        guard let dict = page.pageRef?.dictionary else { return nil }
+        var dicts: [CGPDFDictionaryRef] = []
+        var single: CGPDFDictionaryRef?
+        var array: CGPDFArrayRef?
+        if CGPDFDictionaryGetDictionary(dict, "LGIDict", &single), let single { dicts.append(single) }
+        if CGPDFDictionaryGetArray(dict, "LGIDict", &array), let array {
+            for i in 0..<CGPDFArrayGetCount(array) {
+                var d: CGPDFDictionaryRef?
+                if CGPDFArrayGetDictionary(array, i, &d), let d { dicts.append(d) }
+            }
+        }
+        func plausible(lon: Double, lat: Double) -> Bool { abs(lat) <= 90 && abs(lon) <= 180 }
+        for lgi in dicts {
+            var proj: CGPDFDictionaryRef?
+            if CGPDFDictionaryGetDictionary(lgi, "Projection", &proj), let proj,
+               let type = string(proj, "ProjectionType"), type.uppercased() != "GEOGRAPHIC" { continue }
+            var pairs: [(geo: CLLocationCoordinate2D, page: CGPoint)] = []
+            var reg: CGPDFArrayRef?
+            if CGPDFDictionaryGetArray(lgi, "Registration", &reg), let reg {
+                for i in 0..<CGPDFArrayGetCount(reg) {
+                    var pt: CGPDFArrayRef?
+                    guard CGPDFArrayGetArray(reg, i, &pt), let pt else { continue }
+                    let v = numbers(pt)
+                    guard v.count >= 4, plausible(lon: v[2], lat: v[3]) else { continue }
+                    pairs.append((geo: CLLocationCoordinate2D(latitude: v[3], longitude: v[2]), page: CGPoint(x: v[0], y: v[1])))
+                }
+            }
+            if pairs.count < 3 {
+                // CTM maps page space to (lon, lat): X = a·x + c·y + e, Y = b·x + d·y + f.
+                let m = numbers(lgi, "CTM")
+                guard m.count == 6 else { continue }
+                let b = page.bounds(for: .mediaBox)
+                pairs = [CGPoint(x: b.minX, y: b.minY), CGPoint(x: b.maxX, y: b.minY), CGPoint(x: b.minX, y: b.maxY),
+                         CGPoint(x: b.maxX, y: b.maxY)].compactMap { (p: CGPoint) -> (geo: CLLocationCoordinate2D, page: CGPoint)? in
+                    let x = Double(p.x), y = Double(p.y)
+                    let lon = m[0] * x + m[2] * y + m[4], lat = m[1] * x + m[3] * y + m[5]
+                    guard plausible(lon: lon, lat: lat) else { return nil }
+                    return (geo: CLLocationCoordinate2D(latitude: lat, longitude: lon), page: p)
+                }
+            }
+            if let g = DiagramGeoref.fit(pairs, method: "PDF") { return g }
+        }
+        return nil
+    }
+
+    private static func string(_ dict: CGPDFDictionaryRef, _ key: String) -> String? {
+        var s: CGPDFStringRef?
+        if CGPDFDictionaryGetString(dict, key, &s), let s, let cf = CGPDFStringCopyTextString(s) { return cf as String }
+        var n: UnsafePointer<CChar>?
+        if CGPDFDictionaryGetName(dict, key, &n), let n { return String(cString: n) }
+        return nil
+    }
+
     private static func numbers(_ dict: CGPDFDictionaryRef, _ key: String) -> [Double] {
         var arr: CGPDFArrayRef?
         guard CGPDFDictionaryGetArray(dict, key, &arr), let arr else { return [] }
-        return (0..<CGPDFArrayGetCount(arr)).compactMap { i in
+        return numbers(arr)
+    }
+
+    /// Numbers of a PDF array; GeoPDF often stores them as strings ("(27.5)").
+    private static func numbers(_ arr: CGPDFArrayRef) -> [Double] {
+        (0..<CGPDFArrayGetCount(arr)).compactMap { i in
             var r: CGPDFReal = 0
             if CGPDFArrayGetNumber(arr, i, &r) { return Double(r) }
             var n: CGPDFInteger = 0
-            return CGPDFArrayGetInteger(arr, i, &n) ? Double(n) : nil
+            if CGPDFArrayGetInteger(arr, i, &n) { return Double(n) }
+            var s: CGPDFStringRef?
+            if CGPDFArrayGetString(arr, i, &s), let s, let text = CGPDFStringCopyTextString(s) {
+                return Double((text as String).trimmingCharacters(in: .whitespaces))
+            }
+            return nil
         }
     }
 
@@ -114,7 +185,7 @@ enum DiagramGeoreferencer {
 
     static func fromLabels(_ page: PDFPage) -> DiagramGeoref? {
         guard let text = page.string,
-              let full = try? NSRegularExpression(pattern: #"(\d{1,3})\s*[°º˚o]\s*(\d{1,2}(?:\.\d+)?)\s*['′’]\s*([NSEW])"#),
+              let full = try? NSRegularExpression(pattern: #"(\d{1,3})\s*[°º˚o]\s*(\d{1,2}(?:\.\d+)?)\s*['′’]?\s*([NSEW])"#),
               let partial = try? NSRegularExpression(pattern: #"(?<![\d°º˚.])(\d{1,2}(?:\.\d+)?)\s*['′’]\s*([NSEW])?"#)
         else { return nil }
         let ns = text as NSString
@@ -137,36 +208,73 @@ enum DiagramGeoreferencer {
             degrees[isLat] = (deg, sign)
             fullRanges.append(m.range)
         }
-        // Minute-only graduations take the degrees of the full labels of the same axis.
+        // Minute-only graduations ("29.5'") take the degrees of the full labels of their axis. Without a
+        // hemisphere letter, the axis is the one whose first-pass fit predicts the label's position best.
+        let firstLat = axisFit(labels.filter(\.isLat).map { ($0.value, $0.center) })
+        let firstLon = axisFit(labels.filter { !$0.isLat }.map { ($0.value, $0.center) })
         for m in partial.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
             guard !fullRanges.contains(where: { NSIntersectionRange($0, m.range).length > 0 }),
                   let min = Double(ns.substring(with: m.range(at: 1))), min < 60, let c = center(m.range) else { continue }
             let hemi = m.range(at: 2).location != NSNotFound ? ns.substring(with: m.range(at: 2)) : ""
-            let axes: [Bool] = hemi.isEmpty ? [] : [hemi == "N" || hemi == "S"]
-            for isLat in axes {
-                guard let d = degrees[isLat] else { continue }
-                labels.append(Label(value: d.sign * (d.deg + min / 60), isLat: isLat, center: c))
+            var axis: Bool?
+            if !hemi.isEmpty {
+                axis = hemi == "N" || hemi == "S"
+            } else {
+                var best = Double.infinity
+                for (isLat, fit) in [(true, firstLat), (false, firstLon)] {
+                    guard let fit, let d = degrees[isLat] else { continue }
+                    let err = fit.error(value: d.sign * (d.deg + min / 60), at: c)
+                    if err < best { best = err; axis = isLat }
+                }
+                if best > 40 { axis = nil }   // points: too far from either axis
             }
+            guard let isLat = axis, let d = degrees[isLat] else { continue }
+            labels.append(Label(value: d.sign * (d.deg + min / 60), isLat: isLat, center: c))
         }
-        // 1-D fits: y from latitude, x from longitude (FAA diagrams are north-up).
-        func fit(_ pts: [(Double, Double)]) -> (slope: Double, offset: Double)? {
-            let values = Set(pts.map { ($0.0 * 600).rounded() })
-            guard values.count >= 2 else { return nil }
-            let n = Double(pts.count)
-            let mx = pts.map(\.0).reduce(0, +) / n, my = pts.map(\.1).reduce(0, +) / n
-            let sxx = pts.map { ($0.0 - mx) * ($0.0 - mx) }.reduce(0, +)
-            guard sxx > 0 else { return nil }
-            let slope = pts.map { ($0.0 - mx) * ($0.1 - my) }.reduce(0, +) / sxx
-            return (slope, my - slope * mx)
-        }
-        guard let lat = fit(labels.filter(\.isLat).map { ($0.value, Double($0.center.y)) }),
-              let lon = fit(labels.filter { !$0.isLat }.map { ($0.value, Double($0.center.x)) }),
-              lat.slope > 0, lon.slope > 0 else { return nil }
+        guard let lat = axisFit(labels.filter(\.isLat).map { ($0.value, $0.center) }),
+              let lon = axisFit(labels.filter { !$0.isLat }.map { ($0.value, $0.center) }),
+              lat.usesY != lon.usesY else { return nil }
         // Same ground scale on both axes (within 30 %), else the labels were misread.
-        let meanLat = labels.filter(\.isLat).map(\.value).reduce(0, +) / Double(max(1, labels.filter(\.isLat).count))
-        let ratio = lon.slope / (lat.slope * cos(meanLat * .pi / 180))
+        let latValues = labels.filter(\.isLat).map(\.value)
+        let meanLat = latValues.reduce(0, +) / Double(max(1, latValues.count))
+        let ratio = abs(lon.slope) / (abs(lat.slope) * cos(meanLat * .pi / 180))
         guard ratio > 0.7, ratio < 1.3 else { return nil }
-        return DiagramGeoref(a: lon.slope, b: 0, c: lon.offset, d: 0, e: lat.slope, f: lat.offset, method: "Graduations")
+        if lat.usesY {   // north-up page
+            return DiagramGeoref(a: lon.slope, b: 0, c: lon.offset, d: 0, e: lat.slope, f: lat.offset, method: "Graduations")
+        }
+        // Page stored rotated a quarter turn (/Rotate): x follows latitude, y follows longitude.
+        return DiagramGeoref(a: 0, b: lat.slope, c: lat.offset, d: lon.slope, e: 0, f: lon.offset, method: "Graduations")
+    }
+
+    /// 1-D fit of one page coordinate (x or y, whichever correlates best) against a lat or lon value.
+    struct AxisFit {
+        let slope: Double, offset: Double, usesY: Bool
+        func error(value: Double, at p: CGPoint) -> Double {
+            abs(slope * value + offset - Double(usesY ? p.y : p.x))
+        }
+    }
+
+    static func axisFit(_ pts: [(Double, CGPoint)]) -> AxisFit? {
+        guard Set(pts.map { ($0.0 * 600).rounded() }).count >= 2 else { return nil }
+        func fit(_ xy: [(Double, Double)]) -> (slope: Double, offset: Double, r2: Double)? {
+            let n = Double(xy.count)
+            let mx = xy.map(\.0).reduce(0, +) / n, my = xy.map(\.1).reduce(0, +) / n
+            let sxx = xy.map { ($0.0 - mx) * ($0.0 - mx) }.reduce(0, +)
+            let syy = xy.map { ($0.1 - my) * ($0.1 - my) }.reduce(0, +)
+            let sxy = xy.map { ($0.0 - mx) * ($0.1 - my) }.reduce(0, +)
+            guard sxx > 0, syy > 0 else { return nil }
+            return (sxy / sxx, my - sxy / sxx * mx, sxy * sxy / (sxx * syy))
+        }
+        let fy = fit(pts.map { ($0.0, Double($0.1.y)) }), fx = fit(pts.map { ($0.0, Double($0.1.x)) })
+        let pick: (fit: (slope: Double, offset: Double, r2: Double), usesY: Bool)?
+        switch (fy, fx) {
+        case let (y?, x?): pick = y.r2 >= x.r2 ? (y, true) : (x, false)
+        case let (y?, nil): pick = (y, true)
+        case let (nil, x?): pick = (x, false)
+        default: pick = nil
+        }
+        guard let pick, pick.fit.r2 > 0.9 else { return nil }
+        return AxisFit(slope: pick.fit.slope, offset: pick.fit.offset, usesY: pick.usesY)
     }
 
     // MARK: Saved calibrations
@@ -208,7 +316,7 @@ final class OwnshipPDFAnnotation: PDFAnnotation {
 
 // MARK: - Screen
 
-/// FAA airport diagram with the aircraft's GPS position (ForeFlight-style georeferenced diagram).
+/// FAA airport diagram or plate with the aircraft's GPS position (ForeFlight-style georeferenced plate).
 struct GeoDiagramScreen: View {
     let document: AirportDocument
     let ident: String
@@ -222,6 +330,7 @@ struct GeoDiagramScreen: View {
     @State private var pendingEnd: (name: String, coord: CLLocationCoordinate2D)?
     @State private var firstPoint: (CLLocationCoordinate2D, CGPoint)?
     @State private var showPicker = false
+    @State private var pageBounds: CGRect?
 
     private var tapHandler: ((CGPoint) -> Void)? {
         guard pendingEnd != nil else { return nil }
@@ -288,11 +397,25 @@ struct GeoDiagramScreen: View {
         }
     }
 
+    /// Whether the GPS fix falls on the page once georeferenced.
+    private var onPage: Bool {
+        guard let georef, let here = location.location, let pageBounds else { return false }
+        return pageBounds.contains(georef.point(here))
+    }
+
     @ViewBuilder private var statusBar: some View {
         let text: String = {
-            if let pendingEnd { return "Touchez \(pendingEnd.name) sur le diagramme" }
+            if let pendingEnd { return "Touchez \(pendingEnd.name) sur la plaque" }
             if computing { return "Géoréférencement…" }
-            guard let georef else { return "Position non disponible : calibrez avec 2 seuils (menu ⋯)" }
+            switch location.authorizationStatus {
+            case .denied, .restricted: return "Localisation refusée : Réglages › Fiveflight › Position"
+            default: break
+            }
+            guard let georef else { return "Plaque non géoréférencée : calibrez avec 2 seuils (menu ⋯)" }
+            guard let here = location.location else { return "En attente du GPS…" }
+            if !onPage, let airport {
+                return String(format: "Hors de la plaque · vous êtes à %.1f NM de %@", airport.distanceNM(to: here), ident)
+            }
             let src = georef.method == "PDF" ? "données FAA du PDF"
                 : georef.method == "Graduations" ? "graduations lat/lon" : "calibration manuelle"
             return "Position GPS affichée · \(src)"
@@ -308,8 +431,10 @@ struct GeoDiagramScreen: View {
         computing = true
         defer { computing = false }
         do { file = try await FAADocuments.localFile(for: document.url) } catch { failed = true; return }
+        let page = file.flatMap { PDFDocument(url: $0)?.page(at: 0) }
+        pageBounds = page?.bounds(for: .mediaBox)
         if let saved = DiagramGeoreferencer.saved(for: key) { georef = saved; return }
-        guard let file, let page = PDFDocument(url: file)?.page(at: 0), let airport else { georef = nil; return }
+        guard let page, let airport else { georef = nil; return }
         georef = DiagramGeoreferencer.compute(page: page, airport: airport.coordinate)
     }
 

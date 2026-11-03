@@ -67,7 +67,8 @@ struct FFDataBox: View {
                 .minimumScaleFactor(0.6)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -78,10 +79,12 @@ struct FFDataStrip: View {
     var body: some View {
         HStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.offset) { i, item in
-                if i > 0 { Rectangle().fill(Color.white.opacity(0.12)).frame(width: 0.5).padding(.vertical, 6) }
+                // Fixed height: a bare Rectangle is greedy and used to stretch the strip to fill the screen.
+                if i > 0 { Rectangle().fill(Color.white.opacity(0.12)).frame(width: 0.5, height: 26) }
                 FFDataBox(label: item.0, value: item.1)
             }
         }
+        .frame(height: 44)
         .background(FF.bar)
     }
 }
@@ -100,8 +103,9 @@ struct FFBarButton: View {
                 if let title { Text(title).font(.system(size: 14, weight: .semibold)) }
             }
             .foregroundStyle(active ? .white : .white.opacity(0.92))
-            .padding(.horizontal, 10)
-            .frame(height: 32)
+            .lineLimit(1)
+            .padding(.horizontal, 9)
+            .frame(height: 30)
             .background(active ? FF.accent : FF.barSecondary, in: RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)

@@ -309,7 +309,9 @@ struct VFRMapView: UIViewRepresentable {
             for airspace in airspaces where airspace.isActive {
                 let tf = isTFR(airspace)
                 guard (tf && showTFRs) || (!tf && showAirspace) else { continue }
-                let color = tf ? UIColor(ColorToken.tfr) : colorFor(airspace)
+                // SUA out of its published hours is drawn faded.
+                let base = tf ? UIColor(ColorToken.tfr) : colorFor(airspace)
+                let color = airspace.suaStatus() == .inactive ? base.withAlphaComponent(0.35) : base
                 for polygon in airspace.polygons where polygon.count >= 3 {
                     let coords = polygon.map(\.clCoordinate)
                     let overlay = MKPolygon(coordinates: coords, count: coords.count)

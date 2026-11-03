@@ -38,7 +38,7 @@ final class FlightMonitor: ObservableObject {
         var found: [String] = []
         if groundSpeed > Self.airborneSpeed, course >= 0 {
             let ahead = Haversine.destination(from: position, course: Int(course.rounded()), distanceNM: Self.lookAhead)
-            for a in airspaces where a.isActive && a.type.needsAlert
+            for a in airspaces where a.isActive && a.type.needsAlert && a.suaStatus() != .inactive
                 && altitudeFt >= a.floor - 300 && altitudeFt <= a.ceiling {
                 let inside = a.polygons.contains { Airspace.pointInPolygonStatic(position, polygon: $0.map(\.clCoordinate)) }
                 if inside {

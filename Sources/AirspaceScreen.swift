@@ -390,6 +390,10 @@ struct AirspaceDetailSheet: View {
                             if let agency = airspace.controllingAgency {
                                 DetailRow(icon: "building.2", title: "Controlling Agency", value: agency)
                             }
+                            if let status = airspace.suaStatus() {
+                                DetailRow(icon: status == .active ? "exclamationmark.circle.fill" : "moon.zzz",
+                                          title: "Statut", value: status.label)
+                            }
                             if let schedule = airspace.schedule {
                                 DetailRow(icon: "clock", title: "Schedule", value: schedule)
                             }

@@ -430,6 +430,26 @@ final class FiveflightTests: XCTestCase {
         XCTAssertEqual(FAADocuments.cycle(on: day(2026, 10, 1)), "2610")
     }
 
+    func testSUASchedule() {
+        let ny = TimeZone(identifier: "America/New_York")!
+        func at(_ d: Int, _ h: Int, _ m: Int = 0) -> Date {   // November 2026: the 2nd is a Monday
+            var c = Calendar(identifier: .gregorian); c.timeZone = ny
+            return c.date(from: DateComponents(year: 2026, month: 11, day: d, hour: h, minute: m))!
+        }
+        let p = CLLocationCoordinate2D(latitude: 27, longitude: -81)
+        let weekday = "INTERMITTENT, 0600 - 2400, MON - FRI; 0800 - 1800, SAT - SUN; %OTHER TIMES BY NOTAM"
+        XCTAssertEqual(SUAStatus.of(weekday, at: at(2, 7), near: p), .active)       // Monday 07:00
+        XCTAssertEqual(SUAStatus.of(weekday, at: at(7, 7), near: p), .inactive)     // Saturday 07:00
+        XCTAssertEqual(SUAStatus.of(weekday, at: at(7, 9), near: p), .active)       // Saturday 09:00
+        let late = "0800 - 0100, MON - THU; 0800 - 2200, FRI"
+        XCTAssertEqual(SUAStatus.of(late, at: at(3, 0, 30), near: p), .active)      // Tuesday 00:30, Monday's window
+        XCTAssertEqual(SUAStatus.of(late, at: at(7, 0, 30), near: p), .inactive)    // Saturday 00:30
+        XCTAssertEqual(SUAStatus.of("CONTINUOUS", near: p), .active)
+        XCTAssertEqual(SUAStatus.of("INTERMITTENT BY NOTAM", near: p), .byNotam)
+        XCTAssertEqual(SUAStatus.of("NOV - DEC, 0800 - 1600, MON - FRI", at: at(2, 9), near: p), .active)
+        XCTAssertEqual(SUAStatus.of("APR - AUG, 0800 - 1700, DAILY", at: at(2, 9), near: p), .inactive)
+    }
+
     func testWindTriangle() {
         let head = Navlog.solve(trueCourse: 360, tas: 100, windFrom: 360, windSpeed: 20)
         XCTAssertEqual(head.wca, 0, accuracy: 0.01)

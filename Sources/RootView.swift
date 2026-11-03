@@ -52,6 +52,7 @@ struct MoreScreen: View {
             List {
                 Section {
                     NavigationLink { FavoritesScreen() } label: { Label("Favoris", systemImage: "star.fill") }
+                    NavigationLink { AircraftScreen() } label: { Label("Avions", systemImage: "airplane") }
                     NavigationLink { LogbookScreen() } label: { Label("Carnet de vol", systemImage: "book.fill") }
                     NavigationLink { ChecklistScreen() } label: { Label("Checklists", systemImage: "checklist") }
                     NavigationLink { CalculatorsScreen() } label: { Label("Calculateurs", systemImage: "function") }

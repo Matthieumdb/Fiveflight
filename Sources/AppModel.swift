@@ -14,11 +14,27 @@ struct LogEntry: Codable, Identifiable {
 
 struct AircraftProfile: Codable, Identifiable, Hashable {
     var id = UUID()
-    let name: String
-    let type: String
-    let cruiseSpeed: Double
-    let fuelBurn: Double
-    let capacityGal: Double
+    var name: String
+    var type: String
+    var cruiseSpeed: Double
+    var fuelBurn: Double
+    var capacityGal: Double
+    /// Weight & balance envelope (lb, inches aft of datum), copied to the W&B calculator on selection.
+    var maxWeight: Double = 2550
+    var cgForward: Double = 82
+    var cgAft: Double = 88
+    /// Loading stations (empty weight, seats, fuel, baggage) with their arms.
+    var stations: [WeightBalanceItem] = []
+
+    /// C172S-like stations, used when a profile has none.
+    static func stations(empty: Double, emptyArm: Double, front: Double, rear: Double, fuel: Double, baggage: Double) -> [WeightBalanceItem] {
+        [WeightBalanceItem(name: "Empty Weight", weight: empty, arm: emptyArm),
+         WeightBalanceItem(name: "Pilot", weight: 180, arm: front),
+         WeightBalanceItem(name: "Passenger", weight: 0, arm: front),
+         WeightBalanceItem(name: "Rear seats", weight: 0, arm: rear),
+         WeightBalanceItem(name: "Fuel (gal)", weight: 0, arm: fuel),
+         WeightBalanceItem(name: "Baggage", weight: 0, arm: baggage)]
+    }
 
     var enduranceHours: Double {
         guard fuelBurn > 0 else { return 0 }
@@ -26,10 +42,18 @@ struct AircraftProfile: Codable, Identifiable, Hashable {
     }
 
     static let defaultProfiles: [AircraftProfile] = [
-        AircraftProfile(name: "Cessna 172S", type: "C172", cruiseSpeed: 122, fuelBurn: 8.5, capacityGal: 53),
-        AircraftProfile(name: "Piper PA-28-180", type: "PA28", cruiseSpeed: 124, fuelBurn: 9.0, capacityGal: 48),
-        AircraftProfile(name: "Cirrus SR22T", type: "SR22", cruiseSpeed: 183, fuelBurn: 14.0, capacityGal: 81),
-        AircraftProfile(name: "Diamond DA40", type: "DA40", cruiseSpeed: 130, fuelBurn: 7.5, capacityGal: 40),
+        AircraftProfile(name: "Cessna 172S", type: "C172", cruiseSpeed: 122, fuelBurn: 8.5, capacityGal: 53,
+                        maxWeight: 2550, cgForward: 35, cgAft: 47.3,
+                        stations: stations(empty: 1680, emptyArm: 40.6, front: 37, rear: 73, fuel: 48, baggage: 95)),
+        AircraftProfile(name: "Piper PA-28-180", type: "PA28", cruiseSpeed: 124, fuelBurn: 9.0, capacityGal: 48,
+                        maxWeight: 2400, cgForward: 84, cgAft: 95.9,
+                        stations: stations(empty: 1400, emptyArm: 86, front: 80.5, rear: 118.1, fuel: 95, baggage: 142.8)),
+        AircraftProfile(name: "Cirrus SR22T", type: "SR22", cruiseSpeed: 183, fuelBurn: 14.0, capacityGal: 81,
+                        maxWeight: 3600, cgForward: 139.1, cgAft: 148.1,
+                        stations: stations(empty: 2350, emptyArm: 139, front: 143.5, rear: 180, fuel: 154.9, baggage: 208)),
+        AircraftProfile(name: "Diamond DA40", type: "DA40", cruiseSpeed: 130, fuelBurn: 7.5, capacityGal: 40,
+                        maxWeight: 2646, cgForward: 94.5, cgAft: 98.4,
+                        stations: stations(empty: 1750, emptyArm: 96, front: 90.6, rear: 128, fuel: 103.5, baggage: 153.1)),
     ]
 }
 
@@ -134,8 +158,12 @@ final class AppModel: ObservableObject {
 
     // UI state
     @Published var selectedAirport: Airport?
-    @Published var selectedAircraft: AircraftProfile?
-    @Published var aircraftProfiles: [AircraftProfile] = AircraftProfile.defaultProfiles
+    @Published var selectedAircraft: AircraftProfile? {
+        didSet { defaults.set(selectedAircraft?.id.uuidString, forKey: "selectedAircraft") }
+    }
+    @Published var aircraftProfiles: [AircraftProfile] = AircraftProfile.defaultProfiles {
+        didSet { defaults.set(try? JSONEncoder().encode(aircraftProfiles), forKey: "aircraftProfiles") }
+    }
 
     // Aircraft profile (persisted, shared by the flight computer and plan)
     @Published var nightMode = false { didSet { defaults.set(nightMode, forKey: "nightMode") } }
@@ -196,6 +224,11 @@ final class AppModel: ObservableObject {
         selectedAircraft = aircraft
         cruiseGS = aircraft.cruiseSpeed
         fuelBurn = aircraft.fuelBurn
+        // The W&B calculator reads its limits from here when it opens.
+        struct Limits: Codable { let maxWeight, cgForward, cgAft: Double }
+        defaults.set(try? JSONEncoder().encode(Limits(maxWeight: aircraft.maxWeight, cgForward: aircraft.cgForward,
+                                                     cgAft: aircraft.cgAft)), forKey: "wb.limits")
+        if !aircraft.stations.isEmpty { defaults.set(try? JSONEncoder().encode(aircraft.stations), forKey: "wb.items") }
         Haptics.tap()
     }
 
@@ -230,6 +263,10 @@ final class AppModel: ObservableObject {
         if let d = defaults.data(forKey: "checklists"),
            let v = try? JSONDecoder().decode([Checklist].self, from: d) { checklists = v }
         if checklists.isEmpty { checklists = Self.defaultChecklists }
+        if let d = defaults.data(forKey: "aircraftProfiles"),
+           let v = try? JSONDecoder().decode([AircraftProfile].self, from: d), !v.isEmpty { aircraftProfiles = v }
+        let selectedID = defaults.string(forKey: "selectedAircraft")
+        selectedAircraft = aircraftProfiles.first { $0.id.uuidString == selectedID }
         recents = defaults.stringArray(forKey: "recents") ?? []
         nightMode = defaults.bool(forKey: "nightMode")
         if defaults.object(forKey: "cruiseGS") != nil { cruiseGS = defaults.double(forKey: "cruiseGS") }

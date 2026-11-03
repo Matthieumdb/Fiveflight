@@ -164,6 +164,7 @@ struct WeightBalanceCalculator: View {
 
                 ResultRow(title: "CG Range", value: String(format: "%.0f–%.0f in", wbModel.cgForward, wbModel.cgAft))
                 ResultRow(title: "Useful Load Remaining", value: String(format: "%.0f lb", wbModel.usefulLoad))
+                WeightBalanceChart(model: wbModel)
             } header: {
                 Text("Results")
                     .font(TypographyToken.labelSmall)

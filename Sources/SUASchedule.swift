@@ -58,7 +58,7 @@ enum SUAStatus: Equatable {
 
     /// "0600 - 2400" → 360 / 1440 (first or second time of the segment).
     private static func clock(_ s: String, first: Bool) -> Int? {
-        let regex = try! NSRegularExpression(pattern: #"\b(\d{4})\s*-\s*(\d{4})\b"#)
+        guard let regex = try? NSRegularExpression(pattern: #"\b(\d{4})\s*-\s*(\d{4})\b"#) else { return nil }
         guard let m = regex.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)),
               let r = Range(m.range(at: first ? 1 : 2), in: s), let v = Int(s[r]) else { return nil }
         return (v / 100) * 60 + v % 100
@@ -80,7 +80,7 @@ enum SUAStatus: Equatable {
 
     private static func range(in s: String, names: [String]) -> Set<Int>? {
         let alternation = names.joined(separator: "|")
-        let regex = try! NSRegularExpression(pattern: "\\b(\(alternation))\\b(?:\\s*-\\s*\\b(\(alternation))\\b)?")
+        guard let regex = try? NSRegularExpression(pattern: "\\b(\(alternation))\\b(?:\\s*-\\s*\\b(\(alternation))\\b)?") else { return nil }
         var out = Set<Int>()
         for m in regex.matches(in: s, range: NSRange(s.startIndex..., in: s)) {
             guard let r1 = Range(m.range(at: 1), in: s), let a = names.firstIndex(of: String(s[r1])) else { continue }

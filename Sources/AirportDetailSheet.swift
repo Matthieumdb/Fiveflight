@@ -109,6 +109,8 @@ struct AirportDetailSheet: View {
                     }
                 }
 
+                AirportDocumentsSection(ident: airport.id)
+
                 // NOTAMs are not fetched (the FAA API needs a client key): say so explicitly,
                 // never let an empty screen look like "no NOTAMs".
                 Section {

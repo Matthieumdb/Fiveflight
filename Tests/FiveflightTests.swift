@@ -419,6 +419,17 @@ final class FiveflightTests: XCTestCase {
         }
     }
 
+    func testAIRACCycle() {
+        func day(_ y: Int, _ m: Int, _ d: Int) -> Date {
+            var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!
+            return c.date(from: DateComponents(year: y, month: m, day: d, hour: 12))!
+        }
+        XCTAssertEqual(FAADocuments.cycle(on: day(2026, 11, 3)), "2611")
+        XCTAssertEqual(FAADocuments.cycle(on: day(2026, 11, 26)), "2612")
+        XCTAssertEqual(FAADocuments.cycle(on: day(2027, 1, 22)), "2701")
+        XCTAssertEqual(FAADocuments.cycle(on: day(2026, 10, 1)), "2610")
+    }
+
     func testWindTriangle() {
         let head = Navlog.solve(trueCourse: 360, tas: 100, windFrom: 360, windSpeed: 20)
         XCTAssertEqual(head.wca, 0, accuracy: 0.01)

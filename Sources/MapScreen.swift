@@ -126,6 +126,12 @@ struct MapScreen: View {
         .onChange(of: model.cruiseAlt) { _, _ in
             Task { await calculateAndUpdateRoute() }
         }
+        .onChange(of: model.cruiseGS) { _, _ in
+            Task { await calculateAndUpdateRoute() }
+        }
+        .onChange(of: model.fuelBurn) { _, _ in
+            Task { await calculateAndUpdateRoute() }
+        }
         .onChange(of: airspaceManager.allAirspaces.count) { _, _ in
             Task { await calculateAndUpdateRoute() } // data arrived after the plan (launch, TFR refresh)
         }
@@ -188,6 +194,9 @@ struct MapScreen: View {
                   result.cruiseAltitude == model.cruiseAlt else { return }
             routePolyline = result.legs.flatMap { $0.waypoints }
             model.routedDistanceNM = result.totalDistanceNM
+            if weatherService.windsAloft.isEmpty { await weatherService.fetchWindsAloft() }
+            model.navlog = Navlog.build(legs: result.legs, tas: model.cruiseGS, altitude: model.cruiseAlt,
+                                        fuelBurn: model.fuelBurn, winds: weatherService.windsAloft)
             routeWarnings = result.airspaceWarnings.map { warning in
                 RouteWarning(
                     legIndex: warning.legIndex,

@@ -8,7 +8,7 @@ struct SettingsScreen: View {
             List {
                 Section {
                     Stepper(value: $model.cruiseGS, in: 40.0...500.0, step: 5.0) {
-                        Text("Vitesse sol : \(Int(model.cruiseGS)) kt")
+                        Text("Vitesse propre (TAS) : \(Int(model.cruiseGS)) kt")
                     }
                     Stepper(value: $model.fuelBurn, in: 1.0...100.0, step: 1.0) {
                         Text("Conso : \(Int(model.fuelBurn)) gal/h")

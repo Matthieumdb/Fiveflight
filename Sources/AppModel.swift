@@ -61,9 +61,11 @@ final class AppModel: ObservableObject {
     }
 
     // Flight plan
-    @Published var waypoints: [Airport] = [] { didSet { routedDistanceNM = nil } }
+    @Published var waypoints: [Airport] = [] { didSet { routedDistanceNM = nil; navlog = [] } }
     /// Length of the computed route (with airspace detours); straight-line legs until it is known.
     @Published var routedDistanceNM: Double?
+    /// Wind-corrected log of the computed route; empty until the route is calculated.
+    @Published var navlog: [NavLogLeg] = []
     @Published var legs: [RouteLeg] = []
     @Published var cruiseAlt: Int = 5500 { didSet { defaults.set(cruiseAlt, forKey: "cruiseAlt") } }
 
@@ -280,24 +282,24 @@ final class AppModel: ObservableObject {
         return total
     }
 
+    /// Wind-corrected when the navlog is available, else distance / true airspeed.
     var totalTimeMinutes: Double {
+        if !navlog.isEmpty { return navlog.reduce(0) { $0 + $1.minutes } }
         guard totalDistanceNM > 0 && cruiseGS > 0 else { return 0 }
         return (totalDistanceNM / cruiseGS) * 60
     }
 
     var formattedTotalTime: String {
-        guard totalDistanceNM > 0 && cruiseGS > 0 else { return "—" }
-        let hours = totalDistanceNM / cruiseGS
-        let totalMinutes = Int(hours * 60)
+        guard totalTimeMinutes > 0 else { return "—" }
+        let totalMinutes = Int(totalTimeMinutes)
         let h = totalMinutes / 60
         let m = totalMinutes % 60
         return h > 0 ? "\(h)h \(m)min" : "\(m)min"
     }
 
     var totalFuelGallons: Double {
-        guard fuelBurn > 0 && totalDistanceNM > 0 && cruiseGS > 0 else { return 0 }
-        let hours = totalDistanceNM / cruiseGS
-        return hours * fuelBurn + (reserveMin / 60.0 * fuelBurn)
+        guard fuelBurn > 0 && totalTimeMinutes > 0 else { return 0 }
+        return (totalTimeMinutes + reserveMin) / 60.0 * fuelBurn
     }
 }
 

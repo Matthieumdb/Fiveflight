@@ -419,6 +419,20 @@ final class FiveflightTests: XCTestCase {
         }
     }
 
+    func testWindTriangle() {
+        let head = Navlog.solve(trueCourse: 360, tas: 100, windFrom: 360, windSpeed: 20)
+        XCTAssertEqual(head.wca, 0, accuracy: 0.01)
+        XCTAssertEqual(head.gs, 80, accuracy: 0.01)
+        let cross = Navlog.solve(trueCourse: 360, tas: 100, windFrom: 90, windSpeed: 20)
+        XCTAssertEqual(cross.wca, 11.54, accuracy: 0.05)   // crab right into a wind from the right
+        XCTAssertEqual(cross.gs, 97.98, accuracy: 0.05)
+        let level = { (a: Int, d: Int, s: Int) in WindsAloftLevel(altitude: a, direction: d, speed: s, temperature: nil) }
+        let fb = WindsAloft(station: "X", latitude: 27, longitude: -81, validTime: "",
+                            levels: [level(3000, 350, 10), level(6000, 10, 10)])
+        let w = Navlog.wind(at: .init(latitude: 27, longitude: -81), altitude: 4500, winds: [fb])
+        XCTAssertEqual(w?.direction, 0)                     // vector average, not 180
+    }
+
     /// KFPR → KAPF only crosses the departure and arrival Class D: avoid mode keeps the direct line and says so.
     @MainActor
     func testAvoidKeepsDirectWhenNothingToAvoid() async throws {

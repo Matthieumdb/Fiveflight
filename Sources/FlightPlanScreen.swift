@@ -91,6 +91,17 @@ private struct FlightPlanContent: View {
                         .textCase(.uppercase)
                 }
 
+                if !model.navlog.isEmpty {
+                    Section {
+                        ForEach(model.navlog) { NavLogRow(leg: $0) }
+                    } header: {
+                        Text("Navlog (vents prévus à \(model.cruiseAlt) ft)")
+                            .font(TypographyToken.labelSmall)
+                            .foregroundStyle(ColorToken.textTertiary)
+                            .textCase(.uppercase)
+                    }
+                }
+
                 // Performance section
                 Section {
                     Stepper(value: $model.cruiseAlt, in: 500...17500, step: 500) {
@@ -110,7 +121,7 @@ private struct FlightPlanContent: View {
                             Image(systemName: "speedometer")
                                 .foregroundStyle(ColorToken.brandPrimary)
                                 .frame(width: 24)
-                            Text("Ground Speed")
+                            Text("Vitesse propre (TAS)")
                             Spacer()
                             Text("\(Int(model.cruiseGS)) kt")
                                 .font(TypographyToken.monoMedium)
@@ -230,6 +241,39 @@ private struct FlightPlanWaypointRow: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(ColorToken.textTertiary)
             }
+        }
+        .padding(.vertical, SpacingToken.space1)
+    }
+}
+/// One navlog line: leg, magnetic heading, wind, ground speed, time and fuel.
+private struct NavLogRow: View {
+    let leg: NavLogLeg
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SpacingToken.space1) {
+            HStack {
+                Text("\(leg.from) → \(leg.to)")
+                    .font(TypographyToken.bodyMedium)
+                Spacer()
+                Text(String(format: "%.0f NM", leg.distanceNM))
+                    .font(TypographyToken.monoMedium)
+            }
+            HStack(spacing: SpacingToken.space3) {
+                Text(String(format: "Cap %03d°M", leg.magneticHeading))
+                Text(String(format: "Rte %03d°V", leg.trueCourse))
+                if let dir = leg.windDirection, let spd = leg.windSpeed {
+                    Text(String(format: "Vent %03d/%d", dir, spd))
+                }
+            }
+            .font(TypographyToken.monoXSmall)
+            .foregroundStyle(ColorToken.textSecondary)
+            HStack(spacing: SpacingToken.space3) {
+                Text(String(format: "GS %.0f kt", leg.groundSpeed))
+                Text("\(Int(leg.minutes.rounded())) min")
+                Text(String(format: "%.1f gal", leg.fuelGallons))
+            }
+            .font(TypographyToken.monoXSmall)
+            .foregroundStyle(ColorToken.textTertiary)
         }
         .padding(.vertical, SpacingToken.space1)
     }

@@ -484,7 +484,7 @@ struct PerformanceCard: View {
                 )
 
                 ProfileSlider(
-                    title: "Ground Speed",
+                    title: "Vitesse propre (TAS)",
                     value: $model.cruiseGS,
                     range: 40...500,
                     step: 5,

@@ -25,6 +25,8 @@ struct SettingsScreen: View {
                     Text("Utilisé par le calculateur de vol et le plan.")
                 }
 
+                FAAKeySection()
+
                 Section {
                     Toggle(isOn: $model.nightMode) {
                         Label("Mode nuit (rouge)", systemImage: "moon.fill")

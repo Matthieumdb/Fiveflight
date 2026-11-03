@@ -163,11 +163,12 @@ struct VerticalProfileView: View {
                 .chartYScale(domain: 0...max(Double(cruiseAlt) * 1.4, highest + 1000))
                 .chartXAxisLabel("NM")
                 .chartYAxisLabel("ft MSL")
-                .frame(height: 200)
+                .frame(minHeight: 120, maxHeight: 200)
                 if !bands.isEmpty {
                     Text(Set(bands.map(\.name)).sorted().joined(separator: " · "))
                         .font(TypographyToken.labelXSmall)
                         .foregroundStyle(ColorToken.textTertiary)
+                        .lineLimit(1)
                 }
             }
         }

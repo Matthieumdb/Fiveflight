@@ -3,22 +3,52 @@ import MapKit
 import CoreLocation
 import SwiftUI
 
-struct LogEntry: Codable, Identifiable {
+struct LogEntry: Codable, Identifiable, Equatable {
     var id = UUID()
     var date: Date
     var from: String
     var to: String
     var nm: Int
     var eteMinutes: Int
+    // Added in 1.0.45 (optional so older logbooks still decode).
+    var aircraft: String?
+    var landingsDay: Int?
+    var landingsNight: Int?
+    var remarks: String?
+    /// Flown GPS track, downsampled, for replay and GPX/KML export.
+    var track: [Coordinate2D]?
+}
+
+/// A flight plan kept for later: name and waypoint idents.
+struct SavedPlan: Codable, Identifiable, Hashable {
+    var id = UUID()
+    var name: String
+    var waypointIDs: [String]
 }
 
 struct AircraftProfile: Codable, Identifiable, Hashable {
     var id = UUID()
-    let name: String
-    let type: String
-    let cruiseSpeed: Double
-    let fuelBurn: Double
-    let capacityGal: Double
+    var name: String
+    var type: String
+    var cruiseSpeed: Double
+    var fuelBurn: Double
+    var capacityGal: Double
+    /// Weight & balance envelope (lb, inches aft of datum), copied to the W&B calculator on selection.
+    var maxWeight: Double = 2550
+    var cgForward: Double = 82
+    var cgAft: Double = 88
+    /// Loading stations (empty weight, seats, fuel, baggage) with their arms.
+    var stations: [WeightBalanceItem] = []
+
+    /// C172S-like stations, used when a profile has none.
+    static func stations(empty: Double, emptyArm: Double, front: Double, rear: Double, fuel: Double, baggage: Double) -> [WeightBalanceItem] {
+        [WeightBalanceItem(name: "Empty Weight", weight: empty, arm: emptyArm),
+         WeightBalanceItem(name: "Pilot", weight: 180, arm: front),
+         WeightBalanceItem(name: "Passenger", weight: 0, arm: front),
+         WeightBalanceItem(name: "Rear seats", weight: 0, arm: rear),
+         WeightBalanceItem(name: "Fuel (gal)", weight: 0, arm: fuel),
+         WeightBalanceItem(name: "Baggage", weight: 0, arm: baggage)]
+    }
 
     var enduranceHours: Double {
         guard fuelBurn > 0 else { return 0 }
@@ -26,10 +56,18 @@ struct AircraftProfile: Codable, Identifiable, Hashable {
     }
 
     static let defaultProfiles: [AircraftProfile] = [
-        AircraftProfile(name: "Cessna 172S", type: "C172", cruiseSpeed: 122, fuelBurn: 8.5, capacityGal: 53),
-        AircraftProfile(name: "Piper PA-28-180", type: "PA28", cruiseSpeed: 124, fuelBurn: 9.0, capacityGal: 48),
-        AircraftProfile(name: "Cirrus SR22T", type: "SR22", cruiseSpeed: 183, fuelBurn: 14.0, capacityGal: 81),
-        AircraftProfile(name: "Diamond DA40", type: "DA40", cruiseSpeed: 130, fuelBurn: 7.5, capacityGal: 40),
+        AircraftProfile(name: "Cessna 172S", type: "C172", cruiseSpeed: 122, fuelBurn: 8.5, capacityGal: 53,
+                        maxWeight: 2550, cgForward: 35, cgAft: 47.3,
+                        stations: stations(empty: 1680, emptyArm: 40.6, front: 37, rear: 73, fuel: 48, baggage: 95)),
+        AircraftProfile(name: "Piper PA-28-180", type: "PA28", cruiseSpeed: 124, fuelBurn: 9.0, capacityGal: 48,
+                        maxWeight: 2400, cgForward: 84, cgAft: 95.9,
+                        stations: stations(empty: 1400, emptyArm: 86, front: 80.5, rear: 118.1, fuel: 95, baggage: 142.8)),
+        AircraftProfile(name: "Cirrus SR22T", type: "SR22", cruiseSpeed: 183, fuelBurn: 14.0, capacityGal: 81,
+                        maxWeight: 3600, cgForward: 139.1, cgAft: 148.1,
+                        stations: stations(empty: 2350, emptyArm: 139, front: 143.5, rear: 180, fuel: 154.9, baggage: 208)),
+        AircraftProfile(name: "Diamond DA40", type: "DA40", cruiseSpeed: 130, fuelBurn: 7.5, capacityGal: 40,
+                        maxWeight: 2646, cgForward: 94.5, cgAft: 98.4,
+                        stations: stations(empty: 1750, emptyArm: 96, front: 90.6, rear: 128, fuel: 103.5, baggage: 153.1)),
     ]
 }
 
@@ -61,9 +99,13 @@ final class AppModel: ObservableObject {
     }
 
     // Flight plan
-    @Published var waypoints: [Airport] = [] { didSet { routedDistanceNM = nil } }
+    @Published var waypoints: [Airport] = [] { didSet { routedDistanceNM = nil; navlog = []; routePath = waypoints.map(\.coordinate) } }
     /// Length of the computed route (with airspace detours); straight-line legs until it is known.
     @Published var routedDistanceNM: Double?
+    /// Wind-corrected log of the computed route; empty until the route is calculated.
+    @Published var navlog: [NavLogLeg] = []
+    /// Computed route (with detours); straight legs until it is calculated.
+    @Published var routePath: [CLLocationCoordinate2D] = []
     @Published var legs: [RouteLeg] = []
     @Published var cruiseAlt: Int = 5500 { didSet { defaults.set(cruiseAlt, forKey: "cruiseAlt") } }
 
@@ -121,6 +163,17 @@ final class AppModel: ObservableObject {
     // Map layer visibility (persisted)
     @Published var showSectional: Bool = true { didSet { defaults.set(showSectional, forKey: "showSectional") } }
     @Published var showRadar: Bool = false { didSet { defaults.set(showRadar, forKey: "showRadar") } }
+    @Published var mapChart: String = MapChart.sectional.rawValue { didSet { defaults.set(mapChart, forKey: "mapChart") } }
+    @Published var showSatellite: Bool = false { didSet { defaults.set(showSatellite, forKey: "showSatellite") } }
+    /// GOES infrared cloud imagery over the map.
+    @Published var showIR: Bool = false { didSet { defaults.set(showIR, forKey: "showIR") } }
+    /// Listen for a GDL 90 ADS-B receiver (Stratux, Sentry…) on UDP 4000.
+    @Published var adsbEnabled: Bool = false {
+        didSet {
+            defaults.set(adsbEnabled, forKey: "adsbEnabled")
+            if adsbEnabled { ADSBReceiver.shared.start() } else { ADSBReceiver.shared.stop() }
+        }
+    }
     @Published var showAirspace: Bool = true { didSet { defaults.set(showAirspace, forKey: "showAirspace") } }
 
     // Appearance (persisted): 0 = System, 1 = Light, 2 = Dark
@@ -128,14 +181,22 @@ final class AppModel: ObservableObject {
 
     // UI state
     @Published var selectedAirport: Airport?
-    @Published var selectedAircraft: AircraftProfile?
-    @Published var aircraftProfiles: [AircraftProfile] = AircraftProfile.defaultProfiles
+    @Published var selectedAircraft: AircraftProfile? {
+        didSet { defaults.set(selectedAircraft?.id.uuidString, forKey: "selectedAircraft") }
+    }
+    @Published var aircraftProfiles: [AircraftProfile] = AircraftProfile.defaultProfiles {
+        didSet { defaults.set(try? JSONEncoder().encode(aircraftProfiles), forKey: "aircraftProfiles") }
+    }
 
     // Aircraft profile (persisted, shared by the flight computer and plan)
     @Published var nightMode = false { didSet { defaults.set(nightMode, forKey: "nightMode") } }
     @Published var cruiseGS = 110.0 { didSet { saveProfile() } }
     @Published var fuelBurn = 8.0    { didSet { saveProfile() } }
     @Published var reserveMin = 45.0 { didSet { saveProfile() } }
+    /// Fuel loaded before departure (gal); 0 = not entered, no fuel alert.
+    @Published var fuelOnBoard = 0.0 { didSet { defaults.set(fuelOnBoard, forKey: "fuelOnBoard") } }
+    /// Show the GPS instrument strip even on the ground.
+    @Published var showInstruments = false { didSet { defaults.set(showInstruments, forKey: "showInstruments") } }
 
     private let defaults: UserDefaults
 
@@ -186,15 +247,47 @@ final class AppModel: ObservableObject {
         selectedAircraft = aircraft
         cruiseGS = aircraft.cruiseSpeed
         fuelBurn = aircraft.fuelBurn
+        // The W&B calculator reads its limits from here when it opens.
+        struct Limits: Codable { let maxWeight, cgForward, cgAft: Double }
+        defaults.set(try? JSONEncoder().encode(Limits(maxWeight: aircraft.maxWeight, cgForward: aircraft.cgForward,
+                                                     cgAft: aircraft.cgAft)), forKey: "wb.limits")
+        if !aircraft.stations.isEmpty { defaults.set(try? JSONEncoder().encode(aircraft.stations), forKey: "wb.items") }
         Haptics.tap()
     }
 
     // Logbook
+    /// Logs the flight with the aircraft, one day landing and the GPS track. When the GPS saw the takeoff,
+    /// the real flight time replaces the planned ETE.
     func logFlight(from: String, to: String, nm: Int, eteMinutes: Int) {
-        logbook.insert(LogEntry(date: .now, from: from, to: to, nm: nm, eteMinutes: eteMinutes), at: 0)
+        let step = max(1, track.count / 2000)
+        let flown = FlightMonitor.shared.airborneSince.map { Int(Date.now.timeIntervalSince($0) / 60) }.flatMap { $0 >= 5 ? $0 : nil }
+        logbook.insert(LogEntry(date: .now, from: from, to: to, nm: nm, eteMinutes: flown ?? eteMinutes,
+                                aircraft: selectedAircraft?.name, landingsDay: 1, landingsNight: 0, remarks: nil,
+                                track: track.isEmpty ? nil : stride(from: 0, to: track.count, by: step).map { Coordinate2D(track[$0]) }),
+                        at: 0)
         Haptics.success()
         save()
     }
+    func updateLog(_ entry: LogEntry) {
+        guard let i = logbook.firstIndex(where: { $0.id == entry.id }) else { return }
+        logbook[i] = entry
+        save()
+    }
+
+    // Saved plans
+    @Published var savedPlans: [SavedPlan] = [] {
+        didSet { defaults.set(try? JSONEncoder().encode(savedPlans), forKey: "savedPlans") }
+    }
+    func savePlan() {
+        let ids = waypoints.map(\.id).filter { $0 != Self.gpsWaypointID }
+        guard ids.count >= 2 else { return }
+        savedPlans.insert(SavedPlan(name: ids.joined(separator: " → "), waypointIDs: ids), at: 0)
+        Haptics.success()
+    }
+
+    // Pilot currency (dates stored as seconds since 1970; 0 = not entered)
+    @Published var medicalExpiry: Double = 0 { didSet { defaults.set(medicalExpiry, forKey: "medicalExpiry") } }
+    @Published var flightReviewDate: Double = 0 { didSet { defaults.set(flightReviewDate, forKey: "flightReviewDate") } }
     func deleteLog(_ offsets: IndexSet) { logbook.remove(atOffsets: offsets); save() }
 
     // Checklists
@@ -220,6 +313,14 @@ final class AppModel: ObservableObject {
         if let d = defaults.data(forKey: "checklists"),
            let v = try? JSONDecoder().decode([Checklist].self, from: d) { checklists = v }
         if checklists.isEmpty { checklists = Self.defaultChecklists }
+        if let d = defaults.data(forKey: "aircraftProfiles"),
+           let v = try? JSONDecoder().decode([AircraftProfile].self, from: d), !v.isEmpty { aircraftProfiles = v }
+        let selectedID = defaults.string(forKey: "selectedAircraft")
+        if let d = defaults.data(forKey: "savedPlans"),
+           let v = try? JSONDecoder().decode([SavedPlan].self, from: d) { savedPlans = v }
+        medicalExpiry = defaults.double(forKey: "medicalExpiry")
+        flightReviewDate = defaults.double(forKey: "flightReviewDate")
+        selectedAircraft = aircraftProfiles.first { $0.id.uuidString == selectedID }
         recents = defaults.stringArray(forKey: "recents") ?? []
         nightMode = defaults.bool(forKey: "nightMode")
         if defaults.object(forKey: "cruiseGS") != nil { cruiseGS = defaults.double(forKey: "cruiseGS") }
@@ -233,6 +334,12 @@ final class AppModel: ObservableObject {
         // Load map layer settings
         showSectional = defaults.object(forKey: "showSectional") as? Bool ?? true
         showRadar = defaults.object(forKey: "showRadar") as? Bool ?? false
+        mapChart = defaults.string(forKey: "mapChart") ?? MapChart.sectional.rawValue
+        showSatellite = defaults.bool(forKey: "showSatellite")
+        showIR = defaults.bool(forKey: "showIR")
+        adsbEnabled = defaults.bool(forKey: "adsbEnabled")
+        fuelOnBoard = defaults.double(forKey: "fuelOnBoard")
+        showInstruments = defaults.bool(forKey: "showInstruments")
         showAirspace = defaults.object(forKey: "showAirspace") as? Bool ?? true
         appearanceMode = defaults.object(forKey: "appearanceMode") as? Int ?? 0
     }
@@ -280,24 +387,24 @@ final class AppModel: ObservableObject {
         return total
     }
 
+    /// Wind-corrected when the navlog is available, else distance / true airspeed.
     var totalTimeMinutes: Double {
+        if !navlog.isEmpty { return navlog.reduce(0) { $0 + $1.minutes } }
         guard totalDistanceNM > 0 && cruiseGS > 0 else { return 0 }
         return (totalDistanceNM / cruiseGS) * 60
     }
 
     var formattedTotalTime: String {
-        guard totalDistanceNM > 0 && cruiseGS > 0 else { return "—" }
-        let hours = totalDistanceNM / cruiseGS
-        let totalMinutes = Int(hours * 60)
+        guard totalTimeMinutes > 0 else { return "—" }
+        let totalMinutes = Int(totalTimeMinutes)
         let h = totalMinutes / 60
         let m = totalMinutes % 60
         return h > 0 ? "\(h)h \(m)min" : "\(m)min"
     }
 
     var totalFuelGallons: Double {
-        guard fuelBurn > 0 && totalDistanceNM > 0 && cruiseGS > 0 else { return 0 }
-        let hours = totalDistanceNM / cruiseGS
-        return hours * fuelBurn + (reserveMin / 60.0 * fuelBurn)
+        guard fuelBurn > 0 && totalTimeMinutes > 0 else { return 0 }
+        return (totalTimeMinutes + reserveMin) / 60.0 * fuelBurn
     }
 }
 

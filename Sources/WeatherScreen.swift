@@ -7,7 +7,7 @@ struct WeatherScreen: View {
     @EnvironmentObject private var weatherService: WeatherService
     @State private var selectedTab = 0
 
-    private let tabs = ["Aperçu", "Vents", "PIREPs", "AIRMET"]
+    private let tabs = ["Aperçu", "Vents", "PIREPs", "AIRMET", "Cartes"]
 
     var body: some View {
         NavigationStack {
@@ -34,6 +34,9 @@ struct WeatherScreen: View {
 
                     AIRMETsTab()
                         .tag(3)
+
+                    WeatherChartsTab()
+                        .tag(4)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
             }
@@ -662,4 +665,52 @@ struct AirSigmetCard: View {
                 .stroke(advisory.hazardColor.opacity(0.3), lineWidth: 1)
         )
     }
+}
+
+// MARK: - Charts (aviationweather.gov images)
+
+/// Surface analysis and WPC prognostic charts; tap one to zoom.
+struct WeatherChartsTab: View {
+    private static let charts: [(String, String)] = [
+        ("Analyse de surface", "F000_wpc_sfc"),
+        ("Prévision +6 h", "F006_wpc_prog"),
+        ("Prévision +12 h", "F012_wpc_prog"),
+        ("Prévision +18 h", "F018_wpc_prog"),
+        ("Prévision +24 h", "F024_wpc_prog"),
+        ("Prévision +48 h", "F048_wpc_prog")
+    ]
+    @State private var zoomed: URL?
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: SpacingToken.space4) {
+                ForEach(Self.charts, id: \.1) { title, file in
+                    let url = URL(string: "https://aviationweather.gov/data/products/progs/\(file).gif")!
+                    VStack(alignment: .leading, spacing: SpacingToken.space2) {
+                        Text(title).font(TypographyToken.labelMedium)
+                        AsyncImage(url: url) { image in
+                            image.resizable().scaledToFit()
+                        } placeholder: {
+                            ProgressView().frame(maxWidth: .infinity, minHeight: 160)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .onTapGesture { zoomed = url }
+                    }
+                }
+            }
+            .padding(SpacingToken.insetMedium)
+        }
+        .sheet(item: $zoomed) { url in
+            NavigationStack {
+                ScrollView([.horizontal, .vertical]) {
+                    AsyncImage(url: url) { $0.resizable().scaledToFit().frame(width: 1400) } placeholder: { ProgressView() }
+                }
+                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Fermer") { zoomed = nil } } }
+            }
+        }
+    }
+}
+
+extension URL: @retroactive Identifiable {
+    public var id: String { absoluteString }
 }

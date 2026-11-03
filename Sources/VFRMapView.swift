@@ -17,8 +17,8 @@ final class SectionalTileOverlay: MKTileOverlay {
         parent.y = path.y >> depth
         parent.z = path.z - depth
         let url = self.url(forTilePath: parent)
-        URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
-            let ok = (response as? HTTPURLResponse)?.statusCode == 200
+        let cached = TileCache.file(for: url)
+        let handle: (Data?, Bool, Error?) -> Void = { [weak self] data, ok, error in
             if ok, let data, let image = UIImage(data: data) {
                 if depth == 0 {
                     result(data, nil)
@@ -30,6 +30,13 @@ final class SectionalTileOverlay: MKTileOverlay {
             } else {
                 result(nil, error)
             }
+        }
+        // Offline copy first (downloaded region or a tile seen before), then the network.
+        if let data = try? Data(contentsOf: cached) { handle(data, true, nil); return }
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            let ok = (response as? HTTPURLResponse)?.statusCode == 200
+            if ok, let data { TileCache.store(data, at: cached) }
+            handle(data, ok, error)
         }.resume()
     }
 
@@ -77,7 +84,6 @@ final class AirportAnnotation: NSObject, MKAnnotation {
 /// inputs changed (the previous version rebuilt every overlay and annotation each time).
 struct VFRMapView: UIViewRepresentable {
     var showSectional: Bool
-    var showWeather: Bool
     var nearest: [Airport]
     var waypoints: [Airport]
     /// Route computed by RoutingEngine (may detour around airspace); straight legs when empty.
@@ -95,12 +101,26 @@ struct VFRMapView: UIViewRepresentable {
     /// No live TFR source is wired yet, so TFR polygons stay hidden rather than showing stale data.
     var showTFRs: Bool = false
 
-    // FAA official VFR sectional (ArcGIS, updated per chart cycle); ArcGIS tile = {z}/{y}/{x}.
-    fileprivate static let sectionalURL =
-        "https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}"
-    // NEXRAD base reflectivity (Iowa Environmental Mesonet), standard {z}/{x}/{y}.
-    fileprivate static let nexradURL =
-        "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png"
+    /// FAA chart service shown when `showSectional` is on: VFR_Sectional, VFR_Terminal, IFR_AreaLow or IFR_High.
+    var chart: String = MapChart.sectional.rawValue
+    /// Apple satellite imagery under the chart (or alone when the chart is off).
+    var satellite: Bool = false
+
+    // FAA official charts (ArcGIS, updated per chart cycle); ArcGIS tile = {z}/{y}/{x}.
+    fileprivate static func chartURL(_ service: String) -> String {
+        "https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/\(service)/MapServer/tile/{z}/{y}/{x}"
+    }
+    /// Iowa Environmental Mesonet weather layers drawn over the chart, e.g. "nexrad-n0q-900913" (radar,
+    /// "-m30m" for 30 min ago) or "goes-east-ir-4km-900913" (GOES infrared). Takes over from `showWeather`.
+    var weatherLayers: [String] = []
+    /// ADS-B targets from a GDL 90 receiver.
+    var traffic: [TrafficTarget] = []
+
+    static let radarFrames = ["-m50m", "-m40m", "-m30m", "-m20m", "-m10m", ""]
+
+    fileprivate static func mesonetURL(_ layer: String) -> String {
+        "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/\(layer)/{z}/{x}/{y}.png"
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -133,13 +153,15 @@ struct VFRMapView: UIViewRepresentable {
     func updateUIView(_ mv: MKMapView, context: Context) {
         let c = context.coordinator
         c.parent = self
-        c.updateTileOverlays(on: mv, showSectional: showSectional, showWeather: showWeather)
+        mv.mapType = satellite ? .hybrid : .standard
+        c.updateTileOverlays(on: mv, showSectional: showSectional, weatherLayers: weatherLayers, chart: chart, satellite: satellite)
         c.updateRoute(on: mv, coordinates: route.count >= 2 ? route : waypoints.map(\.coordinate))
         c.updateTrack(on: mv, coordinates: track)
         c.updateUserCircles(on: mv, userCoord: waypoints.isEmpty ? userCoord : nil)
         c.updateAirspacePolygons(on: mv, airspaces: airspaces, showAirspace: showAirspace, showTFRs: showTFRs,
                                  colorFor: airspaceColor, isTFR: airspaceTypeIsTFR)
         c.updateAnnotations(on: mv, nearest: nearest, waypoints: waypoints)
+        c.updateTraffic(on: mv, traffic: traffic)
         c.updateCategoryColors(on: mv, categories: categories)
 
         // Recenter only when SwiftUI bumps the version.
@@ -186,7 +208,8 @@ struct VFRMapView: UIViewRepresentable {
         var parent: VFRMapView
         var lastVersion = -1
         private var sectionalOverlay: SectionalTileOverlay?
-        private var weatherOverlay: WeatherTileOverlay?
+        private var chartKey = ""
+        private var weatherOverlays: [String: WeatherTileOverlay] = [:]
         private var routeOverlay: MKPolyline?
         private var routeKey = ""
         private var trackOverlay: MKPolyline?
@@ -201,10 +224,17 @@ struct VFRMapView: UIViewRepresentable {
 
         init(_ parent: VFRMapView) { self.parent = parent }
 
-        func updateTileOverlays(on mv: MKMapView, showSectional: Bool, showWeather: Bool) {
+        func updateTileOverlays(on mv: MKMapView, showSectional: Bool, weatherLayers: [String], chart: String, satellite: Bool) {
+            let chartKey = "\(chart)|\(satellite)"
+            if let o = sectionalOverlay, chartKey != self.chartKey || !showSectional {
+                mv.removeOverlay(o)
+                sectionalOverlay = nil
+            }
+            self.chartKey = chartKey
             if showSectional, sectionalOverlay == nil {
-                let o = SectionalTileOverlay(urlTemplate: VFRMapView.sectionalURL)
-                o.canReplaceMapContent = true
+                let o = SectionalTileOverlay(urlTemplate: VFRMapView.chartURL(chart))
+                // TAC only exists around big airports: keep the base map visible elsewhere (and under satellite).
+                o.canReplaceMapContent = !satellite && chart != MapChart.terminal.rawValue
                 sectionalOverlay = o
                 mv.insertOverlay(o, at: 0, level: .aboveLabels)
             } else if !showSectional, let o = sectionalOverlay {
@@ -212,18 +242,19 @@ struct VFRMapView: UIViewRepresentable {
                 sectionalOverlay = nil
             }
 
-            if showWeather, weatherOverlay == nil {
-                let o = WeatherTileOverlay(urlTemplate: VFRMapView.nexradURL)
+            for (layer, o) in weatherOverlays where !weatherLayers.contains(layer) {
+                mv.removeOverlay(o)
+                weatherOverlays[layer] = nil
+            }
+            for layer in weatherLayers where weatherOverlays[layer] == nil {
+                let o = WeatherTileOverlay(urlTemplate: VFRMapView.mesonetURL(layer))
                 o.canReplaceMapContent = false
-                weatherOverlay = o
+                weatherOverlays[layer] = o
                 if let s = sectionalOverlay {
                     mv.insertOverlay(o, above: s)
                 } else {
                     mv.insertOverlay(o, at: 0, level: .aboveLabels)
                 }
-            } else if !showWeather, let o = weatherOverlay {
-                mv.removeOverlay(o)
-                weatherOverlay = nil
             }
         }
 
@@ -288,7 +319,9 @@ struct VFRMapView: UIViewRepresentable {
             for airspace in airspaces where airspace.isActive {
                 let tf = isTFR(airspace)
                 guard (tf && showTFRs) || (!tf && showAirspace) else { continue }
-                let color = tf ? UIColor(ColorToken.tfr) : colorFor(airspace)
+                // SUA out of its published hours is drawn faded.
+                let base = tf ? UIColor(ColorToken.tfr) : colorFor(airspace)
+                let color = airspace.suaStatus() == .inactive ? base.withAlphaComponent(0.35) : base
                 for polygon in airspace.polygons where polygon.count >= 3 {
                     let coords = polygon.map(\.clCoordinate)
                     let overlay = MKPolygon(coordinates: coords, count: coords.count)
@@ -318,6 +351,21 @@ struct VFRMapView: UIViewRepresentable {
                 added.append(annotation)
             }
             if !added.isEmpty { mv.addAnnotations(added) }
+        }
+
+        private var trafficByID: [UInt32: TrafficAnnotation] = [:]
+
+        func updateTraffic(on mv: MKMapView, traffic: [TrafficTarget]) {
+            let wanted = Dictionary(uniqueKeysWithValues: traffic.map { ($0.id, $0) })
+            for (id, a) in trafficByID where wanted[id] == nil || wanted[id] != a.target {
+                mv.removeAnnotation(a)
+                trafficByID[id] = nil
+            }
+            for (id, t) in wanted where trafficByID[id] == nil {
+                let a = TrafficAnnotation(t)
+                trafficByID[id] = a
+                mv.addAnnotation(a)
+            }
         }
 
         /// Recolours visible markers when new METARs arrive, without re-adding them.
@@ -389,6 +437,17 @@ struct VFRMapView: UIViewRepresentable {
         }
 
         func mapView(_ mv: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            if let t = annotation as? TrafficAnnotation {
+                let v = MKAnnotationView(annotation: t, reuseIdentifier: nil)
+                let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .bold)
+                    .applying(UIImage.SymbolConfiguration(paletteColors: [.systemOrange]))
+                v.image = UIImage(systemName: "airplane", withConfiguration: config)
+                // SF "airplane" points east; rotate to the target's track.
+                v.transform = CGAffineTransform(rotationAngle: CGFloat(Double(t.target.trackDeg - 90) * .pi / 180))
+                v.canShowCallout = true
+                v.displayPriority = .required
+                return v
+            }
             guard let a = annotation as? AirportAnnotation else { return nil }
             let id = "airport"
             let v = (mv.dequeueReusableAnnotationView(withIdentifier: id) as? MKMarkerAnnotationView)
@@ -401,7 +460,7 @@ struct VFRMapView: UIViewRepresentable {
         }
 
         func mapView(_ mv: MKMapView, didSelect view: MKAnnotationView) {
-            guard let a = view.annotation as? AirportAnnotation else { return }
+            guard let a = view.annotation as? AirportAnnotation else { return }   // traffic shows its callout
             mv.deselectAnnotation(a, animated: false)
             parent.onSelect(a.airport)
         }
@@ -420,6 +479,20 @@ struct VFRMapView: UIViewRepresentable {
             case "LIFR": return UIColor(red: 0.75, green: 0.35, blue: 0.95, alpha: 1)
             default:     return nil
             }
+        }
+    }
+}
+
+/// FAA chart services offered on the map.
+enum MapChart: String, CaseIterable, Identifiable {
+    case sectional = "VFR_Sectional", terminal = "VFR_Terminal", ifrLow = "IFR_AreaLow", ifrHigh = "IFR_High"
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .sectional: return "Sectional"
+        case .terminal: return "TAC"
+        case .ifrLow: return "IFR bas"
+        case .ifrHigh: return "IFR haut"
         }
     }
 }

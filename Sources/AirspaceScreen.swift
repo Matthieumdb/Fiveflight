@@ -26,7 +26,7 @@ struct AirspaceScreen: View {
     }
 
     private var filteredAirspaces: [Airspace] {
-        airspaceManager.airspaces.filter { airspace in
+        airspaceManager.allAirspaces.filter { airspace in
             guard airspace.isActive else { return false }
             guard selectedAltitude >= airspace.floor && selectedAltitude <= airspace.ceiling else { return false }
 
@@ -389,6 +389,10 @@ struct AirspaceDetailSheet: View {
                             }
                             if let agency = airspace.controllingAgency {
                                 DetailRow(icon: "building.2", title: "Controlling Agency", value: agency)
+                            }
+                            if let status = airspace.suaStatus() {
+                                DetailRow(icon: status == .active ? "exclamationmark.circle.fill" : "moon.zzz",
+                                          title: "Statut", value: status.label)
                             }
                             if let schedule = airspace.schedule {
                                 DetailRow(icon: "clock", title: "Schedule", value: schedule)

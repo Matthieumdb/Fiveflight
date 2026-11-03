@@ -193,7 +193,7 @@ struct FlightPlanSidePanel: View {
             waypoints: model.waypoints,
             cruiseAltitude: model.cruiseAlt,
             mode: routingEngine.currentMode,
-            airspaces: AirspaceDataManager.shared.airspaces
+            airspaces: AirspaceDataManager.shared.allAirspaces
         )
     }
 }
@@ -484,7 +484,7 @@ struct PerformanceCard: View {
                 )
 
                 ProfileSlider(
-                    title: "Ground Speed",
+                    title: "Vitesse propre (TAS)",
                     value: $model.cruiseGS,
                     range: 40...500,
                     step: 5,
@@ -696,7 +696,7 @@ struct FlightPlanEditorSheet: View {
                                 waypoints: model.waypoints,
                                 cruiseAltitude: model.cruiseAlt,
                                 mode: routingEngine.currentMode,
-                                airspaces: AirspaceDataManager.shared.airspaces
+                                airspaces: AirspaceDataManager.shared.allAirspaces
                             )
                         }
                         dismiss()
@@ -720,11 +720,33 @@ struct LayersSidePanel: View {
             List {
                 Section {
                     LayerToggleRow(
-                        title: "Sectional Chart",
-                        subtitle: "FAA VFR Sectionals",
+                        title: "Carte FAA",
+                        subtitle: "Sectional, TAC ou IFR",
                         icon: "map",
                         isOn: $model.showSectional,
                         color: ColorToken.info
+                    )
+                    if model.showSectional {
+                        Picker("Carte", selection: $model.mapChart) {
+                            ForEach(MapChart.allCases) { Text($0.label).tag($0.rawValue) }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
+                    LayerToggleRow(
+                        title: "Instruments GPS",
+                        subtitle: "GS, altitude, route, vario, prochain point",
+                        icon: "gauge.with.dots.needle.33percent",
+                        isOn: $model.showInstruments,
+                        color: ColorToken.warning
+                    )
+
+                    LayerToggleRow(
+                        title: "Satellite",
+                        subtitle: "Imagerie Apple sous la carte",
+                        icon: "globe.americas",
+                        isOn: $model.showSatellite,
+                        color: ColorToken.success
                     )
 
                     LayerToggleRow(
@@ -733,6 +755,14 @@ struct LayersSidePanel: View {
                         icon: "cloud.rain",
                         isOn: $model.showRadar,
                         color: ColorToken.critical
+                    )
+
+                    LayerToggleRow(
+                        title: "Satellite infrarouge",
+                        subtitle: "Nuages GOES (Iowa State)",
+                        icon: "cloud.fill",
+                        isOn: $model.showIR,
+                        color: ColorToken.textSecondary
                     )
 
                     LayerToggleRow(
@@ -748,6 +778,10 @@ struct LayersSidePanel: View {
                         .foregroundStyle(ColorToken.textTertiary)
                         .textCase(.uppercase)
                 }
+
+                ADSBSection()
+
+                OfflineChartsSection()
 
                 Section {
                     Button {
@@ -969,5 +1003,28 @@ struct NearbyAirportRow: View {
         guard let loc = model.userLocation else { return "—" }
         let bearing = Haversine.trueCourse(loc, airport.coordinate)
         return String(format: "%03d°", bearing)
+    }
+}
+
+/// ADS-B receiver toggle and live status.
+struct ADSBSection: View {
+    @EnvironmentObject private var model: AppModel
+    @ObservedObject private var adsb = ADSBReceiver.shared
+
+    var body: some View {
+        Section {
+            Toggle("Récepteur ADS-B (GDL 90)", isOn: $model.adsbEnabled)
+            if model.adsbEnabled {
+                TimelineView(.periodic(from: .now, by: 2)) { _ in
+                    Label(adsb.connected ? "Connecté · \(adsb.traffic.count) trafic(s)" : "En attente du récepteur…",
+                          systemImage: adsb.connected ? "dot.radiowaves.left.and.right" : "wifi.exclamationmark")
+                        .foregroundStyle(adsb.connected ? ColorToken.success : ColorToken.textTertiary)
+                }
+            }
+        } header: {
+            Text("Trafic")
+        } footer: {
+            Text("Connecte l'iPhone au Wi-Fi du récepteur (Stratux, Sentry, SkyEcho). Le trafic s'affiche en orange sur la carte.")
+        }
     }
 }

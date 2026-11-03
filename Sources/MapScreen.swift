@@ -15,13 +15,23 @@ struct MapScreen: View {
     @State private var showLayersPanel = false
     @State private var showNearbyPanel = false
     @State private var showSearch = false
+    @State private var showNearest = false
+    @ObservedObject private var adsb = ADSBReceiver.shared
+    /// Radar loop: index in `VFRMapView.radarFrames` (last = live), animating while `radarPlaying`.
+    @State private var radarFrame = VFRMapView.radarFrames.count - 1
+    @State private var radarPlaying = false
+
+    private var weatherLayers: [String] {
+        (model.showIR ? ["goes-east-ir-4km-900913"] : [])
+            + (model.showRadar ? ["nexrad-n0q-900913" + VFRMapView.radarFrames[radarFrame]] : [])
+    }
     @State private var selectedAirport: Airport?
     @State private var routePolyline: [CLLocationCoordinate2D] = []
     @State private var routeWarnings: [RouteWarning] = []
     @State private var visibleAirports: [Airport] = []
 
     private var activeAirspaces: [Airspace] {
-        airspaceManager.airspaces.filter { $0.isActive }
+        airspaceManager.allAirspaces.filter { $0.isActive }
     }
 
     /// US stations among the airports on screen, for the METAR-driven marker colours.
@@ -38,7 +48,6 @@ struct MapScreen: View {
             // MARK: - Full Screen Map (VFRMapView with MKTileOverlay)
             VFRMapView(
                 showSectional: model.showSectional,
-                showWeather: model.showRadar,
                 nearest: visibleAirports,
                 waypoints: model.waypoints,
                 route: routePolyline,
@@ -56,7 +65,12 @@ struct MapScreen: View {
                     visibleAirports = Self.airportsToShow(store.airports, in: region)
                 },
                 airspaces: activeAirspaces,
-                showAirspace: model.showAirspace
+                showAirspace: model.showAirspace,
+                showTFRs: model.showAirspace,
+                chart: model.mapChart,
+                satellite: model.showSatellite,
+                weatherLayers: weatherLayers,
+                traffic: adsb.traffic
             )
             .ignoresSafeArea()
 
@@ -89,6 +103,46 @@ struct MapScreen: View {
                 NearbySidePanel(isPresented: $showNearbyPanel)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                     .zIndex(10)
+            }
+
+            // MARK: - Radar loop control
+            if model.showRadar {
+                HStack {
+                    Spacer()
+                    Button {
+                        radarPlaying.toggle()
+                        if !radarPlaying { radarFrame = VFRMapView.radarFrames.count - 1 }
+                    } label: {
+                        Label(radarPlaying ? "-\(10 * (VFRMapView.radarFrames.count - 1 - radarFrame)) min" : "Animer radar",
+                              systemImage: radarPlaying ? "stop.fill" : "play.fill")
+                            .font(TypographyToken.labelSmall)
+                            .padding(.horizontal, SpacingToken.space3)
+                            .padding(.vertical, SpacingToken.space2)
+                            .background(.black.opacity(0.7), in: Capsule())
+                            .foregroundStyle(.white)
+                    }
+                }
+                .padding(.top, 150)
+                .padding(.trailing, SpacingToken.space3)
+                .zIndex(4)
+            }
+
+            // MARK: - GPS instruments (in flight, or on demand)
+            if model.showInstruments || locationManager.speed > FlightMonitor.airborneSpeed {
+                VStack {
+                    Spacer()
+                    InstrumentStrip(showNearest: $showNearest)
+                        .padding(.horizontal, SpacingToken.space3)
+                        .padding(.bottom, 96)
+                }
+                .zIndex(5)
+            }
+        }
+        .sheet(isPresented: $showNearest) { NearestSheet() }
+        .task(id: radarPlaying) {
+            while radarPlaying, !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 900_000_000)
+                radarFrame = (radarFrame + 1) % VFRMapView.radarFrames.count
             }
         }
         .animation(AnimationToken.transition, value: showFlightPlanPanel)
@@ -124,6 +178,15 @@ struct MapScreen: View {
         }
         .onChange(of: model.cruiseAlt) { _, _ in
             Task { await calculateAndUpdateRoute() }
+        }
+        .onChange(of: model.cruiseGS) { _, _ in
+            Task { await calculateAndUpdateRoute() }
+        }
+        .onChange(of: model.fuelBurn) { _, _ in
+            Task { await calculateAndUpdateRoute() }
+        }
+        .onChange(of: airspaceManager.allAirspaces.count) { _, _ in
+            Task { await calculateAndUpdateRoute() } // data arrived after the plan (launch, TFR refresh)
         }
         .task(id: metarStations) {
             // Debounce: wait until the map has settled, then colour markers by flight category.
@@ -177,13 +240,17 @@ struct MapScreen: View {
             waypoints: planned,
             cruiseAltitude: model.cruiseAlt,
             mode: routingEngine.currentMode,
-            airspaces: airspaceManager.airspaces
+            airspaces: airspaceManager.allAirspaces
         ) {
             // Plan, mode or altitude changed meanwhile: a newer calculation will land.
             guard model.waypoints.map(\.id) == planned.map(\.id), result.mode == routingEngine.currentMode,
                   result.cruiseAltitude == model.cruiseAlt else { return }
             routePolyline = result.legs.flatMap { $0.waypoints }
             model.routedDistanceNM = result.totalDistanceNM
+            model.routePath = routePolyline
+            if weatherService.windsAloft.isEmpty { await weatherService.fetchWindsAloft() }
+            model.navlog = Navlog.build(legs: result.legs, tas: model.cruiseGS, altitude: model.cruiseAlt,
+                                        fuelBurn: model.fuelBurn, winds: weatherService.windsAloft)
             routeWarnings = result.airspaceWarnings.map { warning in
                 RouteWarning(
                     legIndex: warning.legIndex,

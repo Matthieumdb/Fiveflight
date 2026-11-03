@@ -9,6 +9,11 @@ struct FlightPlanScreen: View {
     @EnvironmentObject private var airspaceManager: AirspaceDataManager
     @EnvironmentObject private var store: AirportStore
     @State private var showFlightPlanSheet = false
+    @State private var showSavedPlans = false
+
+    private var exportPoints: [FlightExport.Point] {
+        model.waypoints.map { FlightExport.Point(name: $0.id, coordinate: $0.coordinate) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -39,6 +44,25 @@ struct FlightPlanScreen: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button("Enregistrer ce plan", systemImage: "square.and.arrow.down") { model.savePlan() }
+                            .disabled(model.waypoints.count < 2)
+                        Button("Plans enregistrés", systemImage: "folder") { showSavedPlans = true }
+                        if model.waypoints.count >= 2 {
+                            let name = model.waypoints.map(\.id).joined(separator: "-")
+                            if let gpx = FlightExport.gpx(name: name, route: exportPoints, track: model.track) {
+                                ShareLink("Exporter en GPX", item: gpx)
+                            }
+                            if let kml = FlightExport.kml(name: name, route: exportPoints, track: model.track) {
+                                ShareLink("Exporter en KML", item: kml)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 18, weight: .medium))
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showFlightPlanSheet = true
                     } label: {
@@ -47,6 +71,7 @@ struct FlightPlanScreen: View {
                     }
                 }
             }
+            .sheet(isPresented: $showSavedPlans) { SavedPlansSheet() }
             .sheet(isPresented: $showFlightPlanSheet) {
                 SearchSheet(nearest: store.nearest(to: model.userLocation ?? AppModel.homeCoordinate, limit: 20), onSelect: { airport in
                     model.addWaypoint(airport)
@@ -91,6 +116,27 @@ private struct FlightPlanContent: View {
                         .textCase(.uppercase)
                 }
 
+                Section {
+                    VerticalProfileView(path: model.routePath, cruiseAlt: model.cruiseAlt,
+                                        airspaces: airspaceManager.allAirspaces)
+                } header: {
+                    Text("Profil vertical")
+                        .font(TypographyToken.labelSmall)
+                        .foregroundStyle(ColorToken.textTertiary)
+                        .textCase(.uppercase)
+                }
+
+                if !model.navlog.isEmpty {
+                    Section {
+                        ForEach(model.navlog) { NavLogRow(leg: $0) }
+                    } header: {
+                        Text("Navlog (vents prévus à \(model.cruiseAlt) ft)")
+                            .font(TypographyToken.labelSmall)
+                            .foregroundStyle(ColorToken.textTertiary)
+                            .textCase(.uppercase)
+                    }
+                }
+
                 // Performance section
                 Section {
                     Stepper(value: $model.cruiseAlt, in: 500...17500, step: 500) {
@@ -110,7 +156,7 @@ private struct FlightPlanContent: View {
                             Image(systemName: "speedometer")
                                 .foregroundStyle(ColorToken.brandPrimary)
                                 .frame(width: 24)
-                            Text("Ground Speed")
+                            Text("Vitesse propre (TAS)")
                             Spacer()
                             Text("\(Int(model.cruiseGS)) kt")
                                 .font(TypographyToken.monoMedium)
@@ -137,6 +183,18 @@ private struct FlightPlanContent: View {
                             Text("Reserve")
                             Spacer()
                             Text("\(Int(model.reserveMin)) min")
+                                .font(TypographyToken.monoMedium)
+                                .foregroundStyle(ColorToken.textPrimary)
+                        }
+                    }
+                    Stepper(value: $model.fuelOnBoard, in: 0...300, step: 1) {
+                        HStack {
+                            Image(systemName: "drop.fill")
+                                .foregroundStyle(ColorToken.brandPrimary)
+                                .frame(width: 24)
+                            Text("Carburant au départ")
+                            Spacer()
+                            Text(model.fuelOnBoard > 0 ? "\(Int(model.fuelOnBoard)) gal" : "—")
                                 .font(TypographyToken.monoMedium)
                                 .foregroundStyle(ColorToken.textPrimary)
                         }
@@ -232,5 +290,65 @@ private struct FlightPlanWaypointRow: View {
             }
         }
         .padding(.vertical, SpacingToken.space1)
+    }
+}
+/// One navlog line: leg, magnetic heading, wind, ground speed, time and fuel.
+private struct NavLogRow: View {
+    let leg: NavLogLeg
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SpacingToken.space1) {
+            HStack {
+                Text("\(leg.from) → \(leg.to)")
+                    .font(TypographyToken.bodyMedium)
+                Spacer()
+                Text(String(format: "%.0f NM", leg.distanceNM))
+                    .font(TypographyToken.monoMedium)
+            }
+            HStack(spacing: SpacingToken.space3) {
+                Text(String(format: "Cap %03d°M", leg.magneticHeading))
+                Text(String(format: "Rte %03d°V", leg.trueCourse))
+                if let dir = leg.windDirection, let spd = leg.windSpeed {
+                    Text(String(format: "Vent %03d/%d", dir, spd))
+                }
+            }
+            .font(TypographyToken.monoXSmall)
+            .foregroundStyle(ColorToken.textSecondary)
+            HStack(spacing: SpacingToken.space3) {
+                Text(String(format: "GS %.0f kt", leg.groundSpeed))
+                Text("\(Int(leg.minutes.rounded())) min")
+                Text(String(format: "%.1f gal", leg.fuelGallons))
+            }
+            .font(TypographyToken.monoXSmall)
+            .foregroundStyle(ColorToken.textTertiary)
+        }
+        .padding(.vertical, SpacingToken.space1)
+    }
+}
+
+/// Saved plans: tap to load, swipe to delete.
+private struct SavedPlansSheet: View {
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var store: AirportStore
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if model.savedPlans.isEmpty {
+                    Text("Aucun plan enregistré. Menu ⋯ > « Enregistrer ce plan ».").foregroundStyle(ColorToken.textTertiary)
+                }
+                ForEach(model.savedPlans) { plan in
+                    Button(plan.name) {
+                        model.waypoints = plan.waypointIDs.compactMap { store.airport($0) }
+                        dismiss()
+                    }
+                }
+                .onDelete { model.savedPlans.remove(atOffsets: $0) }
+            }
+            .navigationTitle("Plans enregistrés")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Fermer") { dismiss() } } }
+        }
     }
 }

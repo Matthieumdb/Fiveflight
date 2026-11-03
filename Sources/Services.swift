@@ -24,6 +24,10 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
     @Published var speed: Double = 0
     @Published var altitude: Double = 0
     @Published var accuracy: Double = 0
+    /// GPS ground track (degrees true), -1 when unknown.
+    @Published var course: Double = -1
+    /// Vertical speed in ft/min from successive GPS altitudes.
+    @Published var verticalSpeed: Double = 0
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published var isUpdating = false
 
@@ -88,6 +92,11 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
             self.altitude = location.altitude
             self.accuracy = location.horizontalAccuracy
             self.speed = max(0, location.speed) * 1.94384 // m/s to knots
+            self.course = location.course
+            if let last = self.lastLocation {
+                let dt = location.timestamp.timeIntervalSince(last.timestamp)
+                if dt > 0.5 { self.verticalSpeed = (location.altitude - last.altitude) * 3.28084 / dt * 60 }
+            }
 
             if let last = self.lastLocation {
                 // Calculate track

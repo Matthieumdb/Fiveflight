@@ -31,7 +31,12 @@ struct RootView: View {
         .animation(.easeInOut, value: model.nightMode)
         .onReceive(location.$location) { coordinate in
             // Feed the GPS fix to the map, nearest-airport lists and widget.
-            if let coordinate { model.userLocation = coordinate }
+            if let coordinate {
+                model.userLocation = coordinate
+                FlightMonitor.shared.update(position: coordinate, groundSpeed: location.speed, course: location.course,
+                                            altitudeFt: Int(location.altitude * 3.28084), model: model,
+                                            airspaces: AirspaceDataManager.shared.allAirspaces)
+            }
         }
         .task {
             location.start()
@@ -47,6 +52,7 @@ struct MoreScreen: View {
             List {
                 Section {
                     NavigationLink { FavoritesScreen() } label: { Label("Favoris", systemImage: "star.fill") }
+                    NavigationLink { AircraftScreen() } label: { Label("Avions", systemImage: "airplane") }
                     NavigationLink { LogbookScreen() } label: { Label("Carnet de vol", systemImage: "book.fill") }
                     NavigationLink { ChecklistScreen() } label: { Label("Checklists", systemImage: "checklist") }
                     NavigationLink { CalculatorsScreen() } label: { Label("Calculateurs", systemImage: "function") }

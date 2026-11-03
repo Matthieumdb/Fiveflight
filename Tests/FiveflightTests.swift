@@ -419,6 +419,76 @@ final class FiveflightTests: XCTestCase {
         }
     }
 
+    func testAIRACCycle() {
+        func day(_ y: Int, _ m: Int, _ d: Int) -> Date {
+            var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!
+            return c.date(from: DateComponents(year: y, month: m, day: d, hour: 12))!
+        }
+        XCTAssertEqual(FAADocuments.cycle(on: day(2026, 11, 3)), "2611")
+        XCTAssertEqual(FAADocuments.cycle(on: day(2026, 11, 26)), "2612")
+        XCTAssertEqual(FAADocuments.cycle(on: day(2027, 1, 22)), "2701")
+        XCTAssertEqual(FAADocuments.cycle(on: day(2026, 10, 1)), "2610")
+    }
+
+    func testSUASchedule() {
+        let ny = TimeZone(identifier: "America/New_York")!
+        func at(_ d: Int, _ h: Int, _ m: Int = 0) -> Date {   // November 2026: the 2nd is a Monday
+            var c = Calendar(identifier: .gregorian); c.timeZone = ny
+            return c.date(from: DateComponents(year: 2026, month: 11, day: d, hour: h, minute: m))!
+        }
+        let p = CLLocationCoordinate2D(latitude: 27, longitude: -81)
+        let weekday = "INTERMITTENT, 0600 - 2400, MON - FRI; 0800 - 1800, SAT - SUN; %OTHER TIMES BY NOTAM"
+        XCTAssertEqual(SUAStatus.of(weekday, at: at(2, 7), near: p), .active)       // Monday 07:00
+        XCTAssertEqual(SUAStatus.of(weekday, at: at(7, 7), near: p), .inactive)     // Saturday 07:00
+        XCTAssertEqual(SUAStatus.of(weekday, at: at(7, 9), near: p), .active)       // Saturday 09:00
+        let late = "0800 - 0100, MON - THU; 0800 - 2200, FRI"
+        XCTAssertEqual(SUAStatus.of(late, at: at(3, 0, 30), near: p), .active)      // Tuesday 00:30, Monday's window
+        XCTAssertEqual(SUAStatus.of(late, at: at(7, 0, 30), near: p), .inactive)    // Saturday 00:30
+        XCTAssertEqual(SUAStatus.of("CONTINUOUS", near: p), .active)
+        XCTAssertEqual(SUAStatus.of("INTERMITTENT BY NOTAM", near: p), .byNotam)
+        XCTAssertEqual(SUAStatus.of("NOV - DEC, 0800 - 1600, MON - FRI", at: at(2, 9), near: p), .active)
+        XCTAssertEqual(SUAStatus.of("APR - AUG, 0800 - 1700, DAILY", at: at(2, 9), near: p), .inactive)
+    }
+
+    func testGDL90Traffic() {
+        // Traffic report: N123AB, 27.2N 80.3W, 3500 ft, 110 kt, track 180, with 0x7E inside the payload escaped.
+        func i24(_ v: Double) -> [UInt8] { let x = Int(v.rounded()) & 0xFFFFFF; return [UInt8(x >> 16), UInt8(x >> 8 & 0xFF), UInt8(x & 0xFF)] }
+        let alt = (3500 + 1000) / 25
+        var body: [UInt8] = [0x14, 0x00, 0xA1, 0x7E, 0xC3] + i24(27.2 / 180 * 8_388_608) + i24(-80.3 / 180 * 8_388_608)
+        body += [UInt8(alt >> 4), UInt8((alt & 0xF) << 4 | 0x9), 0x88, UInt8(110 >> 4), UInt8((110 & 0xF) << 4), 0x00, 128, 0x01]
+        body += Array("N123AB  ".utf8) + [0x00]
+        let crc = GDL90.crc(body[...])
+        var framed: [UInt8] = [0x7E]
+        for b in body + [UInt8(crc & 0xFF), UInt8(crc >> 8)] {
+            if b == 0x7E || b == 0x7D { framed += [0x7D, b ^ 0x20] } else { framed.append(b) }
+        }
+        framed.append(0x7E)
+        guard case .traffic(let t)? = GDL90.decode(Data(framed)).first else { return XCTFail("no traffic decoded") }
+        XCTAssertEqual(t.id, 0xA17EC3)
+        XCTAssertEqual(t.callsign, "N123AB")
+        XCTAssertEqual(t.altitudeFt, 3500)
+        XCTAssertEqual(t.speedKt, 110)
+        XCTAssertEqual(t.trackDeg, 180)
+        XCTAssertEqual(t.coordinate.latitude, 27.2, accuracy: 0.0001)
+        XCTAssertEqual(t.coordinate.longitude, -80.3, accuracy: 0.0001)
+        framed[framed.count - 3] ^= 0xFF                      // corrupt the CRC
+        XCTAssertTrue(GDL90.decode(Data(framed)).isEmpty)
+    }
+
+    func testWindTriangle() {
+        let head = Navlog.solve(trueCourse: 360, tas: 100, windFrom: 360, windSpeed: 20)
+        XCTAssertEqual(head.wca, 0, accuracy: 0.01)
+        XCTAssertEqual(head.gs, 80, accuracy: 0.01)
+        let cross = Navlog.solve(trueCourse: 360, tas: 100, windFrom: 90, windSpeed: 20)
+        XCTAssertEqual(cross.wca, 11.54, accuracy: 0.05)   // crab right into a wind from the right
+        XCTAssertEqual(cross.gs, 97.98, accuracy: 0.05)
+        let level = { (a: Int, d: Int, s: Int) in WindsAloftLevel(altitude: a, direction: d, speed: s, temperature: nil) }
+        let fb = WindsAloft(station: "X", latitude: 27, longitude: -81, validTime: "",
+                            levels: [level(3000, 350, 10), level(6000, 10, 10)])
+        let w = Navlog.wind(at: .init(latitude: 27, longitude: -81), altitude: 4500, winds: [fb])
+        XCTAssertEqual(w?.direction, 0)                     // vector average, not 180
+    }
+
     /// KFPR → KAPF only crosses the departure and arrival Class D: avoid mode keeps the direct line and says so.
     @MainActor
     func testAvoidKeepsDirectWhenNothingToAvoid() async throws {

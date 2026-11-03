@@ -8,24 +8,38 @@ struct RootView: View {
     @EnvironmentObject private var location: LocationManager
     @EnvironmentObject private var model: AppModel
 
+    @EnvironmentObject private var weather: WeatherService
+    /// ForeFlight layout: Airports, Maps, Flights, Imagery (weather), More. Opens on the map.
+    @State private var tab = 1
+
     var body: some View {
         ZStack {
             if store.ready {
-                TabView {
+                TabView(selection: $tab) {
+                    AirportsScreen()
+                        .tabItem { Label("Aéroports", systemImage: "airplane.circle") }
+                        .tag(0)
                     MapScreen()
-                        .tabItem { Label("Carte", systemImage: "map.fill") }
+                        .tabItem { Label("Cartes", systemImage: "map") }
+                        .tag(1)
                     FlightPlanScreen()
-                        .tabItem { Label("Plan", systemImage: "list.bullet.clipboard.fill") }
+                        .tabItem { Label("Vols", systemImage: "airplane.departure") }
+                        .tag(2)
                     WeatherScreen()
-                        .tabItem { Label("Météo", systemImage: "cloud.sun.fill") }
-                    AirspaceScreen()
-                        .tabItem { Label("Espaces", systemImage: "shield.lefthalf.filled") }
+                        .tabItem { Label("Météo", systemImage: "cloud.sun") }
+                        .tag(3)
                     MoreScreen()
-                        .tabItem { Label("Plus", systemImage: "ellipsis.circle.fill") }
+                        .tabItem { Label("Plus", systemImage: "ellipsis") }
+                        .tag(4)
                 }
+                .tint(FF.accent)
             } else {
                 LoadingView(progress: store.progress)
             }
+        }
+        // One navlog for the whole app: rebuilt when the plan, performance or departure time changes.
+        .task(id: model.navlogInputs) {
+            await model.refreshNavlog(weather: weather)
         }
         .colorMultiply(model.nightMode ? Color(red: 1.0, green: 0.30, blue: 0.30) : .white)
         .animation(.easeInOut, value: model.nightMode)
@@ -56,6 +70,9 @@ struct MoreScreen: View {
                     NavigationLink { LogbookScreen() } label: { Label("Carnet de vol", systemImage: "book.fill") }
                     NavigationLink { ChecklistScreen() } label: { Label("Checklists", systemImage: "checklist") }
                     NavigationLink { CalculatorsScreen() } label: { Label("Calculateurs", systemImage: "function") }
+                }
+                Section {
+                    NavigationLink { AirspaceScreen() } label: { Label("Espaces aériens & SUA", systemImage: "shield.lefthalf.filled") }
                 }
                 Section {
                     NavigationLink { SettingsScreen() } label: { Label("Réglages", systemImage: "gearshape.fill") }

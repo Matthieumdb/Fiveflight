@@ -15,7 +15,7 @@ struct VFRFlightPlanFilingScreen: View {
     @AppStorage("fp.pilotName") private var pilotName = ""
     @AppStorage("fp.pilotPhone") private var pilotPhone = ""
     @AppStorage("fp.homeBase") private var homeBase = "KFPR"
-    @State private var departure = Date.now.addingTimeInterval(30 * 60)
+    private var departure: Date { model.departureTime }
     @State private var persons = 1
     @State private var alternate = ""
     @State private var remarks = ""
@@ -63,7 +63,7 @@ struct VFRFlightPlanFilingScreen: View {
 
             Section {
                 LabeledContent("Départ", value: dep?.id ?? "—")
-                DatePicker("Heure de départ", selection: $departure)
+                DatePicker("Heure de départ", selection: $model.departureTime)
                 LabeledContent("Altitude", value: "\(model.cruiseAlt) ft")
                 LabeledContent("Route", value: routeText)
                 LabeledContent("Destination", value: dest?.id ?? "—")

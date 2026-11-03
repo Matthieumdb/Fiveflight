@@ -55,7 +55,7 @@ struct AirspaceScreen: View {
     }
 
     var body: some View {
-        NavigationStack {
+        Group {
             VStack(spacing: 0) {
                 // Altitude selector
                 VStack(spacing: SpacingToken.space3) {
@@ -133,7 +133,7 @@ struct AirspaceScreen: View {
                 .scrollContentBackground(.hidden)
                 .background(ColorToken.surfaceBase)
             }
-            .navigationTitle("Airspace")
+            .navigationTitle("Espaces aériens")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

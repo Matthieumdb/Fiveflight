@@ -14,138 +14,133 @@ struct AirportDetailSheet: View {
     private var metar: METAR? { weatherService.metars[airport.id] }
     private var taf: TAF? { weatherService.tafs[airport.id] }
 
+    /// Pushed inside the Airports tab (no own navigation stack, no Done button).
+    var embedded = false
+    @State private var section: AirportSection = .info
+
+    /// ForeFlight airport view tabs.
+    enum AirportSection: String, CaseIterable, Identifiable {
+        case info = "Info", weather = "Météo", runways = "Pistes", freqs = "Fréq.", notam = "NOTAM"
+        var id: String { rawValue }
+    }
+
     var body: some View {
-        NavigationStack {
-            List {
-                // Header
-                Section {
-                    AirportHeaderView(airport: airport, metar: metar, airportTypeDisplay: airportTypeDisplay)
-                }
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
-
-                // Quick Actions
-                Section {
-                    HStack(spacing: SpacingToken.space3) {
-                        ActionButton(
-                            icon: "location.north.line.fill",
-                            label: "Direct To",
-                            color: ColorToken.brandPrimary
-                        ) {
-                            model.directTo(airport)
-                            dismiss()
-                        }
-
-                        ActionButton(
-                            icon: "plus.circle.fill",
-                            label: "Ajouter",
-                            color: ColorToken.info
-                        ) {
-                            model.addWaypoint(airport)
-                            dismiss()
-                        }
-
-                        ActionButton(
-                            icon: model.isFavorite(airport.id) ? "star.fill" : "star",
-                            label: model.isFavorite(airport.id) ? "Retirer" : "Favori",
-                            color: ColorToken.warning
-                        ) {
-                            model.toggleFavorite(airport.id)
+        if embedded {
+            content
+        } else {
+            NavigationStack {
+                content
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("OK") { dismiss() }
                         }
                     }
-                }
-                .listRowInsets(EdgeInsets(top: SpacingToken.space2, leading: SpacingToken.insetMedium, bottom: SpacingToken.space2, trailing: SpacingToken.insetMedium))
-                .listRowBackground(Color.clear)
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+    }
 
-                // METAR
-                if let metar = metar {
-                    Section {
-                        METARCard(metar: metar)
-                    } header: {
-                        Text("METAR")
-                            .font(TypographyToken.labelSmall)
-                            .foregroundStyle(ColorToken.textTertiary)
-                            .textCase(.uppercase)
+    private var content: some View {
+        List {
+            Section {
+                AirportHeaderView(airport: airport, metar: metar, airportTypeDisplay: airportTypeDisplay)
+            }
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+
+            Section {
+                HStack(spacing: SpacingToken.space3) {
+                    ActionButton(icon: "location.north.line.fill", label: "Direct To", color: FF.magenta) {
+                        model.directTo(airport)
+                        if !embedded { dismiss() }
                     }
-                }
-
-                // TAF
-                if let taf = taf {
-                    Section {
-                        TAFCard(taf: taf)
-                    } header: {
-                        Text("TAF")
-                            .font(TypographyToken.labelSmall)
-                            .foregroundStyle(ColorToken.textTertiary)
-                            .textCase(.uppercase)
+                    ActionButton(icon: "plus.circle.fill", label: "Ajouter au vol", color: FF.accent) {
+                        model.addWaypoint(airport)
+                        if !embedded { dismiss() }
                     }
-                }
-
-                // Runways
-                if !runways.isEmpty {
-                    Section {
-                        ForEach(runways) { runway in
-                            RunwayRow(runway: runway)
-                        }
-                    } header: {
-                        Text("Runways")
-                            .font(TypographyToken.labelSmall)
-                            .foregroundStyle(ColorToken.textTertiary)
-                            .textCase(.uppercase)
+                    ActionButton(icon: model.isFavorite(airport.id) ? "star.fill" : "star",
+                                 label: model.isFavorite(airport.id) ? "Retirer" : "Favori",
+                                 color: ColorToken.warning) {
+                        model.toggleFavorite(airport.id)
                     }
-                }
-
-                // Frequencies
-                if !frequencies.isEmpty {
-                    Section {
-                        ForEach(frequencies) { freq in
-                            FrequencyRow(frequency: freq)
-                        }
-                    } header: {
-                        Text("Frequencies")
-                            .font(TypographyToken.labelSmall)
-                            .foregroundStyle(ColorToken.textTertiary)
-                            .textCase(.uppercase)
-                    }
-                }
-
-                AirportDocumentsSection(ident: airport.id)
-
-                // Never let an empty list look like "no NOTAMs": without a key it says so and links the FAA site.
-                NOTAMSection(icao: airport.icao ?? airport.id)
-
-                // Services & Info
-                Section {
-                    InfoRow(icon: "building.2", title: "Type", value: airportTypeDisplay)
-                    InfoRow(icon: "mappin", title: "Coordinates", value: coordinateString)
-                    InfoRow(icon: "mountain.2", title: "Elevation", value: airport.elevationFt.map { "\($0) ft" } ?? "—")
-                    if let municipality = airport.municipality {
-                        InfoRow(icon: "building", title: "City", value: municipality)
-                    }
-                } header: {
-                    Text("Information")
-                        .font(TypographyToken.labelSmall)
-                        .foregroundStyle(ColorToken.textTertiary)
-                        .textCase(.uppercase)
                 }
             }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            .background(ColorToken.surfaceBase)
-            .navigationTitle(airport.id)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+            .listRowInsets(EdgeInsets(top: SpacingToken.space2, leading: SpacingToken.insetMedium, bottom: SpacingToken.space2, trailing: SpacingToken.insetMedium))
+            .listRowBackground(Color.clear)
+
+            Section {
+                Picker("Section", selection: $section) {
+                    ForEach(AirportSection.allCases) { Text($0.rawValue).tag($0) }
                 }
+                .pickerStyle(.segmented)
+            }
+            .listRowInsets(EdgeInsets(top: 0, leading: SpacingToken.insetMedium, bottom: 0, trailing: SpacingToken.insetMedium))
+            .listRowBackground(Color.clear)
+
+            switch section {
+            case .info: infoSections
+            case .weather: weatherSections
+            case .runways: runwaySections
+            case .freqs: frequencySections
+            case .notam: NOTAMSection(icao: airport.icao ?? airport.id)
             }
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
+        .listStyle(.insetGrouped)
+        .navigationTitle(airport.id)
+        .navigationBarTitleDisplayMode(.inline)
         .task {
+            model.markViewed(airport.id)
             await weatherService.fetchMETAR(for: airport.id)
             await weatherService.fetchTAF(for: airport.id)
         }
+    }
+
+    @ViewBuilder private var infoSections: some View {
+        Section {
+            InfoRow(icon: "building.2", title: "Type", value: airportTypeDisplay)
+            InfoRow(icon: "mappin", title: "Coordonnées", value: coordinateString)
+            InfoRow(icon: "mountain.2", title: "Élévation", value: airport.elevationFt.map { "\($0) ft" } ?? "—")
+            if let municipality = airport.municipality {
+                InfoRow(icon: "building", title: "Ville", value: municipality)
+            }
+            if let longest = runways.compactMap(\.lengthFt).max() {
+                InfoRow(icon: "road.lanes", title: "Piste la plus longue", value: "\(longest) ft")
+            }
+            if let ctaf = frequencies.first(where: { ["CTAF", "UNIC", "TWR"].contains($0.type.uppercased()) }) {
+                InfoRow(icon: "antenna.radiowaves.left.and.right", title: ctaf.type.uppercased(),
+                        value: ctaf.mhz)
+            }
+        } header: { FFHeader("Aéroport") }
+        if let metar {
+            Section { METARCard(metar: metar) } header: { FFHeader("METAR") }
+        }
+        AirportDocumentsSection(ident: airport.id)
+    }
+
+    @ViewBuilder private var weatherSections: some View {
+        if let metar {
+            Section { METARCard(metar: metar) } header: { FFHeader("METAR") }
+        } else {
+            Section { Text("Pas de METAR pour \(airport.id)").foregroundStyle(.secondary) } header: { FFHeader("METAR") }
+        }
+        if let taf {
+            Section { TAFCard(taf: taf) } header: { FFHeader("TAF") }
+        }
+    }
+
+    @ViewBuilder private var runwaySections: some View {
+        Section {
+            if runways.isEmpty { Text("Aucune donnée").foregroundStyle(.secondary) }
+            ForEach(runways) { RunwayRow(runway: $0) }
+        } header: { FFHeader("Pistes") }
+    }
+
+    @ViewBuilder private var frequencySections: some View {
+        Section {
+            if frequencies.isEmpty { Text("Aucune donnée").foregroundStyle(.secondary) }
+            ForEach(frequencies) { FrequencyRow(frequency: $0) }
+        } header: { FFHeader("Fréquences") }
     }
 
     private var airportTypeDisplay: String {

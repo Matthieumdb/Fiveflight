@@ -489,6 +489,39 @@ final class FiveflightTests: XCTestCase {
         XCTAssertEqual(w?.direction, 0)                     // vector average, not 180
     }
 
+    /// The FD "FOR USE" window is read, and the navlog picks the product covering each leg's time.
+    func testNavlogUsesWindsForDepartureTime() throws {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let now = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 11, day: 3, hour: 13)))
+        let w = try XCTUnwrap(WindsAloftParser.forUseWindow("VALID 031800Z   FOR USE 1400-2100Z. TEMPS NEG ABV 24000", now: now))
+        XCTAssertEqual(cal.component(.hour, from: w.from), 14)
+        XCTAssertEqual(w.to.timeIntervalSince(w.from), 7 * 3600)
+        let night = try XCTUnwrap(WindsAloftParser.forUseWindow("VALID 040000Z   FOR USE 2100-0600Z.", now: now))
+        XCTAssertEqual(night.to.timeIntervalSince(night.from), 9 * 3600)
+
+        let level = { (d: Int, s: Int) in [WindsAloftLevel(altitude: 3000, direction: d, speed: s, temperature: nil),
+                                           WindsAloftLevel(altitude: 6000, direction: d, speed: s, temperature: 10)] }
+        let day = WindsAloft(station: "MLB", latitude: 28.1, longitude: -80.65, validTime: "", levels: level(360, 30),
+                             useFrom: w.from, useTo: w.to)
+        let late = WindsAloft(station: "MLB", latitude: 28.1, longitude: -80.65, validTime: "", levels: level(180, 30),
+                              useFrom: night.from, useTo: night.to)
+        // Northbound leg: headwind in the afternoon, tailwind at night.
+        let seg = NavlogSegment(from: "KFPR", to: "KVRB", points: [.init(latitude: 27.5, longitude: -80.37),
+                                                                   .init(latitude: 27.9, longitude: -80.37)])
+        let afternoon = Navlog.build(segments: [seg], tas: 100, altitude: 4500, fuelBurn: 8, winds: [day, late],
+                                     departure: now.addingTimeInterval(2 * 3600), fuelOnBoard: 40)
+        let evening = Navlog.build(segments: [seg], tas: 100, altitude: 4500, fuelBurn: 8, winds: [day, late],
+                                   departure: now.addingTimeInterval(10 * 3600), fuelOnBoard: 40)
+        XCTAssertEqual(afternoon.first?.windDirection, 0)
+        XCTAssertEqual(evening.first?.windDirection, 180)
+        XCTAssertLessThan(try XCTUnwrap(afternoon.first?.groundSpeed), 80)
+        XCTAssertGreaterThan(try XCTUnwrap(evening.first?.groundSpeed), 120)
+        let leg = try XCTUnwrap(afternoon.first)
+        XCTAssertEqual(leg.eta.timeIntervalSince(now.addingTimeInterval(2 * 3600)), leg.minutes * 60, accuracy: 1)
+        XCTAssertEqual(try XCTUnwrap(afternoon.first?.fuelRemaining), 40 - afternoon[0].fuelGallons, accuracy: 0.001)
+    }
+
     /// KFPR → KAPF only crosses the departure and arrival Class D: avoid mode keeps the direct line and says so.
     @MainActor
     func testAvoidKeepsDirectWhenNothingToAvoid() async throws {

@@ -135,6 +135,11 @@ final class WeatherService: ObservableObject {
     @Published var windsAloft: [WindsAloft] = []
     @Published var pireps: [PIREP] = []
     @Published var airsigmets: [AirSigmet] = []
+    /// FD forecasts by period (6, 12, 24 h), for the navlog at the planned departure time.
+    @Published private(set) var windsByPeriod: [Int: [WindsAloft]] = [:]
+    /// Raw advisories, kept so the briefing can pick the G-AIRMET snapshot for the departure time.
+    private var lastSigmets: [AirSigmetResponse] = []
+    private var lastGairmets: [GAirmetResponse] = []
     @Published var isLoading = false
     @Published var error: String?
 
@@ -284,8 +289,41 @@ final class WeatherService: ObservableObject {
         }
         if let text {
             let parsed = WindsAloftParser.parse(text)
-            if !parsed.isEmpty { windsAloft = parsed }
+            if !parsed.isEmpty { windsAloft = parsed; windsByPeriod[6] = parsed }
         }
+    }
+
+    /// FD forecast (6, 12 or 24 h period), cached for 30 min.
+    func fetchWindsAloft(period: Int) async -> [WindsAloft] {
+        if let cached = windsByPeriod[period], !cached.isEmpty,
+           let at = windsFetchedAt[period], Date.now.timeIntervalSince(at) < 1800 { return cached }
+        let fcst = String(format: "%02d", period)
+        guard let url = URL(string: "\(baseURL)/windtemp?region=mia&level=low&fcst=\(fcst)") else { return [] }
+        let text: String? = await fetchWithRetry(url: url) { data in String(decoding: data, as: UTF8.self) }
+        guard let text else { return windsByPeriod[period] ?? [] }
+        let parsed = WindsAloftParser.parse(text)
+        if !parsed.isEmpty {
+            windsByPeriod[period] = parsed
+            windsFetchedAt[period] = .now
+            if period == 6 { windsAloft = parsed }
+        }
+        return parsed.isEmpty ? (windsByPeriod[period] ?? []) : parsed
+    }
+    private var windsFetchedAt: [Int: Date] = [:]
+
+    /// All three FD periods; the navlog then uses, for each leg, the one whose "FOR USE" window covers it.
+    func fetchAllWindPeriods() async -> [WindsAloft] {
+        async let a = fetchWindsAloft(period: 6)
+        async let b = fetchWindsAloft(period: 12)
+        async let c = fetchWindsAloft(period: 24)
+        let (w6, w12, w24) = await (a, b, c)
+        return w6 + w12 + w24
+    }
+
+    /// AIRMET/SIGMET in force at `date` (G-AIRMET snapshot closest to it, SIGMETs valid then).
+    func advisories(at date: Date) -> [AirSigmet] {
+        guard !lastSigmets.isEmpty || !lastGairmets.isEmpty else { return airsigmets }
+        return Self.floridaAdvisories(sigmets: lastSigmets, gairmets: lastGairmets, at: date)
     }
 
     // MARK: - PIREPs
@@ -325,16 +363,30 @@ final class WeatherService: ObservableObject {
         }
         let (s, g) = await (sigmets, gairmets)
         guard s != nil || g != nil else { return }
+        lastSigmets = s ?? []
+        lastGairmets = g ?? []
         airsigmets = Self.floridaAdvisories(sigmets: s ?? [], gairmets: g ?? [])
     }
 
-    /// SIGMETs and current G-AIRMET areas that touch Florida, most severe first.
-    nonisolated static func floridaAdvisories(sigmets: [AirSigmetResponse], gairmets: [GAirmetResponse]) -> [AirSigmet] {
-        let sig = sigmets
+    /// SIGMETs and G-AIRMET areas that touch Florida, most severe first.
+    /// Without `date`: the earliest G-AIRMET snapshot. With it: the snapshot nearest that time, and only SIGMETs valid then.
+    nonisolated static func floridaAdvisories(sigmets: [AirSigmetResponse], gairmets: [GAirmetResponse],
+                                              at date: Date? = nil) -> [AirSigmet] {
+        var sig = sigmets
             .filter { FloridaArea.overlaps($0.coords ?? []) }
             .map { AirSigmet(from: $0) }
-        // G-AIRMETs come as snapshots (+0 h, +3 h, …): keep the earliest snapshot, areas only.
-        let firstHour = gairmets.compactMap(\.forecastHour).min()
+        if let date {
+            sig = sig.filter { $0.validTo.timeIntervalSince1970 <= 0 || ($0.validTo >= date && $0.validFrom <= date.addingTimeInterval(3 * 3600)) }
+        }
+        // G-AIRMETs come as snapshots (+0 h, +3 h, …): keep one snapshot, areas only.
+        let hours = Set(gairmets.compactMap(\.forecastHour))
+        let firstHour: Double?
+        if let date, let base = gairmets.compactMap(\.issueTime).max() {
+            let wanted = date.timeIntervalSince1970 - base
+            firstHour = hours.min { abs($0 * 3600 - wanted) < abs($1 * 3600 - wanted) }
+        } else {
+            firstHour = hours.min()
+        }
         let air = gairmets
             .filter { $0.forecastHour == firstHour && ($0.geometryType ?? "AREA") == "AREA" }
             .filter { FloridaArea.overlaps($0.coords ?? []) }
@@ -644,8 +696,9 @@ enum WindsAloftParser {
                       maxAltitude: Int = 18000) -> [WindsAloft] {
         let lines = text.components(separatedBy: .newlines)
         guard let header = lines.first(where: { $0.hasPrefix("FT") }) else { return [] }
-        let valid = lines.first { $0.hasPrefix("VALID") }?
-            .split(separator: " ").dropFirst().first.map(String.init) ?? ""
+        let validLine = lines.first { $0.hasPrefix("VALID") }
+        let valid = validLine?.split(separator: " ").dropFirst().first.map(String.init) ?? ""
+        let window = validLine.flatMap { forUseWindow($0) }
 
         // Each altitude column ends where its header label ends (fields are right-aligned).
         var columns: [(altitude: Int, end: Int)] = []
@@ -680,9 +733,43 @@ enum WindsAloftParser {
             }
             guard !levels.isEmpty else { continue }
             result.append(WindsAloft(station: id, latitude: pos.0, longitude: pos.1,
-                                     validTime: valid, levels: levels))
+                                     validTime: valid, levels: levels,
+                                     useFrom: window?.from, useTo: window?.to))
         }
         return result
+    }
+
+    /// "VALID 031800Z   FOR USE 1400-2100Z" → the use window as dates (UTC), anchored on the VALID day
+    /// in the month closest to `now`.
+    static func forUseWindow(_ line: String, now: Date = .now) -> (from: Date, to: Date)? {
+        let parts = line.split(separator: " ").map(String.init)
+        guard let v = parts.dropFirst().first, v.count >= 6,
+              let day = Int(v.prefix(2)), let hour = Int(v.dropFirst(2).prefix(2)),
+              let useIdx = parts.firstIndex(of: "USE"), useIdx + 1 < parts.count else { return nil }
+        let span = parts[useIdx + 1].trimmingCharacters(in: CharacterSet(charactersIn: "Z."))
+        let hh = span.split(separator: "-").compactMap { Int($0) }
+        guard hh.count == 2 else { return nil }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        // VALID date: this day number in the previous, current or next month, whichever is nearest now.
+        let candidates: [Date] = (-1...1).compactMap { offset in
+            guard let month = cal.date(byAdding: .month, value: offset, to: now) else { return nil }
+            var c = cal.dateComponents([.year, .month], from: month)
+            c.day = day; c.hour = hour; c.minute = 0
+            guard let d = cal.date(from: c), cal.component(.day, from: d) == day else { return nil }
+            return d
+        }
+        guard let validDate = candidates.min(by: { abs($0.timeIntervalSince(now)) < abs($1.timeIntervalSince(now)) }) else { return nil }
+        func at(_ hhmm: Int, near ref: Date) -> Date {
+            var c = cal.dateComponents([.year, .month, .day], from: ref)
+            c.hour = hhmm / 100; c.minute = hhmm % 100
+            return cal.date(from: c) ?? ref
+        }
+        var from = at(hh[0], near: validDate)
+        if from > validDate { from = from.addingTimeInterval(-86400) }
+        var to = at(hh[1], near: from)
+        if to <= from { to = to.addingTimeInterval(86400) }
+        return (from, to)
     }
 
     /// "1311+15" → 130° 11 kt +15 °C; "9900" → light and variable; "7315" → 230° 115 kt;

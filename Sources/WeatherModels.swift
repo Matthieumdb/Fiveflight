@@ -333,6 +333,8 @@ struct AirSigmet: Identifiable, Codable, Hashable {
     let rawText: String
     let issuingOffice: String
     let sequence: String
+    /// Polygon of the advisory (for the route briefing); nil when unknown.
+    var area: [Coordinate2D]?
 
     init(type: String, hazard: String, severity: String, validFrom: Date, validTo: Date,
          rawText: String, issuingOffice: String, sequence: String) {
@@ -357,6 +359,15 @@ struct AirSigmet: Identifiable, Codable, Hashable {
         self.rawText = response.rawAirSigmet ?? ""
         self.issuingOffice = response.icaoId ?? ""
         self.sequence = response.seriesId ?? ""
+        self.area = Self.polygon(response.coords)
+    }
+
+    static func polygon(_ coords: [AirSigmetResponse.Coord]?) -> [Coordinate2D]? {
+        let pts = (coords ?? []).compactMap { c -> Coordinate2D? in
+            guard let la = c.lat.number, let lo = c.lon.number else { return nil }
+            return Coordinate2D(CLLocationCoordinate2D(latitude: la, longitude: lo))
+        }
+        return pts.count >= 3 ? pts : nil
     }
 
     /// A G-AIRMET area (IFR, MT_OBSC, TURB-LO, ICE, SFC_WND, LLWS…).
@@ -372,6 +383,7 @@ struct AirSigmet: Identifiable, Codable, Hashable {
             + (g.forecastHour.map { " · +\(Int($0)) h" } ?? "")
         self.issuingOffice = "KKCI"
         self.sequence = g.tag ?? ""
+        self.area = Self.polygon(g.coords)
     }
 
     var isConvective: Bool {

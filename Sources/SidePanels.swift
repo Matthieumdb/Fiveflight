@@ -647,7 +647,9 @@ struct FlightPlanEditorSheet: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var routingEngine: RoutingEngine
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: AirportStore
     @State private var searchQuery = ""
+    @State private var showSearch = false
 
     var body: some View {
         NavigationStack {
@@ -673,7 +675,7 @@ struct FlightPlanEditorSheet: View {
 
                 Section {
                     Button {
-                        // Would show airport search
+                        showSearch = true
                     } label: {
                         Label("Add Waypoint", systemImage: "plus.circle.fill")
                             .font(TypographyToken.labelMedium)
@@ -683,6 +685,11 @@ struct FlightPlanEditorSheet: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .sheet(isPresented: $showSearch) {
+                SearchSheet(nearest: store.nearest(to: model.userLocation ?? AppModel.homeCoordinate, limit: 20)) {
+                    model.addWaypoint($0)
+                }
+            }
             .navigationTitle("Edit Flight Plan")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

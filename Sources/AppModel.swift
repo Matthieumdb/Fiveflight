@@ -24,6 +24,8 @@ struct SavedPlan: Codable, Identifiable, Hashable {
     var id = UUID()
     var name: String
     var waypointIDs: [String]
+    /// Full waypoints (1.0.45+), so navaids, fixes and user points come back exactly.
+    var points: [Airport]?
 }
 
 struct AircraftProfile: Codable, Identifiable, Hashable {
@@ -237,6 +239,79 @@ final class AppModel: ObservableObject {
 
     static let gpsWaypointID = "GPS"
 
+    // MARK: User waypoints & route editing on the map
+
+    /// Points created by a long press on the map (persisted, reusable in other plans).
+    @Published var userWaypoints: [Airport] = [] {
+        didSet { defaults.set(try? JSONEncoder().encode(userWaypoints), forKey: "userWaypoints") }
+    }
+
+    /// New user point "USR<n>" at `coordinate`.
+    func makeUserWaypoint(at coordinate: CLLocationCoordinate2D, name: String? = nil) -> Airport {
+        let used = Set(userWaypoints.map(\.id) + waypoints.map(\.id))
+        var n = 1
+        while used.contains("USR\(n)") { n += 1 }
+        let a = Airport(id: "USR\(n)", name: name ?? "Point perso", type: "user", icao: nil, iata: nil,
+                        municipality: nil, elevationFt: nil, coordinate: coordinate)
+        userWaypoints.append(a)
+        return a
+    }
+
+    func deleteUserWaypoint(_ id: String) {
+        userWaypoints.removeAll { $0.id == id }
+    }
+
+    /// Inserts `point` where it lengthens the route the least (rubber-band style); appends when the
+    /// plan has fewer than two points.
+    func insertIntoRoute(_ point: Airport) {
+        guard !waypoints.contains(where: { $0.id == point.id }) else { return }
+        guard waypoints.count >= 2 else { waypoints.append(point); Haptics.tap(); return }
+        var best = waypoints.count, bestCost = Double.infinity
+        for i in 1..<waypoints.count {
+            let a = waypoints[i - 1], b = waypoints[i]
+            let cost = a.distanceNM(to: point.coordinate) + point.distanceNM(to: b.coordinate) - a.distanceNM(to: b.coordinate)
+            if cost < bestCost { bestCost = cost; best = i }
+        }
+        // Past the destination costs only the extra leg: compare with appending.
+        if let last = waypoints.last, last.distanceNM(to: point.coordinate) < bestCost { best = waypoints.count }
+        waypoints.insert(point, at: best)
+        Haptics.tap()
+    }
+
+    /// A waypoint dragged on the map becomes a user point at the drop location (a user point just moves).
+    func moveWaypoint(id: String, to coordinate: CLLocationCoordinate2D) {
+        guard let i = waypoints.firstIndex(where: { $0.id == id }) else { return }
+        let old = waypoints[i]
+        let moved: Airport
+        if old.type == "user" {
+            moved = Airport(id: old.id, name: old.name, type: "user", icao: nil, iata: nil, municipality: nil,
+                            elevationFt: nil, coordinate: coordinate)
+            if let u = userWaypoints.firstIndex(where: { $0.id == old.id }) { userWaypoints[u] = moved }
+        } else {
+            moved = makeUserWaypoint(at: coordinate, name: "Déplacé de \(old.id)")
+        }
+        waypoints[i] = moved
+        Haptics.tap()
+    }
+
+    func removeWaypoint(id: String) {
+        waypoints.removeAll { $0.id == id }
+        Haptics.tap()
+    }
+
+    /// Airport, navaid, fix or user point for an ident.
+    func resolveWaypoint(_ id: String, store: AirportStore) -> Airport? {
+        store.airport(id) ?? userWaypoints.first { $0.id == id } ?? NavaidStore.find(id)
+    }
+
+    // MARK: Cockpit alerts
+
+    /// Speak new cockpit alerts (airspace, obstacle, traffic, fuel, glide) out loud.
+    @Published var voiceAlerts = true { didSet { defaults.set(voiceAlerts, forKey: "voiceAlerts") } }
+    /// Best-glide ratio of the aircraft (C172 ≈ 9:1), for the glide ring.
+    @Published var glideRatio = 9.0 { didSet { defaults.set(glideRatio, forKey: "glideRatio") } }
+    @Published var showGlideRing = true { didSet { defaults.set(showGlideRing, forKey: "showGlideRing") } }
+
     func clearFlightPlan() {
         waypoints.removeAll()
         legs.removeAll()
@@ -281,7 +356,8 @@ final class AppModel: ObservableObject {
     func savePlan() {
         let ids = waypoints.map(\.id).filter { $0 != Self.gpsWaypointID }
         guard ids.count >= 2 else { return }
-        savedPlans.insert(SavedPlan(name: ids.joined(separator: " → "), waypointIDs: ids), at: 0)
+        let points = waypoints.filter { $0.id != Self.gpsWaypointID }
+        savedPlans.insert(SavedPlan(name: ids.joined(separator: " → "), waypointIDs: ids, points: points), at: 0)
         Haptics.success()
     }
 
@@ -318,6 +394,11 @@ final class AppModel: ObservableObject {
         let selectedID = defaults.string(forKey: "selectedAircraft")
         if let d = defaults.data(forKey: "savedPlans"),
            let v = try? JSONDecoder().decode([SavedPlan].self, from: d) { savedPlans = v }
+        if let d = defaults.data(forKey: "userWaypoints"),
+           let v = try? JSONDecoder().decode([Airport].self, from: d) { userWaypoints = v }
+        voiceAlerts = defaults.object(forKey: "voiceAlerts") as? Bool ?? true
+        if defaults.object(forKey: "glideRatio") != nil { glideRatio = defaults.double(forKey: "glideRatio") }
+        showGlideRing = defaults.object(forKey: "showGlideRing") as? Bool ?? true
         medicalExpiry = defaults.double(forKey: "medicalExpiry")
         flightReviewDate = defaults.double(forKey: "flightReviewDate")
         selectedAircraft = aircraftProfiles.first { $0.id.uuidString == selectedID }

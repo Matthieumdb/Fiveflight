@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreLocation
+import AVFoundation
 
 /// In-flight state from the GPS: active leg (auto-sequenced), flight time, fuel left and alerts.
 @MainActor
@@ -20,9 +21,74 @@ final class FlightMonitor: ObservableObject {
 
     private var lastPlan: [String] = []
 
+    /// Glide range from the current height above the ground (NM), nil on the ground.
+    @Published private(set) var glideRangeNM: Double?
+    /// Closest landable airport and whether it is inside the glide range.
+    @Published private(set) var nearestLandable: (airport: Airport, distanceNM: Double)?
+    private var lastGlideCheck = Date.distantPast
+
+    private let speech = AVSpeechSynthesizer()
+    private var spokenAt: [String: Date] = [:]
+    private var audioReady = false
+
+    /// Still-air glide distance: height above ground × glide ratio.
+    nonisolated static func glideRange(altitudeFt: Double, groundFt: Double, ratio: Double) -> Double {
+        max(0, altitudeFt - groundFt) * ratio / 6076.12
+    }
+
+    /// Updates the glide ring (every 5 s; the nearest-airport search scans the whole database).
+    private func updateGlide(position: CLLocationCoordinate2D, altitudeFt: Int, airborne: Bool,
+                             model: AppModel, store: AirportStore?) -> String? {
+        guard airborne, let store else { glideRangeNM = nil; nearestLandable = nil; return nil }
+        if Date.now.timeIntervalSince(lastGlideCheck) > 5 || nearestLandable == nil {
+            lastGlideCheck = .now
+            if let a = store.nearest(to: position, limit: 1,
+                                     matching: ["large_airport", "medium_airport", "small_airport"]).first {
+                nearestLandable = (a, a.distanceNM(to: position))
+            }
+        }
+        let ground = Double(nearestLandable?.airport.elevationFt ?? 0)
+        let range = Self.glideRange(altitudeFt: Double(altitudeFt), groundFt: ground, ratio: model.glideRatio)
+        glideRangeNM = range
+        if let n = nearestLandable, n.distanceNM > range {
+            return String(format: "Hors plané : %@ à %.0f NM, plané %.1f NM", n.airport.id, n.distanceNM, range)
+        }
+        return nil
+    }
+
+    /// Speaks alerts that are new (same kind not spoken in the last 2 minutes).
+    private func announce(_ found: [String], enabled: Bool) {
+        guard enabled else { return }
+        for alert in found {
+            let kind = alert.split(separator: " ").prefix(2).joined(separator: " ")
+            if let t = spokenAt[kind], Date.now.timeIntervalSince(t) < 120 { continue }
+            spokenAt[kind] = .now
+            if !audioReady {
+                try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .voicePrompt,
+                                                                 options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
+                try? AVAudioSession.sharedInstance().setActive(true)
+                audioReady = true
+            }
+            let spoken = alert
+                .replacingOccurrences(of: " NM", with: " nautiques")
+                .replacingOccurrences(of: " ft", with: " pieds")
+                .replacingOccurrences(of: "gal", with: "gallons")
+            let u = AVSpeechUtterance(string: spoken)
+            u.voice = AVSpeechSynthesisVoice(language: "fr-FR")
+            u.rate = 0.52
+            speech.speak(u)
+        }
+    }
+
+    /// Spoken check of the voice alerts from Réglages.
+    func testVoice() {
+        spokenAt["Test"] = nil
+        announce(["Test alerte vocale Fiveflight"], enabled: true)
+    }
+
     /// Called on each GPS fix.
     func update(position: CLLocationCoordinate2D, groundSpeed: Double, course: Double, altitudeFt: Int,
-                model: AppModel, airspaces: [Airspace]) {
+                model: AppModel, airspaces: [Airspace], store: AirportStore? = nil) {
         let ids = model.waypoints.map(\.id)
         if ids != lastPlan { lastPlan = ids; activeIndex = 1 }
 
@@ -73,8 +139,12 @@ final class FlightMonitor: ObservableObject {
                 found.append(String(format: "Carburant : %.1f gal restants, réserve entamée à l'arrivée", left))
             }
         }
+        let glide = updateGlide(position: position, altitudeFt: altitudeFt,
+                                airborne: groundSpeed > Self.airborneSpeed, model: model, store: store)
+        if model.showGlideRing, let glide { found.append(glide) }
         if found != alerts {
             if found.count > alerts.count { Haptics.warning() }
+            announce(found.filter { !alerts.contains($0) && !$0.hasPrefix("Hors plané") }, enabled: model.voiceAlerts)
             alerts = found
         }
     }

@@ -67,11 +67,12 @@ struct AirspaceStyle {
 }
 
 final class AirportAnnotation: NSObject, MKAnnotation {
-    enum Role { case nearest, waypoint }
+    enum Role { case nearest, waypoint, navaid }
     let airport: Airport
     let role: Role
-    init(_ airport: Airport, role: Role) { self.airport = airport; self.role = role }
-    var coordinate: CLLocationCoordinate2D { airport.coordinate }
+    /// Settable so a plan waypoint can be dragged on the map.
+    @objc dynamic var coordinate: CLLocationCoordinate2D
+    init(_ airport: Airport, role: Role) { self.airport = airport; self.role = role; coordinate = airport.coordinate }
     var title: String? { airport.iata ?? airport.id }
     var subtitle: String? { airport.name }
 }
@@ -115,6 +116,14 @@ struct VFRMapView: UIViewRepresentable {
     var weatherLayers: [String] = []
     /// ADS-B targets from a GDL 90 receiver.
     var traffic: [TrafficTarget] = []
+    /// VOR/NDB/fixes in view (zoomed in only).
+    var navaids: [Airport] = []
+    /// Glide ring around the aircraft (still air), hidden when nil.
+    var glideRadiusNM: Double?
+    /// Long press on the map: create a user waypoint there.
+    var onLongPress: (CLLocationCoordinate2D) -> Void = { _ in }
+    /// A plan waypoint was dragged to a new place.
+    var onMoveWaypoint: (String, CLLocationCoordinate2D) -> Void = { _, _ in }
 
     static let radarFrames = ["-m50m", "-m40m", "-m30m", "-m20m", "-m10m", ""]
 
@@ -143,6 +152,11 @@ struct VFRMapView: UIViewRepresentable {
         tracking.layer.cornerRadius = 8
         tracking.layer.masksToBounds = true
         mv.addSubview(tracking)
+
+        let press = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.longPress(_:)))
+        press.minimumPressDuration = 0.5
+        press.delegate = context.coordinator
+        mv.addGestureRecognizer(press)
         NSLayoutConstraint.activate([
             tracking.trailingAnchor.constraint(equalTo: mv.safeAreaLayoutGuide.trailingAnchor, constant: -12),
             tracking.bottomAnchor.constraint(equalTo: mv.safeAreaLayoutGuide.bottomAnchor, constant: -16)
@@ -158,9 +172,10 @@ struct VFRMapView: UIViewRepresentable {
         c.updateRoute(on: mv, coordinates: route.count >= 2 ? route : waypoints.map(\.coordinate))
         c.updateTrack(on: mv, coordinates: track)
         c.updateUserCircles(on: mv, userCoord: waypoints.isEmpty ? userCoord : nil)
+        c.updateGlideRing(on: mv, center: userCoord, radiusNM: glideRadiusNM)
         c.updateAirspacePolygons(on: mv, airspaces: airspaces, showAirspace: showAirspace, showTFRs: showTFRs,
                                  colorFor: airspaceColor, isTFR: airspaceTypeIsTFR)
-        c.updateAnnotations(on: mv, nearest: nearest, waypoints: waypoints)
+        c.updateAnnotations(on: mv, nearest: nearest, waypoints: waypoints, navaids: navaids)
         c.updateTraffic(on: mv, traffic: traffic)
         c.updateCategoryColors(on: mv, categories: categories)
 
@@ -204,7 +219,7 @@ struct VFRMapView: UIViewRepresentable {
         return false
     }
 
-    final class Coordinator: NSObject, MKMapViewDelegate {
+    final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         var parent: VFRMapView
         var lastVersion = -1
         private var sectionalOverlay: SectionalTileOverlay?
@@ -221,8 +236,44 @@ struct VFRMapView: UIViewRepresentable {
         private var airspaceKey = ""
         private var annotationsByKey: [String: AirportAnnotation] = [:]
         private var lastCategories: [String: String] = [:]
+        private var glideCircle: MKCircle?
 
         init(_ parent: VFRMapView) { self.parent = parent }
+
+        func gestureRecognizer(_ g: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+
+        @objc func longPress(_ g: UILongPressGestureRecognizer) {
+            guard g.state == .began, let mv = g.view as? MKMapView else { return }
+            let point = g.location(in: mv)
+            // A long press on a marker is MapKit's drag, not a new point.
+            var hit = mv.hitTest(point, with: nil)
+            while let v = hit {
+                if v is MKAnnotationView { return }
+                hit = v.superview
+            }
+            let coord = mv.convert(point, toCoordinateFrom: mv)
+            Haptics.tap()
+            parent.onLongPress(coord)
+        }
+
+        /// Green still-air glide ring, redrawn when the aircraft moved 200 m or the radius changed 0.2 NM.
+        func updateGlideRing(on mv: MKMapView, center: CLLocationCoordinate2D?, radiusNM: Double?) {
+            if let old = glideCircle {
+                if let center, let radiusNM, radiusNM > 0.1,
+                   abs(old.radius - radiusNM * 1852) < 370,
+                   CLLocation(latitude: old.coordinate.latitude, longitude: old.coordinate.longitude)
+                       .distance(from: CLLocation(latitude: center.latitude, longitude: center.longitude)) < 200 {
+                    return
+                }
+                mv.removeOverlay(old)
+                glideCircle = nil
+            }
+            guard let center, let radiusNM, radiusNM > 0.1 else { return }
+            let circle = MKCircle(center: center, radius: radiusNM * 1852)
+            glideCircle = circle
+            mv.addOverlay(circle, level: .aboveLabels)
+        }
 
         func updateTileOverlays(on mv: MKMapView, showSectional: Bool, weatherLayers: [String], chart: String, satellite: Bool) {
             let chartKey = "\(chart)|\(satellite)"
@@ -333,11 +384,15 @@ struct VFRMapView: UIViewRepresentable {
         }
 
         /// Adds/removes only the annotations that changed (keyed by role + airport id).
-        func updateAnnotations(on mv: MKMapView, nearest: [Airport], waypoints: [Airport]) {
+        func updateAnnotations(on mv: MKMapView, nearest: [Airport], waypoints: [Airport], navaids: [Airport] = []) {
             let waypointIds = Set(waypoints.map(\.id))
             var wanted: [String: (Airport, AirportAnnotation.Role)] = [:]
             for a in nearest where !waypointIds.contains(a.id) { wanted["n:\(a.id)"] = (a, .nearest) }
-            for a in waypoints { wanted["w:\(a.id)"] = (a, .waypoint) }
+            for a in navaids where !waypointIds.contains(a.id) { wanted["v:\(a.type):\(a.id)"] = (a, .navaid) }
+            // Keyed by position too, so a moved user point is re-added at its new place.
+            for a in waypoints {
+                wanted[String(format: "w:%@:%.5f,%.5f", a.id, a.coordinate.latitude, a.coordinate.longitude)] = (a, .waypoint)
+            }
 
             let stale = annotationsByKey.filter { wanted[$0.key] == nil }
             if !stale.isEmpty {
@@ -382,9 +437,15 @@ struct VFRMapView: UIViewRepresentable {
         private func style(_ v: MKMarkerAnnotationView, for a: AirportAnnotation) {
             switch a.role {
             case .waypoint:
-                v.markerTintColor = .systemGreen
-                v.glyphImage = UIImage(systemName: "mappin")
+                v.markerTintColor = a.airport.type == "user" ? .systemPurple : .systemGreen
+                v.glyphImage = UIImage(systemName: a.airport.isAirport ? "airplane" : a.airport.symbolName)
                 v.displayPriority = .required
+                v.isDraggable = true
+            case .navaid:
+                v.markerTintColor = a.airport.type == "vor" ? .systemIndigo
+                    : a.airport.type == "vfr_wp" ? .systemOrange : .systemGray
+                v.glyphImage = UIImage(systemName: a.airport.symbolName)
+                v.displayPriority = a.airport.type == "vor" ? .defaultHigh : .defaultLow
             case .nearest:
                 let category = parent.categories[a.airport.id]
                 v.markerTintColor = Self.categoryColor(category)
@@ -393,6 +454,7 @@ struct VFRMapView: UIViewRepresentable {
                 v.displayPriority = a.airport.type == "large_airport" || a.airport.type == "medium_airport"
                     ? .defaultHigh : .defaultLow
             }
+            if a.role != .waypoint { v.isDraggable = false }
         }
 
         func mapView(_ mv: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
@@ -407,6 +469,13 @@ struct VFRMapView: UIViewRepresentable {
                 r.strokeColor = .systemBlue
                 r.lineWidth = 3
                 r.lineDashPattern = [8, 4]
+                return r
+            }
+            if let circle = overlay as? MKCircle, circle === glideCircle {
+                let r = MKCircleRenderer(circle: circle)
+                r.strokeColor = UIColor.systemGreen.withAlphaComponent(0.9)
+                r.fillColor = UIColor.systemGreen.withAlphaComponent(0.06)
+                r.lineWidth = 2.5
                 return r
             }
             if let circle = overlay as? MKCircle {
@@ -463,6 +532,15 @@ struct VFRMapView: UIViewRepresentable {
             guard let a = view.annotation as? AirportAnnotation else { return }   // traffic shows its callout
             mv.deselectAnnotation(a, animated: false)
             parent.onSelect(a.airport)
+        }
+
+        func mapView(_ mv: MKMapView, annotationView view: MKAnnotationView,
+                     didChange newState: MKAnnotationView.DragState, fromOldState oldState: MKAnnotationView.DragState) {
+            guard newState == .ending || newState == .canceling else { return }
+            view.dragState = .none
+            guard newState == .ending, let a = view.annotation as? AirportAnnotation, a.role == .waypoint else { return }
+            let id = a.airport.id, coord = a.coordinate
+            DispatchQueue.main.async { [weak self] in self?.parent.onMoveWaypoint(id, coord) }
         }
 
         func mapView(_ mv: MKMapView, regionDidChangeAnimated animated: Bool) {

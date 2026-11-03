@@ -28,7 +28,13 @@ struct SearchSheet: View {
         }
         // ICAO/IATA exact-ish matches first.
         let first = { (a: Airport) in a.id.uppercased().hasPrefix(q) || a.iata?.uppercased() == q }
-        return out.filter(first) + out.filter { !first($0) }
+        let airports = out.filter(first) + out.filter { !first($0) }
+        // Building a plan: VOR, NDB, fixes, VFR waypoints and user points are valid waypoints too.
+        guard onSelect != nil else { return airports }
+        let user = model.userWaypoints.filter { $0.id.contains(q) || $0.name.uppercased().contains(q) }
+        let nav = NavaidStore.search(q, limit: 20)
+        let exact = nav.filter { $0.id == q }
+        return exact + airports + user + nav.filter { $0.id != q }
     }
 
     var body: some View {
@@ -59,7 +65,7 @@ struct SearchSheet: View {
             }
             .navigationTitle("Recherche")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Code OACI, IATA ou nom")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: onSelect == nil ? "Code OACI, IATA ou nom" : "Aéroport, VOR, fix, point VFR…")
             .textInputAutocapitalization(.characters)
             .overlay {
                 if !query.isEmpty && results.isEmpty { ContentUnavailableView.search(text: query) }
@@ -69,14 +75,17 @@ struct SearchSheet: View {
 
     private func airportRow(_ a: Airport) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: "airplane.circle.fill")
-                .foregroundStyle(Theme.accent).font(.title3)
+            Image(systemName: a.symbolName)
+                .foregroundStyle(a.isAirport ? Theme.accent : Color.indigo).font(.title3)
+                .frame(width: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(a.id).font(.headline.monospaced())
                 Text(a.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
-            if let m = a.municipality {
+            if !a.isAirport {
+                Text(a.kindLabel).font(.caption).foregroundStyle(.tertiary)
+            } else if let m = a.municipality {
                 Text(m).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
             }
         }

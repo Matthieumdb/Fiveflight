@@ -6,6 +6,8 @@ struct FuelEntry: Codable, Hashable {
     let fuel: String        // 100LL, Jet A, MOGAS, UL94…
     let service: String     // FS (full service), SS (self service), or "Saisie"
     let price: Double       // USD per gallon
+    /// FBO selling it (AirNav lists one price table per FBO).
+    var fbo: String? = nil
 }
 
 struct FuelPrice: Codable, Hashable {
@@ -75,9 +77,12 @@ final class FuelPriceService: ObservableObject {
     nonisolated static func parseAirNav(_ html: String) -> (entries: [FuelEntry], updated: String?) {
         var text = html
         let replacements: [(String, String)] = [
+            ("(?is)<script.*?</script>", ""), ("(?is)<style.*?</style>", ""),
+            // FBO links (/airport/KVRB/NAME) start a new FBO; their logo's alt text is the FBO name.
+            ("(?i)<a [^>]*href=\"/airport/[A-Z0-9]+/[^\"]+\"[^>]*>", "\n§FBO§"),
+            ("(?i)<img[^>]*alt=\"([^\"]*)\"[^>]*>", "$1"),
             ("(?i)</t[dh]\\s*>", "\t"), ("(?i)<tr[^>]*>", "\n"), ("(?i)</tr\\s*>", "\n"),
-            ("(?is)<script.*?</script>", ""), ("(?is)<style.*?</style>", ""), ("<[^>]+>", ""),
-            ("&nbsp;", " "), ("&amp;", "&"),
+            ("<[^>]+>", ""), ("&nbsp;", " "), ("&amp;", "&"),
         ]
         for (pattern, with) in replacements {
             text = text.replacingOccurrences(of: pattern, with: with, options: .regularExpression)
@@ -86,32 +91,56 @@ final class FuelPriceService: ObservableObject {
         func fuelName(_ cell: String) -> String? {
             let c = cell.trimmingCharacters(in: .whitespaces)
             return fuels.first { c.caseInsensitiveCompare($0) == .orderedSame }
-                ?? (c.uppercased().hasPrefix("JET A") ? "Jet A" : nil)
+                ?? (c.uppercased().hasPrefix("JET A") || c.uppercased() == "JET-A" ? "Jet A" : nil)
+        }
+        func isService(_ cell: String) -> Bool {
+            let c = cell.uppercased()
+            return ["FS", "SS", "AS"].contains(c) || c.hasPrefix("FULL") || c.hasPrefix("SELF") || c.hasPrefix("ASSIST")
         }
         var header: [String?]?
+        var fbo: String?
         var out: [FuelEntry] = []
         for line in text.components(separatedBy: "\n") {
+            if line.contains("§FBO§") {
+                let name = line.replacingOccurrences(of: "§FBO§", with: "")
+                    .components(separatedBy: "\t").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .first { !$0.isEmpty } ?? ""
+                if name.count >= 3, name.count <= 40, !name.contains("@"), !name.lowercased().hasPrefix("www"),
+                   !name.lowercased().contains("web site"), !name.lowercased().contains("email") {
+                    fbo = name
+                }
+                continue
+            }
             let cells = line.components(separatedBy: "\t").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            guard cells.contains(where: { !$0.isEmpty }) else { continue }
             let names = cells.map(fuelName)
-            let hasPrice = line.contains("$")
-            if !hasPrice, names.contains(where: { $0 != nil }) {
+            let priceCells = cells.filter { $0.range(of: #"^\$\s*\d{1,2}\.\d{2}"#, options: .regularExpression) != nil }
+            if priceCells.isEmpty, names.contains(where: { $0 != nil }) {
                 header = names
                 continue
             }
-            guard hasPrice, let h = header else { continue }
-            let service = cells.first { !$0.isEmpty && !$0.contains("$") } ?? ""
+            // A price row sits right under its fuel header and starts with FS / SS: anything else
+            // (parking, landing fees, "Fuel available" lines) is not a fuel price.
+            guard let h = header, !priceCells.isEmpty,
+                  let service = cells.first(where: { !$0.isEmpty }), isService(service) else {
+                header = nil
+                continue
+            }
             for (i, cell) in cells.enumerated() where i < h.count {
                 guard let fuel = h[i],
-                      let r = cell.range(of: #"\$\s*(\d{1,2}\.\d{2})"#, options: .regularExpression),
-                      let price = Double(cell[r].filter { $0.isNumber || $0 == "." }) else { continue }
-                out.append(FuelEntry(fuel: fuel, service: String(service.prefix(12)), price: price))
+                      cell.range(of: #"^\$\s*\d{1,2}\.\d{2}"#, options: .regularExpression) != nil,
+                      let price = Double(cell.filter { $0.isNumber || $0 == "." }) else { continue }
+                out.append(FuelEntry(fuel: fuel, service: String(service.prefix(12)), price: price, fbo: fbo))
             }
         }
         var updated: String?
         if let r = text.range(of: #"Updated\s+\d{1,2}-[A-Za-z]{3}-\d{4}"#, options: .regularExpression) {
             updated = String(text[r]).replacingOccurrences(of: "Updated", with: "").trimmingCharacters(in: .whitespaces)
         }
-        return (Array(Set(out)).sorted { ($0.fuel, $0.price) < ($1.fuel, $1.price) }, updated)
+        let order = ["100LL": 0, "UL94": 1, "G100UL": 2, "MOGAS": 3, "Jet A": 4, "Jet A+": 5]
+        return (Array(Set(out)).sorted {
+            (order[$0.fuel] ?? 9, $0.fbo ?? "", $0.price) < (order[$1.fuel] ?? 9, $1.fbo ?? "", $1.price)
+        }, updated)
     }
 }
 
@@ -135,10 +164,14 @@ struct FuelPriceSection: View {
         Section {
             if let price {
                 ForEach(price.entries, id: \.self) { e in
-                    LabeledContent("\(e.fuel) · \(serviceName(e.service))", value: String(format: "$%.2f", e.price))
-                        .monospacedDigit()
+                    LabeledContent {
+                        Text(String(format: "$%.2f", e.price)).monospacedDigit()
+                    } label: {
+                        Text("\(e.fuel) · \(serviceName(e.service))")
+                        if let fbo = e.fbo { Text(fbo).font(.caption).foregroundStyle(ColorToken.textTertiary) }
+                    }
                 }
-                Text("\(price.source)\(price.updated.map { " · mis à jour \($0)" } ?? "") · relevé \(price.fetched.formatted(date: .abbreviated, time: .shortened))")
+                Text("\(price.source)\(price.updated.map { " · mis à jour \($0)" } ?? "") · relevé \(price.fetched.frDateTime)")
                     .font(.caption).foregroundStyle(ColorToken.textTertiary)
             } else if loading {
                 HStack { ProgressView(); Text("Recherche des prix…").foregroundStyle(ColorToken.textTertiary) }

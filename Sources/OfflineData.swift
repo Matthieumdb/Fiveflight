@@ -35,7 +35,10 @@ enum NetCache {
         var req = request
         if req.timeoutInterval > 25 { req.timeoutInterval = 25 }
         do {
-            let (data, response) = try await URLSession.shared.data(for: req)
+            // Unstructured task: a SwiftUI view that re-renders or a pull-to-refresh that ends must not
+            // cancel the download half-way (URLError -999), which left lists such as PIREPs empty.
+            let sent = req
+            let (data, response) = try await Task { try await URLSession.shared.data(for: sent) }.value
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 throw URLError(.badServerResponse)
             }
@@ -46,12 +49,25 @@ enum NetCache {
             await OfflineState.shared.online()
             return Result(data: data, cachedAt: nil)
         } catch {
+            // Only a real loss of network means "offline"; a cancelled request or a server error does not.
+            let offline = isNetworkLoss(error)
             if let hit = cached(request) {
-                await OfflineState.shared.servedFromCache(hit.cachedAt ?? .distantPast)
+                if offline { await OfflineState.shared.servedFromCache(hit.cachedAt ?? .distantPast) }
                 return hit
             }
-            await OfflineState.shared.failed()
+            if offline { await OfflineState.shared.failed() }
             throw error
+        }
+    }
+
+    static func isNetworkLoss(_ error: Error) -> Bool {
+        guard let e = error as? URLError else { return false }
+        switch e.code {
+        case .notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotFindHost, .cannotConnectToHost,
+             .dnsLookupFailed, .dataNotAllowed, .internationalRoamingOff, .callIsActive:
+            return true
+        default:
+            return false
         }
     }
 

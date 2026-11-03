@@ -91,7 +91,7 @@ struct OfflineChartsSection: View {
     var body: some View {
         Section {
             if let since = offline.showingCacheFrom {
-                Label(since == .distantPast ? "Hors ligne" : "Hors ligne · données du \(since.formatted(date: .abbreviated, time: .shortened))",
+                Label(since == .distantPast ? "Hors ligne" : "Hors ligne · données du \(since.frDateTime)",
                       systemImage: "wifi.slash")
                     .foregroundStyle(ColorToken.warning)
             }
@@ -115,7 +115,7 @@ struct OfflineChartsSection: View {
                 if count > 20_000 { Text("Zoome un peu : zone trop grande.").font(.caption).foregroundStyle(.secondary) }
             }
             if let report = preparer.lastReport, let at = preparer.preparedAt {
-                Text("\(report) (\(at.formatted(date: .abbreviated, time: .shortened)))").font(.caption).foregroundStyle(.secondary)
+                Text("\(report) (\(at.frDateTime))").font(.caption).foregroundStyle(.secondary)
             }
             LabeledContent("Cartes hors ligne", value: String(format: "%.0f Mo", downloader.sizeMB))
             LabeledContent("Météo, NOTAM, plaques", value: String(format: "%.0f Mo", dataMB + FAADocuments.cacheMB()))
@@ -123,7 +123,7 @@ struct OfflineChartsSection: View {
                 downloader.clear(); NetCache.clear(); dataMB = 0
             }
         } header: {
-            Text("Hors ligne")
+            FFHeader("Hors ligne")
         } footer: {
             Text("« Préparer » enregistre les cartes (Sectional et carte choisie, zoom 5 à 11) de la route ou de la Floride, la météo (METAR, TAF, vents, AIRMET, PIREP), les NOTAM et TFR, les plaques et diagrammes des terrains de la route et les prix carburant. Sans réseau, l'app affiche automatiquement ces dernières données, et la météo FIS-B du récepteur ADS-B en vol.")
         }

@@ -522,7 +522,7 @@ final class FiveflightTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(afternoon.first?.fuelRemaining), 40 - afternoon[0].fuelGallons, accuracy: 0.001)
     }
 
-: avoid mode keeps the direct line and says so.
+    /// KFPR → KAPF only crosses the departure and arrival Class D: avoid mode keeps the direct line and says so.
     @MainActor
     func testAvoidKeepsDirectWhenNothingToAvoid() async throws {
         guard let url = Bundle.main.url(forResource: "airspace_snapshot", withExtension: "json") else {

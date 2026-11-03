@@ -20,6 +20,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build FAA airspace snapshot (Florida)
         run: python3 scripts/build_airspace_snapshot.py Resources/airspace_snapshot.json
+      - name: Build navaids, fixes and VFR waypoints (Florida)
+        run: python3 scripts/build_navaids.py Resources/navaids.json
       - name: Keep OurAirports CSVs US-only
         run: python3 scripts/filter_us_csv.py Resources
       - name: Capture aviationweather.gov fixtures
@@ -28,7 +30,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Resources/airspace_snapshot.json Resources/*.csv Tests/Fixtures
+          git add Resources/airspace_snapshot.json Resources/*.csv Resources/navaids.json Tests/Fixtures
           if git diff --cached --quiet; then echo "No data changes"; exit 0; fi
-          git commit -m "data: regenerate FAA airspace snapshot, US-only CSVs and weather fixtures"
+          git commit -m "data: regenerate FAA airspace snapshot, navaids, US-only CSVs and weather fixtures"
           git push

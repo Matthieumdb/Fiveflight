@@ -27,6 +27,11 @@ struct LogbookScreen: View {
                         LabeledContent("Distance", value: "\(totalNM) NM")
                         LabeledContent("Temps", value: "\(totalMin / 60)h\(String(format: "%02d", totalMin % 60))")
                         LabeledContent("Atterrissages", value: "\(landings)")
+                        ForEach(LogbookScreen.categories.indices, id: \.self) { i in
+                            let cat = LogbookScreen.categories[i]
+                            let m = model.logbook.reduce(0) { $0 + (cat.minutes($1) ?? 0) }
+                            if m > 0 { LabeledContent(cat.title, value: LogbookScreen.hhmm(m)) }
+                        }
                     }
                     Section("Vols") {
                         ForEach(model.logbook) { e in
@@ -50,14 +55,27 @@ struct LogbookScreen: View {
         }
     }
 
+    /// Time categories of the logbook (14 CFR 61.51).
+    static var categories: [(title: String, minutes: (LogEntry) -> Int?)] { [
+        ("Commandant de bord (PIC)", { $0.picMinutes }),
+        ("Double commande reçue", { $0.dualMinutes }),
+        ("Solo", { $0.soloMinutes }),
+        ("Nuit", { $0.nightMinutes }),
+        ("Navigation (cross-country)", { $0.crossCountryMinutes })
+    ] }
+
+    static func hhmm(_ m: Int) -> String { "\(m / 60)h\(String(format: "%02d", m % 60))" }
+
     /// Write the logbook to a CSV in the temp dir for sharing.
     private func csvURL() -> URL? {
         let iso = ISO8601DateFormatter()
-        var csv = "date,from,to,nm,minutes,aircraft,landings_day,landings_night,remarks\n"
+        var csv = "date,from,to,nm,minutes,aircraft,landings_day,landings_night,pic,dual,solo,night,cross_country,instructor,remarks\n"
         for e in model.logbook.reversed() {
             let remarks = (e.remarks ?? "").replacingOccurrences(of: "\"", with: "\"\"")
             csv += "\(iso.string(from: e.date)),\(e.from),\(e.to),\(e.nm),\(e.eteMinutes),\(e.aircraft ?? ""),"
-                + "\(e.landingsDay ?? 0),\(e.landingsNight ?? 0),\"\(remarks)\"\n"
+                + "\(e.landingsDay ?? 0),\(e.landingsNight ?? 0),\(e.picMinutes ?? 0),\(e.dualMinutes ?? 0),"
+                + "\(e.soloMinutes ?? 0),\(e.nightMinutes ?? 0),\(e.crossCountryMinutes ?? 0),"
+                + "\"\((e.instructor ?? "").replacingOccurrences(of: "\"", with: "\"\""))\",\"\(remarks)\"\n"
         }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("carnet-fiveflight.csv")
         do { try csv.write(to: url, atomically: true, encoding: .utf8); return url } catch { return nil }
@@ -171,6 +189,19 @@ struct LogEntryScreen: View {
                         value: Binding(get: { entry.landingsNight ?? 0 }, set: { entry.landingsNight = $0 }), in: 0...50)
                 TextField("Remarques", text: Binding(get: { entry.remarks ?? "" }, set: { entry.remarks = $0 }), axis: .vertical)
             }
+            Section {
+                minutes("Commandant de bord (PIC)", \.picMinutes)
+                minutes("Double commande reçue", \.dualMinutes)
+                minutes("Solo", \.soloMinutes)
+                minutes("Nuit", \.nightMinutes)
+                minutes("Navigation (> 50 NM)", \.crossCountryMinutes)
+                if (entry.dualMinutes ?? 0) > 0 {
+                    TextField("Instructeur (nom, n° de licence)",
+                              text: Binding(get: { entry.instructor ?? "" }, set: { entry.instructor = $0 }))
+                }
+            } header: { Text("Temps par catégorie") } footer: {
+                Text("Nuit et navigation sont remplis automatiquement à l'enregistrement (crépuscule civil, distance directe > 50 NM).")
+            }
             if !track.isEmpty {
                 Section("Exporter la trace") {
                     let name = "\(entry.from)-\(entry.to)"
@@ -189,5 +220,11 @@ struct LogEntryScreen: View {
             }
             playing = false
         }
+    }
+
+    private func minutes(_ title: String, _ key: WritableKeyPath<LogEntry, Int?>) -> some View {
+        Stepper("\(title) : \(LogbookScreen.hhmm(entry[keyPath: key] ?? 0))",
+                value: Binding(get: { entry[keyPath: key] ?? 0 }, set: { entry[keyPath: key] = $0 }),
+                in: 0...max(1440, entry.eteMinutes), step: 5)
     }
 }

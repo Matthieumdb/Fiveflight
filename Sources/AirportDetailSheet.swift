@@ -123,6 +123,7 @@ struct AirportDetailSheet: View {
             Section { METARCard(metar: metar) } header: { FFHeader("METAR") }
         } else {
             Section { Text("Pas de METAR pour \(airport.id)").foregroundStyle(.secondary) } header: { FFHeader("METAR") }
+            NearestMETARSection(airport: airport, store: store)
         }
         if let taf {
             Section { TAFCard(taf: taf) } header: { FFHeader("TAF") }
@@ -130,10 +131,20 @@ struct AirportDetailSheet: View {
     }
 
     @ViewBuilder private var runwaySections: some View {
+        if runways.contains(where: { $0.leLat != nil && $0.heLat != nil }) {
+            Section {
+                AirportTaxiMap(airport: airport, runways: runways)
+                    .frame(height: 280)
+                    .listRowInsets(EdgeInsets())
+            } header: { FFHeader("Vue aérodrome") }
+        }
         Section {
             if runways.isEmpty { Text("Aucune donnée").foregroundStyle(.secondary) }
             ForEach(runways) { RunwayRow(runway: $0) }
         } header: { FFHeader("Pistes") }
+        if !runways.isEmpty {
+            RunwayAnalysisSection(airport: airport, runways: runways, metar: metar)
+        }
     }
 
     @ViewBuilder private var frequencySections: some View {

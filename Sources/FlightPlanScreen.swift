@@ -193,10 +193,24 @@ private struct FlightEditPage: View {
             }
 
             if model.waypoints.count >= 2 {
+                AltitudeAdvisorSection()
+
                 Section {
                     VerticalProfileView(path: model.routePath, cruiseAlt: model.cruiseAlt,
                                         airspaces: airspaceManager.allAirspaces)
-                } header: { FFHeader("Profil vertical") }
+                    if let p = model.verticalProfile {
+                        LabeledContent("Fin de montée (TOC)",
+                                       value: String(format: "%.0f NM après %@ · %@", p.tocNM, model.waypoints.first?.id ?? "", ffDuration(p.climbMinutes)))
+                        LabeledContent("Début de descente (TOD)",
+                                       value: String(format: "%.0f NM avant %@ · %@", p.todNM, model.waypoints.last?.id ?? "", ffDuration(p.descentMinutes)))
+                    }
+                } header: { FFHeader("Profil vertical") } footer: {
+                    if model.verticalProfile != nil {
+                        Text("Montée et descente selon le profil avion (vitesse, taux, conso), descente jusqu'à 1 000 ft au-dessus de la destination. Le navlog en tient compte.")
+                    }
+                }
+
+                RouteFrequenciesSection()
 
                 Section {
                     LabeledContent("Mode de route", value: routingEngine.currentMode.rawValue)
@@ -206,7 +220,9 @@ private struct FlightEditPage: View {
                     Button {
                         model.logFlight(from: model.waypoints.first!.id, to: model.waypoints.last!.id,
                                         nm: Int(model.totalDistanceNM.rounded()),
-                                        eteMinutes: Int(model.totalTimeMinutes.rounded()))
+                                        eteMinutes: Int(model.totalTimeMinutes.rounded()),
+                                        departure: model.waypoints.first?.coordinate,
+                                        arrival: model.waypoints.last?.coordinate)
                     } label: {
                         Label("Ajouter au carnet de vol", systemImage: "book")
                     }
@@ -322,7 +338,8 @@ struct NavlogTable: View {
                 Text("Téléchargement des vents prévus…")
             } else if model.navlogHasWinds {
                 Image(systemName: "wind")
-                Text("Vents FD à l'heure de passage · départ \(model.departureTime.formatted(date: .abbreviated, time: .shortened))")
+                Text("Vents FD à l'heure de passage · départ \(model.departureTime.formatted(date: .abbreviated, time: .shortened))"
+                     + (model.verticalProfile.map { String(format: " · TOC %.0f NM · TOD %.0f NM avant arrivée", $0.tocNM, $0.todNM) } ?? ""))
             } else {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(ColorToken.warning)
                 Text("Vents en altitude indisponibles : GS = TAS, pas de correction")

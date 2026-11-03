@@ -19,12 +19,23 @@ struct TrafficTarget: Identifiable, Equatable {
     }
 }
 
+/// Attitude from the receiver's AHRS (Stratux 0x4C or ForeFlight 0x65 message), degrees.
+struct AHRSAttitude: Equatable {
+    var roll: Double
+    var pitch: Double
+    var heading: Double?
+    var slipSkid: Double?
+    var gLoad: Double?
+    var updated: Date
+}
+
 /// GDL 90 decoder (Stratux, Sentry, SkyEcho, GDL 39…): framing, CRC, and the messages we use.
 enum GDL90 {
     enum Message {
         case heartbeat(gpsValid: Bool)
         case ownship(TrafficTarget)
         case traffic(TrafficTarget)
+        case ahrs(AHRSAttitude)
     }
 
     /// Splits a datagram into messages: 0x7E-delimited frames, 0x7D escapes, CRC-16 checked.
@@ -65,8 +76,35 @@ enum GDL90 {
         case 0x00 where p.count >= 3: return .heartbeat(gpsValid: p[1] & 0x80 != 0)
         case 0x0A where p.count >= 28: return report(p).map { .ownship($0) }
         case 0x14 where p.count >= 28: return report(p).map { .traffic($0) }
+        case 0x4C where p.count >= 16 && p[1] == 0x45 && p[2] == 0x01: return stratuxAHRS(p).map { .ahrs($0) }
+        case 0x65 where p.count >= 8 && p[1] == 0x01: return foreFlightAHRS(p).map { .ahrs($0) }
         default: return nil
         }
+    }
+
+    /// Big-endian signed 16-bit value at `i`, nil when 0x7FFF (invalid).
+    private static func int16(_ p: [UInt8], _ i: Int) -> Int? {
+        let v = Int(p[i]) << 8 | Int(p[i + 1])
+        if v == 0x7FFF { return nil }
+        return v & 0x8000 != 0 ? v - 0x10000 : v
+    }
+
+    /// Stratux AHRS report: 0x4C 0x45 0x01 version, then roll, pitch, heading, slip, turn rate, G (×0.1).
+    static func stratuxAHRS(_ p: [UInt8]) -> AHRSAttitude? {
+        guard let roll = int16(p, 4), let pitch = int16(p, 6) else { return nil }
+        return AHRSAttitude(roll: Double(roll) / 10, pitch: Double(pitch) / 10,
+                            heading: int16(p, 8).map { Double($0) / 10 },
+                            slipSkid: int16(p, 10).map { Double($0) / 10 },
+                            gLoad: int16(p, 14).map { Double($0) / 10 }, updated: .now)
+    }
+
+    /// ForeFlight AHRS message: 0x65 0x01, roll, pitch (×0.1°), heading (bit 15 = magnetic).
+    static func foreFlightAHRS(_ p: [UInt8]) -> AHRSAttitude? {
+        guard let roll = int16(p, 2), let pitch = int16(p, 4) else { return nil }
+        let raw = Int(p[6]) << 8 | Int(p[7])
+        let heading: Double? = raw == 0xFFFF ? nil : Double(raw & 0x7FFF) / 10
+        return AHRSAttitude(roll: Double(roll) / 10, pitch: Double(pitch) / 10, heading: heading,
+                            slipSkid: nil, gLoad: nil, updated: .now)
     }
 
     /// Ownship / Traffic Report layout (GDL 90 ICD §3.5.1).
@@ -102,6 +140,8 @@ final class ADSBReceiver: ObservableObject {
     @Published private(set) var traffic: [TrafficTarget] = []
     @Published private(set) var ownship: TrafficTarget?
     @Published private(set) var lastHeartbeat: Date?
+    /// Latest attitude from the receiver's AHRS, if it has one.
+    @Published private(set) var ahrs: AHRSAttitude?
     @Published private(set) var running = false
 
     private var listener: NWListener?
@@ -124,7 +164,7 @@ final class ADSBReceiver: ObservableObject {
         listener?.cancel()
         listener = nil
         running = false
-        byID = [:]; traffic = []; ownship = nil
+        byID = [:]; traffic = []; ownship = nil; ahrs = nil
     }
 
     nonisolated private static func receive(on connection: NWConnection, owner: ADSBReceiver?) {
@@ -143,6 +183,7 @@ final class ADSBReceiver: ObservableObject {
             case .heartbeat: lastHeartbeat = .now
             case .ownship(let t): ownship = t
             case .traffic(let t): byID[t.id] = t
+            case .ahrs(let a): ahrs = a
             }
         }
         byID = byID.filter { Date.now.timeIntervalSince($0.value.updated) < 30 }   // drop stale targets

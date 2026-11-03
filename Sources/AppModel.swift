@@ -17,6 +17,14 @@ struct LogEntry: Codable, Identifiable, Equatable {
     var remarks: String?
     /// Flown GPS track, downsampled, for replay and GPX/KML export.
     var track: [Coordinate2D]?
+    // Time by category, minutes (1.0.47).
+    var picMinutes: Int?
+    var dualMinutes: Int?
+    var soloMinutes: Int?
+    var nightMinutes: Int?
+    var crossCountryMinutes: Int?
+    /// Instructor name and certificate number for dual received.
+    var instructor: String?
 }
 
 /// A flight plan kept for later: name and waypoint idents.
@@ -41,6 +49,17 @@ struct AircraftProfile: Codable, Identifiable, Hashable {
     var cgAft: Double = 88
     /// Loading stations (empty weight, seats, fuel, baggage) with their arms.
     var stations: [WeightBalanceItem] = []
+    // Climb and descent (1.0.47): TAS (kt), vertical speed (ft/min) and burn (gal/h).
+    var climbSpeed: Double = 75
+    var climbRate: Double = 700
+    var climbBurn: Double = 11
+    var descentSpeed: Double = 110
+    var descentRate: Double = 500
+    // Takeoff / landing (1.0.47): POH distances (ft) at sea level, 15 °C, max weight, no wind, paved dry runway.
+    var takeoffRoll: Double = 960
+    var takeoff50ft: Double = 1630
+    var landingRoll: Double = 575
+    var landing50ft: Double = 1335
 
     /// C172S-like stations, used when a profile has none.
     static func stations(empty: Double, emptyArm: Double, front: Double, rear: Double, fuel: Double, baggage: Double) -> [WeightBalanceItem] {
@@ -63,14 +82,48 @@ struct AircraftProfile: Codable, Identifiable, Hashable {
                         stations: stations(empty: 1680, emptyArm: 40.6, front: 37, rear: 73, fuel: 48, baggage: 95)),
         AircraftProfile(name: "Piper PA-28-180", type: "PA28", cruiseSpeed: 124, fuelBurn: 9.0, capacityGal: 48,
                         maxWeight: 2400, cgForward: 84, cgAft: 95.9,
-                        stations: stations(empty: 1400, emptyArm: 86, front: 80.5, rear: 118.1, fuel: 95, baggage: 142.8)),
+                        stations: stations(empty: 1400, emptyArm: 86, front: 80.5, rear: 118.1, fuel: 95, baggage: 142.8),
+                        climbSpeed: 85, climbRate: 650, climbBurn: 11, descentSpeed: 115, descentRate: 500,
+                        takeoffRoll: 975, takeoff50ft: 1625, landingRoll: 600, landing50ft: 1150),
         AircraftProfile(name: "Cirrus SR22T", type: "SR22", cruiseSpeed: 183, fuelBurn: 14.0, capacityGal: 81,
                         maxWeight: 3600, cgForward: 139.1, cgAft: 148.1,
-                        stations: stations(empty: 2350, emptyArm: 139, front: 143.5, rear: 180, fuel: 154.9, baggage: 208)),
+                        stations: stations(empty: 2350, emptyArm: 139, front: 143.5, rear: 180, fuel: 154.9, baggage: 208),
+                        climbSpeed: 120, climbRate: 1000, climbBurn: 27, descentSpeed: 170, descentRate: 700,
+                        takeoffRoll: 1600, takeoff50ft: 2300, landingRoll: 1250, landing50ft: 2400),
         AircraftProfile(name: "Diamond DA40", type: "DA40", cruiseSpeed: 130, fuelBurn: 7.5, capacityGal: 40,
                         maxWeight: 2646, cgForward: 94.5, cgAft: 98.4,
-                        stations: stations(empty: 1750, emptyArm: 96, front: 90.6, rear: 128, fuel: 103.5, baggage: 153.1)),
+                        stations: stations(empty: 1750, emptyArm: 96, front: 90.6, rear: 128, fuel: 103.5, baggage: 153.1),
+                        climbSpeed: 75, climbRate: 750, climbBurn: 10, descentSpeed: 120, descentRate: 500,
+                        takeoffRoll: 1080, takeoff50ft: 1700, landingRoll: 1000, landing50ft: 1800),
     ]
+}
+
+extension AircraftProfile {
+    enum CodingKeys: String, CodingKey {
+        case id, name, type, cruiseSpeed, fuelBurn, capacityGal, maxWeight, cgForward, cgAft, stations
+        case climbSpeed, climbRate, climbBurn, descentSpeed, descentRate
+        case takeoffRoll, takeoff50ft, landingRoll, landing50ft
+    }
+
+    /// Profiles saved by older versions lack the newer fields: they keep the defaults.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(name: try c.decode(String.self, forKey: .name),
+                  type: try c.decodeIfPresent(String.self, forKey: .type) ?? "",
+                  cruiseSpeed: try c.decode(Double.self, forKey: .cruiseSpeed),
+                  fuelBurn: try c.decode(Double.self, forKey: .fuelBurn),
+                  capacityGal: try c.decode(Double.self, forKey: .capacityGal))
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        func opt(_ k: CodingKeys, _ into: inout Double) throws {
+            if let v = try c.decodeIfPresent(Double.self, forKey: k) { into = v }
+        }
+        try opt(.maxWeight, &maxWeight); try opt(.cgForward, &cgForward); try opt(.cgAft, &cgAft)
+        stations = try c.decodeIfPresent([WeightBalanceItem].self, forKey: .stations) ?? []
+        try opt(.climbSpeed, &climbSpeed); try opt(.climbRate, &climbRate); try opt(.climbBurn, &climbBurn)
+        try opt(.descentSpeed, &descentSpeed); try opt(.descentRate, &descentRate)
+        try opt(.takeoffRoll, &takeoffRoll); try opt(.takeoff50ft, &takeoff50ft)
+        try opt(.landingRoll, &landingRoll); try opt(.landing50ft, &landing50ft)
+    }
 }
 
 struct ChecklistItem: Codable, Identifiable {
@@ -345,13 +398,29 @@ final class AppModel: ObservableObject {
     // Logbook
     /// Logs the flight with the aircraft, one day landing and the GPS track. When the GPS saw the takeoff,
     /// the real flight time replaces the planned ETE.
-    func logFlight(from: String, to: String, nm: Int, eteMinutes: Int) {
+    func logFlight(from: String, to: String, nm: Int, eteMinutes: Int,
+                   departure: CLLocationCoordinate2D? = nil, arrival: CLLocationCoordinate2D? = nil) {
         let step = max(1, track.count / 2000)
-        let flown = FlightMonitor.shared.airborneSince.map { Int(Date.now.timeIntervalSince($0) / 60) }.flatMap { $0 >= 5 ? $0 : nil }
-        logbook.insert(LogEntry(date: .now, from: from, to: to, nm: nm, eteMinutes: flown ?? eteMinutes,
-                                aircraft: selectedAircraft?.name, landingsDay: 1, landingsNight: 0, remarks: nil,
-                                track: track.isEmpty ? nil : stride(from: 0, to: track.count, by: step).map { Coordinate2D(track[$0]) }),
-                        at: 0)
+        let takeoff = FlightMonitor.shared.airborneSince
+        let flown = takeoff.map { Int(Date.now.timeIntervalSince($0) / 60) }.flatMap { $0 >= 5 ? $0 : nil }
+        let minutes = flown ?? eteMinutes
+        let end = Date.now, start = end.addingTimeInterval(-Double(minutes) * 60)
+        let here = arrival ?? departure ?? userLocation ?? Self.homeCoordinate
+        let night = Solar.nightMinutes(lat: here.latitude, lon: here.longitude, start: start, end: end)
+        let nightLanding = Solar.isNightForLanding(lat: here.latitude, lon: here.longitude, at: end)
+        // Cross-country (14 CFR 61.1): a landing more than 50 NM straight-line from the departure point.
+        let xc: Bool = {
+            guard let a = departure, let b = arrival else { return nm > 50 }
+            return Haversine.nauticalMiles(a, b) > 50
+        }()
+        var entry = LogEntry(date: start, from: from, to: to, nm: nm, eteMinutes: minutes,
+                             aircraft: selectedAircraft?.name, landingsDay: nightLanding ? 0 : 1,
+                             landingsNight: nightLanding ? 1 : 0, remarks: nil,
+                             track: track.isEmpty ? nil : stride(from: 0, to: track.count, by: step).map { Coordinate2D(track[$0]) })
+        entry.picMinutes = minutes
+        entry.nightMinutes = night
+        entry.crossCountryMinutes = xc ? minutes : 0
+        logbook.insert(entry, at: 0)
         Haptics.success()
         save()
     }
@@ -504,10 +573,24 @@ final class AppModel: ObservableObject {
         let segments: [NavlogSegment]
         let alt: Int, tas: Double, burn: Double, fob: Double
         let departure: Date
+        let vertical: VerticalPerformance?
+        let depElev: Int, arrElev: Int
     }
     var navlogInputs: NavlogInputs {
         NavlogInputs(ids: waypoints.map(\.id), segments: navlogSegments, alt: cruiseAlt, tas: cruiseGS,
-                     burn: fuelBurn, fob: fuelOnBoard, departure: departureTime)
+                     burn: fuelBurn, fob: fuelOnBoard, departure: departureTime,
+                     vertical: selectedAircraft.map(VerticalPerformance.init),
+                     depElev: waypoints.first?.elevationFt ?? 0, arrElev: waypoints.last?.elevationFt ?? 0)
+    }
+
+    /// Top of climb / top of descent of the plan, when an aircraft with climb data is selected.
+    var verticalProfile: VerticalProfile? {
+        guard let a = selectedAircraft, waypoints.count >= 2 else { return nil }
+        let total = navlog.isEmpty ? totalDistanceNM : navlog.reduce(0) { $0 + $1.distanceNM }
+        return VerticalProfile.make(totalNM: total, cruiseAlt: cruiseAlt,
+                                    departureElevation: waypoints.first?.elevationFt ?? 0,
+                                    arrivalElevation: waypoints.last?.elevationFt ?? 0,
+                                    perf: VerticalPerformance(a))
     }
 
     /// Routed segments when known, else straight legs between waypoints.
@@ -528,7 +611,8 @@ final class AppModel: ObservableObject {
         func build(_ winds: [WindsAloft]) {
             navlog = Navlog.build(segments: inputs.segments, tas: inputs.tas, altitude: inputs.alt,
                                   fuelBurn: inputs.burn, winds: winds, departure: inputs.departure,
-                                  fuelOnBoard: inputs.fob)
+                                  fuelOnBoard: inputs.fob, vertical: inputs.vertical,
+                                  departureElevation: inputs.depElev, arrivalElevation: inputs.arrElev)
             navlogHasWinds = !winds.isEmpty
         }
         let cached = weather.windsByPeriod.values.flatMap { $0 }

@@ -70,6 +70,7 @@ struct MoreScreen: View {
                     NavigationLink { LogbookScreen() } label: { Label("Carnet de vol", systemImage: "book.fill") }
                     NavigationLink { ChecklistScreen() } label: { Label("Checklists", systemImage: "checklist") }
                     NavigationLink { CalculatorsScreen() } label: { Label("Calculateurs", systemImage: "function") }
+                    NavigationLink { AttitudeScreen() } label: { Label("Horizon artificiel (AHRS)", systemImage: "gyroscope") }
                 }
                 Section {
                     NavigationLink { AirspaceScreen() } label: { Label("Espaces aériens & SUA", systemImage: "shield.lefthalf.filled") }

@@ -131,7 +131,10 @@ enum Parser {
             guard f.count > 14 else { continue }
             runways[f[2], default: []].append(Runway(
                 leIdent: f[8], heIdent: f[14], lengthFt: Int(f[3]), widthFt: Int(f[4]),
-                surface: f[5].isEmpty ? nil : f[5], lighted: f[6] == "1", closed: f[7] == "1"))
+                surface: f[5].isEmpty ? nil : f[5], lighted: f[6] == "1", closed: f[7] == "1",
+                leHeadingT: f.count > 12 ? Double(f[12]) : nil, heHeadingT: f.count > 18 ? Double(f[18]) : nil,
+                leLat: Double(f[9]), leLon: Double(f[10]),
+                heLat: f.count > 16 ? Double(f[15]) : nil, heLon: f.count > 16 ? Double(f[16]) : nil))
         }
 
         var freqs: [String: [Frequency]] = [:]

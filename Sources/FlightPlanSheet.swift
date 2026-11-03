@@ -84,7 +84,8 @@ struct FlightPlanSheet: View {
                     Section {
                         Button {
                             model.logFlight(from: waypoints.first!.id, to: waypoints.last!.id,
-                                            nm: Int(totalNM.rounded()), eteMinutes: enrouteMin)
+                                            nm: Int(totalNM.rounded()), eteMinutes: enrouteMin,
+                                            departure: waypoints.first?.coordinate, arrival: waypoints.last?.coordinate)
                             dismiss()
                         } label: { Label("Enregistrer au carnet", systemImage: "book.fill") }
                     }

@@ -9,6 +9,8 @@ final class AirspaceDataManager: ObservableObject {
     static let shared = AirspaceDataManager()
 
     @Published var airspaces: [Airspace] = []
+    /// Live TFRs, kept apart from the cached base data (they change by the hour).
+    @Published var tfrs: [Airspace] = []
     @Published var ctafFrequencies: [String: [CTAFFrequency]] = [:]
     @Published var isLoading = false
     @Published var lastUpdate: Date?
@@ -28,7 +30,10 @@ final class AirspaceDataManager: ObservableObject {
     private init() {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
         cacheURL = caches.appendingPathComponent("airspace_cache.json")
-        Task { await loadCache() }
+        Task {
+            await loadCache()
+            await refreshTFRs()
+        }
     }
 
     /// Refreshes from the FAA ADDS layers. Existing data is only replaced by a plausible, non-empty
@@ -41,7 +46,8 @@ final class AirspaceDataManager: ObservableObject {
         async let classAirspace = fetchLayer(FAAAirspaceLayer.classAirspace)
         async let sua = fetchLayer(FAAAirspaceLayer.specialUse)
         async let ctaf = fetchCTAF()
-        let (classResult, suaResult, ctafData) = await (classAirspace, sua, ctaf)
+        async let tfr: Void = refreshTFRs()
+        let (classResult, suaResult, ctafData, _) = await (classAirspace, sua, ctaf, tfr)
 
         if !ctafData.isEmpty { ctafFrequencies = ctafData }
 
@@ -350,5 +356,118 @@ enum FAAAirspaceParser {
         if (p["\(prefix)_CODE"]?.string ?? "").uppercased() == "SFC" { return 0 }
         if value < 0 { return 17999 }
         return (p["\(prefix)_UOM"]?.string ?? "").uppercased() == "FL" ? Int(value * 100) : Int(value)
+    }
+}
+
+// MARK: - TFRs (tfr.faa.gov, no key)
+
+extension AirspaceDataManager {
+    /// Current and upcoming Florida TFRs from tfr.faa.gov. A failed download keeps the previous list.
+    func refreshTFRs() async {
+        guard let listURL = URL(string: "https://tfr.faa.gov/tfrapi/exportTfrList"),
+              let (data, _) = try? await URLSession.shared.data(from: listURL),
+              let list = try? JSONDecoder().decode([TFRListItem].self, from: data) else { return }
+        var result: [Airspace] = []
+        await withTaskGroup(of: Airspace?.self) { group in
+            for item in list where item.state == "FL" {
+                group.addTask {
+                    let file = item.notam_id.replacingOccurrences(of: "/", with: "_")
+                    guard let url = URL(string: "https://tfr.faa.gov/download/detail_\(file).xml"),
+                          let (xml, _) = try? await URLSession.shared.data(from: url) else { return nil }
+                    return TFRParser.parse(xml, id: item.notam_id, type: item.type)
+                }
+            }
+            for await tfr in group { if let tfr { result.append(tfr) } }
+        }
+        tfrs = result.sorted { $0.id < $1.id }
+    }
+
+    /// Base airspace plus TFRs: what the map, warnings and routing work on.
+    var allAirspaces: [Airspace] { airspaces + tfrs }
+}
+
+struct TFRListItem: Decodable {
+    let notam_id: String
+    let type: String
+    let state: String
+}
+
+/// Reads the shape, altitudes and dates out of a tfr.faa.gov XNOTAM file.
+final class TFRParser: NSObject, XMLParserDelegate {
+    private var text = ""
+    private var values: [String: String] = [:]        // first value of each tag in the file
+    private var inMerged = false, inAbd = false, inAvx = false
+    private var avx: [String: String] = [:]
+    private var merged: [[Coordinate2D]] = [], abd: [[Coordinate2D]] = [], ring: [Coordinate2D] = []
+
+    static func parse(_ data: Data, id: String, type: String) -> Airspace? {
+        let delegate = TFRParser()
+        let parser = XMLParser(data: data)
+        parser.delegate = delegate
+        guard parser.parse() else { return nil }
+        let rings = (delegate.merged.isEmpty ? delegate.abd : delegate.merged).filter { $0.count >= 3 }
+        guard !rings.isEmpty else { return nil }
+        let v = delegate.values
+        func altitude(_ which: String, _ fallback: Int) -> Int {
+            guard let value = Double(v["valDistVer\(which)"] ?? "") else { return fallback }
+            return v["uomDistVer\(which)"] == "FL" ? Int(value * 100) : Int(value)
+        }
+        let start = (v["dateEffective"] ?? "").replacingOccurrences(of: "T", with: " ").prefix(16)
+        let end = (v["dateExpire"] ?? "").replacingOccurrences(of: "T", with: " ").prefix(16)
+        let tz = v["codeTimeZone"] ?? ""
+        return Airspace(
+            id: "TFR_\(id)",
+            name: "TFR \(id) \(v["txtNameCity"] ?? v["txtLocalName"] ?? "")".trimmingCharacters(in: .whitespaces),
+            type: .sua(.tf),
+            polygons: rings,
+            floor: altitude("Lower", 0),
+            ceiling: altitude("Upper", 17999),
+            controllingAgency: v["codeFacility"],
+            frequency: nil,
+            isActive: true,
+            schedule: "\(type.capitalized) · \(start) → \(end.isEmpty ? "?" : String(end)) \(tz)"
+        )
+    }
+
+    func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?,
+                attributes: [String: String] = [:]) {
+        text = ""
+        switch name {
+        case "abdMergedArea": inMerged = true; ring = []
+        case "Abd": inAbd = true; ring = []
+        case "Avx": inAvx = true; avx = [:]
+        default: break
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) { text += string }
+
+    func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch name {
+        case "abdMergedArea": inMerged = false; merged.append(ring)
+        case "Abd": inAbd = false; abd.append(ring)
+        case "Avx":
+            inAvx = false
+            guard inMerged || inAbd, let lat = Self.degrees(avx["geoLat"]), let lon = Self.degrees(avx["geoLong"]) else { return }
+            let center = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+            if avx["codeType"] == "CIR", let r = Double(avx["valRadiusArc"] ?? "") {
+                let nm = avx["uomRadiusArc"] == "KM" ? r / 1.852 : r
+                ring += (0..<36).map { Coordinate2D(Haversine.destination(from: center, course: $0 * 10, distanceNM: nm)) }
+            } else {
+                // ponytail: arcs (CWA/CCA) reduced to their start point; fine for TFR outlines, sample the arc if one looks wrong.
+                ring.append(Coordinate2D(center))
+            }
+        default:
+            // Inside a vertex keep the first lat/long only (nested Frd/DpnUid repeat them for a reference fix).
+            if inAvx { if avx[name] == nil { avx[name] = value } }
+            else if values[name] == nil, !value.isEmpty { values[name] = value }
+        }
+    }
+
+    /// "26.67694444N" / "080.03777778W" → signed degrees.
+    static func degrees(_ s: String?) -> Double? {
+        guard let s, let hemi = s.last, let v = Double(s.dropLast()) else { return nil }
+        return hemi == "S" || hemi == "W" ? -v : v
     }
 }

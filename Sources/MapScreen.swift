@@ -21,7 +21,7 @@ struct MapScreen: View {
     @State private var visibleAirports: [Airport] = []
 
     private var activeAirspaces: [Airspace] {
-        airspaceManager.airspaces.filter { $0.isActive }
+        airspaceManager.allAirspaces.filter { $0.isActive }
     }
 
     /// US stations among the airports on screen, for the METAR-driven marker colours.
@@ -56,7 +56,8 @@ struct MapScreen: View {
                     visibleAirports = Self.airportsToShow(store.airports, in: region)
                 },
                 airspaces: activeAirspaces,
-                showAirspace: model.showAirspace
+                showAirspace: model.showAirspace,
+                showTFRs: model.showAirspace
             )
             .ignoresSafeArea()
 
@@ -125,6 +126,9 @@ struct MapScreen: View {
         .onChange(of: model.cruiseAlt) { _, _ in
             Task { await calculateAndUpdateRoute() }
         }
+        .onChange(of: airspaceManager.allAirspaces.count) { _, _ in
+            Task { await calculateAndUpdateRoute() } // data arrived after the plan (launch, TFR refresh)
+        }
         .task(id: metarStations) {
             // Debounce: wait until the map has settled, then colour markers by flight category.
             try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -177,7 +181,7 @@ struct MapScreen: View {
             waypoints: planned,
             cruiseAltitude: model.cruiseAlt,
             mode: routingEngine.currentMode,
-            airspaces: airspaceManager.airspaces
+            airspaces: airspaceManager.allAirspaces
         ) {
             // Plan, mode or altitude changed meanwhile: a newer calculation will land.
             guard model.waypoints.map(\.id) == planned.map(\.id), result.mode == routingEngine.currentMode,

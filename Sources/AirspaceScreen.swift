@@ -26,7 +26,7 @@ struct AirspaceScreen: View {
     }
 
     private var filteredAirspaces: [Airspace] {
-        airspaceManager.airspaces.filter { airspace in
+        airspaceManager.allAirspaces.filter { airspace in
             guard airspace.isActive else { return false }
             guard selectedAltitude >= airspace.floor && selectedAltitude <= airspace.ceiling else { return false }
 

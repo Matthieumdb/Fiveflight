@@ -25,7 +25,7 @@ final class RoutingEngine: ObservableObject {
         var description: String {
             switch self {
             case .direct: return "Ligne droite entre les points"
-            case .avoidControlled: return "Contourne les Class B, C, D et E surface"
+            case .avoidControlled: return "Contourne les Class B, C, D, E surface et les TFR"
             case .avoidAllSUA: return "Contourne aussi R, P, MOA, zones d'alerte et TFR"
             }
         }
@@ -206,6 +206,7 @@ final class RoutingEngine: ObservableObject {
             case (.direct, _): return false
             case (_, .classAirspace(let cls)): return cls.requiresATC
             case (_, .classESurface): return true
+            case (_, .sua(.tf)): return true // a TFR is avoided in both avoid modes
             case (.avoidAllSUA, .sua): return true
             default: return false
             }

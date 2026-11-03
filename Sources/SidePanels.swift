@@ -193,7 +193,7 @@ struct FlightPlanSidePanel: View {
             waypoints: model.waypoints,
             cruiseAltitude: model.cruiseAlt,
             mode: routingEngine.currentMode,
-            airspaces: AirspaceDataManager.shared.airspaces
+            airspaces: AirspaceDataManager.shared.allAirspaces
         )
     }
 }
@@ -696,7 +696,7 @@ struct FlightPlanEditorSheet: View {
                                 waypoints: model.waypoints,
                                 cruiseAltitude: model.cruiseAlt,
                                 mode: routingEngine.currentMode,
-                                airspaces: AirspaceDataManager.shared.airspaces
+                                airspaces: AirspaceDataManager.shared.allAirspaces
                             )
                         }
                         dismiss()

@@ -119,15 +119,16 @@ struct FlightSummaryStrip: View {
         // Average head (−) / tail (+) component weighted by distance, as ForeFlight's "Wind" box.
         let avg = legs.reduce(0.0) { $0 + Double($1.headwind ?? 0) * $1.distanceNM } / total
         let v = Int(avg.rounded())
-        return v == 0 ? "0" : (v > 0 ? "-\(v)" : "+\(-v)")
+        return v == 0 ? "nul" : (v > 0 ? "face \(v) kt" : "arrière \(-v) kt")
     }
 
     var body: some View {
         FFDataStrip(items: [
-            ("Dist", String(format: "%.0f nm", model.totalDistanceNM)),
+            ("Dist", String(format: "%.0f NM", model.totalDistanceNM)),
             ("ETE", ffDuration(model.totalTimeMinutes)),
             ("ETA", model.arrivalTime.formatted(date: .omitted, time: .shortened)),
-            ("Carb", String(format: "%.1f", model.totalFuelGallons)),
+            // Includes the reserve, hence more than the navlog total.
+            ("Carb+rés.", String(format: "%.1f", model.totalFuelGallons)),
             ("Vent", windText)
         ])
     }
@@ -155,7 +156,7 @@ private struct FlightEditPage: View {
                 HStack {
                     FFHeader("Route")
                     Spacer()
-                    EditButton().font(.caption.weight(.semibold))
+                    FREditButton().font(.caption.weight(.semibold))
                 }
             }
 
@@ -303,19 +304,17 @@ struct NavlogTable: View {
         } else {
             VStack(spacing: 0) {
                 status
-                ScrollView([.vertical, .horizontal]) {
-                    VStack(spacing: 0) {
-                        line(columns.map { Cell($0.0, color: FF.label, bold: true) })
-                            .font(.system(size: 10, weight: .bold))
-                            .background(FF.bar)
-                        line(startCells)
-                        ForEach(Array(model.navlog.enumerated()), id: \.element.id) { i, leg in
-                            line(cells(leg)).background(i.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.05))
+                // POINT stays put while the other columns scroll sideways.
+                ScrollView(.vertical) {
+                    HStack(alignment: .top, spacing: 0) {
+                        table(fixed: true)
+                            .padding(.leading, 8)
+                            .background(Color(.systemBackground))
+                        ScrollView(.horizontal) {
+                            table(fixed: false).padding(.trailing, 8)
                         }
-                        line(totalCells).background(FF.accent.opacity(0.15))
                     }
                     .font(.system(size: 13, weight: .medium).monospacedDigit())
-                    .padding(.horizontal, 8)
                 }
                 legend
             }
@@ -331,9 +330,23 @@ struct NavlogTable: View {
         }
     }
 
-    private func line(_ cells: [Cell]) -> some View {
+    /// The first column alone (`fixed`) or all the others.
+    private func table(fixed: Bool) -> some View {
+        VStack(spacing: 0) {
+            line(columns.map { Cell($0.0, color: FF.label, bold: true) }, fixed: fixed)
+                .font(.system(size: 10, weight: .bold))
+                .background(FF.bar)
+            line(startCells, fixed: fixed)
+            ForEach(Array(model.navlog.enumerated()), id: \.element.id) { i, leg in
+                line(cells(leg), fixed: fixed).background(i.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.05))
+            }
+            line(totalCells, fixed: fixed).background(FF.accent.opacity(0.15))
+        }
+    }
+
+    private func line(_ cells: [Cell], fixed: Bool) -> some View {
         HStack(spacing: 0) {
-            ForEach(Array(cells.enumerated()), id: \.offset) { i, c in
+            ForEach(Array(cells.enumerated()).filter { fixed ? $0.offset == 0 : $0.offset > 0 }, id: \.offset) { i, c in
                 Text(c.text)
                     .fontWeight(c.bold ? .bold : nil)
                     .foregroundStyle(c.color)
@@ -352,7 +365,7 @@ struct NavlogTable: View {
                 Text("Téléchargement des vents prévus…")
             } else if model.navlogHasWinds {
                 Image(systemName: "wind")
-                Text("Vents FD à l'heure de passage · départ \(model.departureTime.formatted(date: .abbreviated, time: .shortened))"
+                Text("Vents FD à l'heure de passage · départ \(model.departureTime.frDateTime)"
                      + (model.verticalProfile.map { String(format: " · TOC %.0f NM · TOD %.0f NM avant arrivée", $0.tocNM, $0.todNM) } ?? ""))
             } else {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(ColorToken.warning)
@@ -430,7 +443,7 @@ enum NavlogText {
     @MainActor
     static func make(model: AppModel) -> String {
         var lines = ["Navlog \(model.waypoints.map(\.id).joined(separator: " → ")) · \(model.cruiseAlt) ft · TAS \(Int(model.cruiseGS)) kt",
-                     "Départ \(model.departureTime.formatted(date: .abbreviated, time: .shortened)) (\(model.departureTime.zulu))",
+                     "Départ \(model.departureTime.frDateTime) (\(model.departureTime.zulu))",
                      "Point     Vent    RV  CM  GS  Dist  ETE   ETA   Carb"]
         for l in model.navlog {
             let wind = l.windDirection.map { String(format: "%03d/%02d", $0, l.windSpeed ?? 0) } ?? "---/--"

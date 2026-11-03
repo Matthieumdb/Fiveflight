@@ -191,20 +191,19 @@ struct PlatesScreen: View {
     @EnvironmentObject private var store: AirportStore
     @State private var query = ""
 
-    private var routeAirports: [Airport] { model.waypoints.filter(\.isAirport) }
-    private var favorites: [Airport] { model.favorites.sorted().compactMap { store.airport($0) } }
-    private var recents: [Airport] { model.recents.prefix(10).compactMap { store.airport($0) } }
+    /// Fields that can have FAA plates: public airports, not heliports or private strips ("07FA").
+    private static func mayHavePlates(_ a: Airport) -> Bool {
+        guard ["large_airport", "medium_airport", "small_airport", "seaplane_base"].contains(a.type) else { return false }
+        return !(a.id.count == 4 && a.id.first?.isNumber == true)
+    }
+    private var routeAirports: [Airport] { model.waypoints.filter { $0.isAirport && Self.mayHavePlates($0) } }
+    private var favorites: [Airport] { model.favorites.sorted().compactMap { store.airport($0) }.filter(Self.mayHavePlates) }
+    private var recents: [Airport] { model.recents.prefix(10).compactMap { store.airport($0) }.filter(Self.mayHavePlates) }
 
     private var searchResults: [Airport] {
         let q = query.trimmingCharacters(in: .whitespaces).uppercased()
         guard q.count >= 2 else { return [] }
-        if let exact = store.airport(q) { return [exact] }
-        var out: [Airport] = []
-        for a in store.airports where a.id.hasPrefix(q) || a.name.uppercased().contains(q) {
-            out.append(a)
-            if out.count >= 30 { break }
-        }
-        return out
+        return AirportSearch.rank(store.airports.filter(Self.mayHavePlates), query: q, limit: 30)
     }
 
     var body: some View {
@@ -225,7 +224,7 @@ struct PlatesScreen: View {
             }
         }
         .listStyle(.insetGrouped)
-        .searchable(text: $query, prompt: "Aéroport")
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Rechercher un aéroport")
         .navigationTitle("Plaques")
         .navigationBarTitleDisplayMode(.inline)
     }

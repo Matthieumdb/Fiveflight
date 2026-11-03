@@ -126,6 +126,12 @@ struct VerticalProfileView: View {
     @State private var obstacles: [(Obstacle, Double)] = []
     @State private var bands: [TerrainProfile.Band] = []
 
+    /// One entry per airspace name, in route order.
+    private var uniqueBands: [TerrainProfile.Band] {
+        var seen = Set<String>()
+        return bands.sorted { $0.startNM < $1.startNM }.filter { seen.insert($0.name).inserted }
+    }
+
     private var highest: Double {
         max(samples.map(\.groundFt).max() ?? 0, Double(obstacles.map(\.0.amslFt).max() ?? 0))
     }
@@ -150,6 +156,12 @@ struct VerticalProfileView: View {
                         AreaMark(x: .value("NM", s.distanceNM), y: .value("Sol", s.groundFt))
                             .foregroundStyle(Color.brown.opacity(0.6))
                     }
+                    // Ground line, visible even over flat terrain (Florida is near sea level).
+                    ForEach(samples) { s in
+                        LineMark(x: .value("NM", s.distanceNM), y: .value("Sol", s.groundFt))
+                            .foregroundStyle(Color.brown)
+                            .lineStyle(StrokeStyle(lineWidth: 2))
+                    }
                     ForEach(obstacles.indices, id: \.self) { i in
                         RuleMark(x: .value("NM", obstacles[i].1),
                                  yStart: .value("Base", obstacles[i].0.amslFt - obstacles[i].0.aglFt),
@@ -165,10 +177,20 @@ struct VerticalProfileView: View {
                 .chartYAxisLabel("ft MSL")
                 .frame(minHeight: 120, maxHeight: 200)
                 if !bands.isEmpty {
-                    Text(Set(bands.map(\.name)).sorted().joined(separator: " · "))
-                        .font(TypographyToken.labelXSmall)
-                        .foregroundStyle(ColorToken.textTertiary)
-                        .lineLimit(1)
+                    // Every airspace name in full, with its colour and limits (one line used to cut them).
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(uniqueBands) { b in
+                                HStack(spacing: 4) {
+                                    RoundedRectangle(cornerRadius: 2).fill(b.color.opacity(0.6)).frame(width: 10, height: 10)
+                                    Text("\(b.name) \(b.floor == 0 ? "SFC" : "\(b.floor)")–\(b.ceiling)")
+                                        .font(TypographyToken.labelXSmall)
+                                        .foregroundStyle(ColorToken.textSecondary)
+                                        .fixedSize()
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

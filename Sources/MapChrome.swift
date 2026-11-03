@@ -241,7 +241,7 @@ struct MapSettingsSheet: View {
                         HStack {
                             Text("Dernière mise à jour")
                             Spacer()
-                            Text(last.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(.secondary)
+                            Text(last.frDateTime).foregroundStyle(.secondary)
                         }
                     }
                 } header: { FFHeader("Données") }
@@ -276,7 +276,8 @@ struct RouteEditorPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                TextField("Départ, points, destination", text: $text)
+                TextField("Route", text: $text,
+                          prompt: Text("Départ, points, destination").foregroundColor(Color(white: 0.42)))
                     .font(.system(size: 15, weight: .semibold, design: .monospaced))
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()

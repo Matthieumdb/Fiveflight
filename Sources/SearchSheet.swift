@@ -7,6 +7,8 @@ struct SearchSheet: View {
     var nearest: [Airport]
     var onSelect: ((Airport) -> Void)?
     @State private var query = ""
+    @State private var searching = false
+    @Environment(\.dismiss) private var dismiss
 
     private var results: [Airport] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
@@ -14,21 +16,11 @@ struct SearchSheet: View {
             var seen = Set<String>(); var out: [Airport] = []
             let recents = model.recents.compactMap { store.airport($0) }
             let favs = model.favorites.compactMap { store.airport($0) }
-            for a in recents + favs + nearest where seen.insert(a.id).inserted { out.append(a) }
+            let around = nearest.filter { $0.type != "heliport" && $0.type != "closed" }
+            for a in recents + favs + around where seen.insert(a.id).inserted { out.append(a) }
             return Array(out.prefix(30))
         }
-        var out: [Airport] = []
-        for a in store.airports {
-            if a.id.uppercased().contains(q)
-                || (a.iata?.uppercased().contains(q) ?? false)
-                || a.name.uppercased().contains(q) {
-                out.append(a)
-                if out.count >= 50 { break }
-            }
-        }
-        // ICAO/IATA exact-ish matches first.
-        let first = { (a: Airport) in a.id.uppercased().hasPrefix(q) || a.iata?.uppercased() == q }
-        let airports = out.filter(first) + out.filter { !first($0) }
+        let airports = AirportSearch.rank(store.airports, query: q)
         // Building a plan: VOR, NDB, fixes, VFR waypoints and user points are valid waypoints too.
         guard onSelect != nil else { return airports }
         let user = model.userWaypoints.filter { $0.id.contains(q) || $0.name.uppercased().contains(q) }
@@ -65,7 +57,12 @@ struct SearchSheet: View {
             }
             .navigationTitle("Recherche")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: onSelect == nil ? "Code OACI, IATA ou nom" : "Aéroport, VOR, fix, point VFR…")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { Button("Fermer") { dismiss() } }
+            }
+            // Keyboard up as soon as the sheet opens.
+            .onAppear { searching = true }
+            .searchable(text: $query, isPresented: $searching, placement: .navigationBarDrawer(displayMode: .always), prompt: onSelect == nil ? "Code OACI, IATA ou nom" : "Aéroport, VOR, fix, point VFR…")
             .textInputAutocapitalization(.characters)
             .overlay {
                 if !query.isEmpty && results.isEmpty { ContentUnavailableView.search(text: query) }
@@ -89,5 +86,28 @@ struct SearchSheet: View {
                 Text(m).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
             }
         }
+    }
+}
+
+enum AirportSearch {
+    /// Best match first: exact code, code prefix, then names; bigger airports before private strips.
+    static func rank(_ all: [Airport], query q: String, limit: Int = 50) -> [Airport] {
+        let typeRank = ["large_airport": 0, "medium_airport": 1, "small_airport": 2, "seaplane_base": 3, "heliport": 5]
+        func score(_ a: Airport) -> Int? {
+            let id = a.id.uppercased(), iata = a.iata?.uppercased(), icao = a.icao?.uppercased()
+            if id == q || iata == q || icao == q { return 0 }
+            if id.hasPrefix(q) || (icao?.hasPrefix(q) ?? false) { return 1 }
+            if iata?.hasPrefix(q) ?? false { return 2 }
+            let name = a.name.uppercased()
+            if name.hasPrefix(q) || name.contains(" " + q) { return 3 }
+            if id.contains(q) || name.contains(q) || (a.municipality?.uppercased().contains(q) ?? false) { return 4 }
+            return nil
+        }
+        var scored: [(Airport, Int, Int)] = []
+        for a in all {
+            if let sc = score(a) { scored.append((a, sc, typeRank[a.type] ?? 4)) }
+        }
+        scored.sort { ($0.1, $0.2, $0.0.id) < ($1.1, $1.2, $1.0.id) }
+        return scored.prefix(limit).map { $0.0 }
     }
 }

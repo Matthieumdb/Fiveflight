@@ -136,6 +136,8 @@ struct Checklist: Codable, Identifiable {
     var id = UUID()
     var name: String
     var items: [ChecklistItem]
+    /// Aircraft profile this list belongs to; nil = every aircraft.
+    var aircraftID: UUID?
 }
 
 /// App-wide persisted state: favourites, logbook, checklists. Saved to UserDefaults.
@@ -407,7 +409,9 @@ final class AppModel: ObservableObject {
         let step = max(1, track.count / 2000)
         let takeoff = FlightMonitor.shared.airborneSince
         let flown = takeoff.map { Int(Date.now.timeIntervalSince($0) / 60) }.flatMap { $0 >= 5 ? $0 : nil }
-        let minutes = flown ?? eteMinutes
+        // Never a 0h00 flight: without a usable ETE, distance at cruise speed.
+        let planned = eteMinutes > 0 ? eteMinutes : (cruiseGS > 0 ? Int((Double(nm) / cruiseGS * 60).rounded()) : 0)
+        let minutes = flown ?? planned
         let end = Date.now, start = end.addingTimeInterval(-Double(minutes) * 60)
         let here = arrival ?? departure ?? userLocation ?? Self.homeCoordinate
         let night = Solar.nightMinutes(lat: here.latitude, lon: here.longitude, start: start, end: end)
@@ -459,6 +463,15 @@ final class AppModel: ObservableObject {
         Haptics.tap()
         save()
     }
+    /// Replaces a list after editing (items, name, aircraft).
+    func updateChecklist(_ list: Checklist) {
+        if let i = checklists.firstIndex(where: { $0.id == list.id }) { checklists[i] = list } else { checklists.append(list) }
+        save()
+    }
+    func deleteChecklist(_ id: UUID) {
+        checklists.removeAll { $0.id == id }
+        save()
+    }
     func reset(_ list: Checklist) {
         guard let li = checklists.firstIndex(where: { $0.id == list.id }) else { return }
         for i in checklists[li].items.indices { checklists[li].items[i].done = false }
@@ -486,7 +499,8 @@ final class AppModel: ObservableObject {
         showGlideRing = defaults.object(forKey: "showGlideRing") as? Bool ?? true
         medicalExpiry = defaults.double(forKey: "medicalExpiry")
         flightReviewDate = defaults.double(forKey: "flightReviewDate")
-        selectedAircraft = aircraftProfiles.first { $0.id.uuidString == selectedID }
+        // One current aircraft everywhere (flights, performance, W&B): the first profile when none was picked.
+        selectedAircraft = aircraftProfiles.first { $0.id.uuidString == selectedID } ?? aircraftProfiles.first
         recents = defaults.stringArray(forKey: "recents") ?? []
         nightMode = defaults.bool(forKey: "nightMode")
         if defaults.object(forKey: "cruiseGS") != nil { cruiseGS = defaults.double(forKey: "cruiseGS") }
@@ -557,7 +571,8 @@ final class AppModel: ObservableObject {
 
     /// Wind-corrected when the navlog is available, else distance / true airspeed.
     var totalTimeMinutes: Double {
-        if !navlog.isEmpty { return navlog.reduce(0) { $0 + $1.minutes } }
+        let navlogMinutes = navlog.reduce(0) { $0 + $1.minutes }
+        if navlogMinutes > 0 { return navlogMinutes }
         guard totalDistanceNM > 0 && cruiseGS > 0 else { return 0 }
         return (totalDistanceNM / cruiseGS) * 60
     }

@@ -336,7 +336,7 @@ final class WeatherService: ObservableObject {
         guard let url = URL(string: "\(baseURL)/pirep?format=json&age=3&bbox=\(bbox)") else { return }
 
         let result: [PIREPResponse]? = await fetchWithRetry(url: url) { data in
-            try JSONDecoder().decode([PIREPResponse].self, from: data)
+            try PIREPResponse.decodeList(data)
         }
         if let result {
             pireps = result
@@ -624,6 +624,49 @@ struct PIREPResponse: Codable {
     let icgInt1: String?
     let icgType1: String?
     let wxString: String?
+
+    enum CodingKeys: String, CodingKey {
+        case obsTime, acType, lat, lon, fltLvl, pirepType, rawOb, tbInt1, tbType1, icgInt1, icgType1, wxString
+    }
+
+    /// Lenient: the API mixes numbers and strings ("fltLvl": "DURD", "obsTime" as text) from one report to the next.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func number(_ k: CodingKeys) -> Double? {
+            if let d = try? c.decodeIfPresent(Double.self, forKey: k) { return d }
+            if let s = try? c.decodeIfPresent(String.self, forKey: k) { return Double(s) }
+            return nil
+        }
+        func text(_ k: CodingKeys) -> String? {
+            if let s = try? c.decodeIfPresent(String.self, forKey: k) { return s }
+            if let d = try? c.decodeIfPresent(Double.self, forKey: k) { return String(Int(d)) }
+            return nil
+        }
+        guard let lat = number(.lat), let lon = number(.lon), let raw = text(.rawOb) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: c.codingPath, debugDescription: "PIREP without position or text"))
+        }
+        self.lat = lat
+        self.lon = lon
+        self.rawOb = raw
+        obsTime = number(.obsTime)
+        acType = text(.acType)
+        fltLvl = number(.fltLvl)
+        pirepType = text(.pirepType)
+        tbInt1 = text(.tbInt1)
+        tbType1 = text(.tbType1)
+        icgInt1 = text(.icgInt1)
+        icgType1 = text(.icgType1)
+        wxString = text(.wxString)
+    }
+
+    /// Decodes the reports one by one, skipping a malformed one instead of losing the whole list.
+    static func decodeList(_ data: Data) throws -> [PIREPResponse] {
+        struct Lossy: Decodable {
+            let value: PIREPResponse?
+            init(from decoder: Decoder) throws { value = try? PIREPResponse(from: decoder) }
+        }
+        return try JSONDecoder().decode([Lossy].self, from: data).compactMap(\.value)
+    }
 }
 
 struct AirSigmetResponse: Codable {

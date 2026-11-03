@@ -162,11 +162,13 @@ struct RunwayAnalysisSection: View {
     private func distanceLine(_ title: String, _ d: RunwayPerformance.Distances, length: Int?) -> some View {
         let ratio = length.map { d.over50 / Double(max(1, $0)) } ?? 0
         let color: Color = length == nil ? .primary : (ratio > 1 ? ColorToken.danger : (ratio > 0.7 ? ColorToken.warning : ColorToken.success))
-        return HStack {
-            Text(title).frame(width: 96, alignment: .leading)
-            Text("roulage \(Int(d.groundRoll.rounded())) ft")
+        return HStack(alignment: .firstTextBaseline) {
+            Text(title).frame(width: 84, alignment: .leading)
             Spacer()
-            Text("15 m : \(Int(d.over50.rounded())) ft").foregroundStyle(color).bold()
+            VStack(alignment: .trailing, spacing: 1) {
+                Text("passage des 50 ft : \(Int(d.over50.rounded())) ft").foregroundStyle(color).bold()
+                Text("roulage \(Int(d.groundRoll.rounded())) ft").foregroundStyle(.secondary)
+            }
         }
         .font(.caption.monospacedDigit())
     }
@@ -188,19 +190,33 @@ struct AirportTaxiMap: View {
         }
     }
 
+    private var labels: [(ident: String, coordinate: CLLocationCoordinate2D)] {
+        runways.filter { !$0.closed }.flatMap { r -> [(ident: String, coordinate: CLLocationCoordinate2D)] in
+            var out: [(ident: String, coordinate: CLLocationCoordinate2D)] = []
+            let le = r.leLat.flatMap { la in r.leLon.map { CLLocationCoordinate2D(latitude: la, longitude: $0) } }
+            let he = r.heLat.flatMap { la in r.heLon.map { CLLocationCoordinate2D(latitude: la, longitude: $0) } }
+            func beyond(_ p: CLLocationCoordinate2D, from o: CLLocationCoordinate2D?) -> CLLocationCoordinate2D {
+                guard let o else { return p }
+                let k = 0.1
+                return CLLocationCoordinate2D(latitude: p.latitude + (p.latitude - o.latitude) * k,
+                                              longitude: p.longitude + (p.longitude - o.longitude) * k)
+            }
+            if let le, !r.leIdent.isEmpty { out.append((r.leIdent, beyond(le, from: he))) }
+            if let he, !r.heIdent.isEmpty { out.append((r.heIdent, beyond(he, from: le))) }
+            return out
+        }
+    }
+
     var body: some View {
         Map(position: $position) {
             UserAnnotation()
             ForEach(Array(drawable.enumerated()), id: \.offset) { _, r in
                 MapPolyline(coordinates: [r.a, r.b]).stroke(.white.opacity(0.85), lineWidth: 3)
             }
-            ForEach(runways.filter { !$0.closed }) { r in
-                if let la = r.leLat, let lo = r.leLon, !r.leIdent.isEmpty {
-                    Annotation("", coordinate: CLLocationCoordinate2D(latitude: la, longitude: lo)) { label(r.leIdent) }
-                }
-                if let ha = r.heLat, let ho = r.heLon, !r.heIdent.isEmpty {
-                    Annotation("", coordinate: CLLocationCoordinate2D(latitude: ha, longitude: ho)) { label(r.heIdent) }
-                }
+            // Labels just past each threshold, along the runway axis: two thresholds that nearly touch
+            // (KVRB 22 and 12L) no longer cover each other.
+            ForEach(Array(labels.enumerated()), id: \.offset) { _, l in
+                Annotation("", coordinate: l.coordinate) { label(l.ident) }
             }
         }
         .mapStyle(.hybrid(elevation: .flat))

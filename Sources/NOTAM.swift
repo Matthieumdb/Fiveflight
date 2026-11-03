@@ -196,7 +196,7 @@ struct NOTAMSection: View {
                 HStack { ProgressView(); Text("Chargement des NOTAM…").foregroundStyle(ColorToken.textTertiary) }
             }
         } header: {
-            Text("NOTAM")
+            FFHeader("NOTAM")
         } footer: {
             Text("Source : FAA NOTAM Search, sans clé.")
         }
@@ -223,8 +223,22 @@ struct NOTAMRow: View {
                 Text(notam.id).font(TypographyToken.monoSmall).foregroundStyle(ColorToken.brandPrimary)
             }
             Text(notam.text).font(TypographyToken.bodySmall).textSelection(.enabled)
-            Text("\(notam.start) → \(notam.end) UTC").font(TypographyToken.labelXSmall).foregroundStyle(ColorToken.textTertiary)
+            Text("\(Self.display(notam.start)) → \(Self.display(notam.end))")
+                .font(TypographyToken.labelXSmall).foregroundStyle(ColorToken.textTertiary)
         }
+    }
+
+    /// FAA "12/03/2025 1400" (US month/day, UTC) or "12/03/2025 0900EST" → "03/12/2025 14:00Z" / "03/12/2025 09:00 EST".
+    static func display(_ raw: String) -> String {
+        let s = raw.trimmingCharacters(in: .whitespaces)
+        guard s.range(of: #"^\d{2}/\d{2}/\d{4}\s*\d{4}\s*[A-Z]*$"#, options: .regularExpression) != nil else { return s }
+        let digits = s.filter(\.isNumber).map(String.init)   // MMddyyyyHHmm
+        guard digits.count == 12 else { return s }
+        let mm = digits[0...1].joined(), dd = digits[2...3].joined(), yyyy = digits[4...7].joined()
+        let hh = digits[8...9].joined(), mi = digits[10...11].joined()
+        let tz = String(s.reversed().prefix { $0.isLetter }.reversed())
+        let zone = tz.isEmpty || tz == "UTC" || tz == "Z" ? "Z" : " " + tz
+        return "\(dd)/\(mm)/\(yyyy) \(hh):\(mi)\(zone)"
     }
 }
 
@@ -243,7 +257,7 @@ struct FAAKeySection: View {
             }
             Link("Obtenir une clé gratuite sur api.faa.gov", destination: URL(string: "https://api.faa.gov/s/")!)
         } header: {
-            Text("NOTAM : clé FAA (facultative)")
+            FFHeader("NOTAM : clé FAA (facultative)")
         } footer: {
             Text("Plus nécessaire : les NOTAM viennent de FAA NOTAM Search sans clé. La clé ne sert que de secours et reste dans le trousseau.")
         }

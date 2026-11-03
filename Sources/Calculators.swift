@@ -8,6 +8,21 @@ struct WeightBalanceItem: Identifiable, Codable, Hashable {
     var weight: Double
     var arm: Double      // inches from datum
     var moment: Double { weight * arm }
+
+    static let emptyName = "Empty Weight"
+    /// Names are stored in English (keys shared with older versions); shown in French.
+    var displayName: String {
+        switch name {
+        case Self.emptyName: return "Masse à vide"
+        case "Pilot": return "Pilote"
+        case "Passenger": return "Passager"
+        case "Rear seats": return "Places arrière"
+        case "Fuel (gal)": return "Carburant (gal)"
+        case "Baggage": return "Bagages"
+        case "New Item": return "Autre"
+        default: return name
+        }
+    }
 }
 
 @MainActor
@@ -31,9 +46,33 @@ final class WeightBalanceModel: ObservableObject {
     var totalMoment: Double { items.reduce(0) { $0 + $1.moment } }
     var cg: Double { totalWeight > 0 ? totalMoment / totalWeight : 0 }
     var isWithinLimits: Bool { totalWeight <= maxWeight && cg >= cgForward && cg <= cgAft }
-    var usefulLoad: Double { maxWeight - (items.first(where: { $0.name == "Empty Weight" })?.weight ?? 0) }
+    var usefulLoad: Double { maxWeight - (items.first(where: { $0.name == WeightBalanceItem.emptyName })?.weight ?? 0) }
 
     init() { load() }
+
+    /// Ties the calculator to the aircraft profile: limits always come from it, its stations replace the
+    /// loading when the aircraft changed, and the empty weight is never missing or zero.
+    func sync(with aircraft: AircraftProfile) {
+        maxWeight = aircraft.maxWeight
+        cgForward = aircraft.cgForward
+        cgAft = aircraft.cgAft
+        let key = "wb.aircraftID"
+        let stations = aircraft.stations.isEmpty
+            ? AircraftProfile.defaultProfiles[0].stations
+            : aircraft.stations
+        if defaults.string(forKey: key) != aircraft.id.uuidString {
+            defaults.set(aircraft.id.uuidString, forKey: key)
+            items = stations
+            return
+        }
+        let empty = stations.first { $0.name == WeightBalanceItem.emptyName }
+            ?? WeightBalanceItem(name: WeightBalanceItem.emptyName, weight: aircraft.maxWeight * 0.65, arm: (aircraft.cgForward + aircraft.cgAft) / 2)
+        if let i = items.firstIndex(where: { $0.name == WeightBalanceItem.emptyName }) {
+            if items[i].weight <= 0 { items[i] = empty }
+        } else {
+            items.insert(empty, at: 0)
+        }
+    }
 
     func updateFuel(gallons: Double) {
         if let i = items.firstIndex(where: { $0.name == "Fuel (gal)" }) {

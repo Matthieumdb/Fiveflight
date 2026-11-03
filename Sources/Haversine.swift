@@ -111,96 +111,15 @@ struct Haversine {
 // MARK: - Solar Calculations (NOAA Algorithm)
 
 struct SolarCalculator {
-    private static let deg2rad = Double.pi / 180.0
-    private static let rad2deg = 180.0 / Double.pi
-
-    /// Calculate sunrise/sunset times for a coordinate on a given date
+    /// Sunrise/sunset (UTC instants) of the local solar day containing `date` at `coordinate`.
+    /// Delegates to `Solar` so the briefing and the airport sheet show the same times.
     static func sunTimes(for coordinate: CLLocationCoordinate2D, on date: Date = Date()) -> (sunrise: Date, sunset: Date)? {
-        let calendar = Calendar.current
-        let components = calendar.dateComponents([.year, .month, .day], from: date)
-        guard let year = components.year, let month = components.month, let day = components.day else { return nil }
-
-        let latitude = coordinate.latitude
-        let longitude = coordinate.longitude
-
-        // Day of year
-        let dayOfYear = dayOfYear(year: year, month: month, day: day)
-
-        // Julian day
-        let jd = julianDay(year: year, month: month, day: day)
-
-        // Solar noon
-        let solarNoon = solarNoonUTC(julianDay: jd, longitude: longitude)
-
-        // Sun declination
-        let declination = sunDeclination(julianDay: jd)
-
-        // Hour angle
-        let hourAngle = hourAngle(latitude: latitude, declination: declination)
-
-        // Sunrise/sunset in UTC
-        let sunriseUTC = solarNoon - hourAngle / 15.0
-        let sunsetUTC = solarNoon + hourAngle / 15.0
-
-        // Convert to local time (simplified - would need timezone lookup for accuracy)
-        let sunrise = Date(timeIntervalSince1970: sunriseUTC * 3600)
-        let sunset = Date(timeIntervalSince1970: sunsetUTC * 3600)
-
-        return (sunrise, sunset)
-    }
-
-    private static func dayOfYear(year: Int, month: Int, day: Int) -> Int {
-        let calendar = Calendar.current
-        let startOfYear = calendar.date(from: DateComponents(year: year, month: 1, day: 1))!
-        let date = calendar.date(from: DateComponents(year: year, month: month, day: day))!
-        return calendar.dateComponents([.day], from: startOfYear, to: date).day! + 1
-    }
-
-    private static func julianDay(year: Int, month: Int, day: Int) -> Double {
-        var y = Double(year)
-        var m = Double(month)
-        let d = Double(day)
-
-        if m <= 2 {
-            y -= 1
-            m += 12
-        }
-
-        let a = floor(y / 100)
-        let b = 2 - a + floor(a / 4)
-
-        return floor(365.25 * (y + 4716)) + floor(30.6001 * (m + 1)) + d + b - 1524.5
-    }
-
-    private static func solarNoonUTC(julianDay: Double, longitude: Double) -> Double {
-        let n = julianDay - 2451545.0
-        let meanLong = fmod(280.460 + 0.9856474 * n, 360.0)
-        let meanAnomaly = fmod(357.528 + 0.9856003 * n, 360.0)
-        let eclipticLong = meanLong + 1.915 * sin(meanAnomaly * deg2rad) + 0.020 * sin(2 * meanAnomaly * deg2rad)
-        let eqTime = 4 * (meanLong - 0.0057183 - eclipticLong + 1.915 * sin(meanAnomaly * deg2rad) + 0.020 * sin(2 * meanAnomaly * deg2rad))
-        let solarNoon = 12.0 - eqTime / 60.0 - longitude / 15.0
-        return solarNoon
-    }
-
-    private static func sunDeclination(julianDay: Double) -> Double {
-        let n = julianDay - 2451545.0
-        let meanLong = fmod(280.460 + 0.9856474 * n, 360.0)
-        let meanAnomaly = fmod(357.528 + 0.9856003 * n, 360.0)
-        let eclipticLong = meanLong + 1.915 * sin(meanAnomaly * deg2rad) + 0.020 * sin(2 * meanAnomaly * deg2rad)
-        let obliquity = 23.439 - 0.0000004 * n
-        return asin(sin(obliquity * deg2rad) * sin(eclipticLong * deg2rad)) * rad2deg
-    }
-
-    private static func hourAngle(latitude: Double, declination: Double) -> Double {
-        let latRad = latitude * deg2rad
-        let decRad = declination * deg2rad
-
-        let cosHourAngle = (sin(-0.833 * deg2rad) - sin(latRad) * sin(decRad)) / (cos(latRad) * cos(decRad))
-
-        if cosHourAngle > 1.0 { return 0 } // Polar day
-        if cosHourAngle < -1.0 { return 180 } // Polar night
-
-        return acos(cosHourAngle) * rad2deg
+        let lonSeconds = coordinate.longitude / 360 * 86400
+        let localDay = floor((date.timeIntervalSince1970 + lonSeconds) / 86400)
+        let localNoon = Date(timeIntervalSince1970: localDay * 86400 + 43200 - lonSeconds)
+        let r = Solar.sunriseSunset(lat: coordinate.latitude, lon: coordinate.longitude, date: localNoon)
+        guard let rise = r.sunrise, let set = r.sunset else { return nil }
+        return (rise, set)
     }
 }
 

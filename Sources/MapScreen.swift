@@ -101,7 +101,10 @@ struct MapScreen: View {
                 onLongPress: { coord in pressedPoint = PressedPoint(coordinate: coord) },
                 onMoveWaypoint: { id, coord in model.moveWaypoint(id: id, to: coord) }
             )
-            .ignoresSafeArea()
+            // Stops above the tab bar, so no airport marker hides under it.
+            .ignoresSafeArea(.container, edges: [.top, .horizontal])
+            // The keyboard must not resize the map (each resize re-rendered the screen while typing a route).
+            .ignoresSafeArea(.keyboard)
     }
 
     var body: some View {
@@ -141,8 +144,8 @@ struct MapScreen: View {
                 }
                 Spacer(minLength: 0)
                 if model.showRadar {
+                    // Bottom-left: the locate button and the nearby list live on the right.
                     HStack {
-                        Spacer()
                         Button {
                             radarPlaying.toggle()
                             if !radarPlaying { radarFrame = VFRMapView.radarFrames.count - 1 }
@@ -154,12 +157,14 @@ struct MapScreen: View {
                                 .background(FF.bar.opacity(0.9), in: Capsule())
                                 .foregroundStyle(.white)
                         }
+                        Spacer()
                     }
-                    .padding(.trailing, SpacingToken.space3)
+                    .padding(.leading, SpacingToken.space3)
                     .padding(.bottom, SpacingToken.space2)
                 }
                 MapBottomDrawer(drawer: $drawer)
             }
+            .ignoresSafeArea(.keyboard)
             .zIndex(20)
 
             if showNearbyPanel {
@@ -264,7 +269,10 @@ struct MapScreen: View {
             allowed = ["large_airport", "medium_airport"]
         } else if maxDelta > 0.5 {
             allowed = ["large_airport", "medium_airport", "small_airport"]
+        } else if maxDelta > 0.15 {
+            allowed = ["large_airport", "medium_airport", "small_airport", "seaplane_base"]
         } else {
+            // Heliports only when zoomed right in.
             allowed = ["large_airport", "medium_airport", "small_airport", "seaplane_base", "heliport"]
         }
         let rank = ["large_airport": 0, "medium_airport": 1, "small_airport": 2, "seaplane_base": 3, "heliport": 4]
@@ -340,10 +348,10 @@ struct RouteInfoBar: View {
                 .background(FF.barSecondary)
             }
             FFDataStrip(items: [
-                ("Dist", String(format: "%.0f nm", model.totalDistanceNM)),
+                ("Dist", String(format: "%.0f NM", model.totalDistanceNM)),
                 ("ETE", ffDuration(model.totalTimeMinutes)),
                 ("ETA", model.arrivalTime.formatted(date: .omitted, time: .shortened)),
-                ("Carb", String(format: "%.1f gal", model.totalFuelGallons))
+                ("Carb+rés.", String(format: "%.1f gal", model.totalFuelGallons))
             ])
         }
     }

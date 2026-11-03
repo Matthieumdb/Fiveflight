@@ -276,7 +276,7 @@ private struct FlightPlanWaypointRow: View {
                 .background(index == 0 || index == totalCount - 1 ? FF.accent : FF.magenta,
                             in: RoundedRectangle(cornerRadius: 4))
             VStack(alignment: .leading, spacing: 1) {
-                Text(airport.id).font(.system(size: 17, weight: .bold))
+                Text(airport.id).font(.custom("BarlowCondensed-Bold", size: 17, relativeTo: .body))
                 Text(airport.name).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
             }
         }

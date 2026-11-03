@@ -146,7 +146,7 @@ struct MapLayerSelector: View {
                                     .frame(width: 64, height: 44)
                                     .background(current == base ? FF.accent : FF.barSecondary,
                                                 in: RoundedRectangle(cornerRadius: 6))
-                                Text(base.title).font(.system(size: 11, weight: .semibold))
+                                Text(base.title).font(.custom("Barlow-SemiBold", size: 11, relativeTo: .body))
                             }
                             .foregroundStyle(current == base ? ColorToken.textOnBrand : ColorToken.textPrimary)
                         }
@@ -359,7 +359,7 @@ struct RouteEditorPanel: View {
 
     private func barLabel(_ title: String) -> some View {
         HStack(spacing: 3) {
-            Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+            Text(title).font(.custom("Barlow-SemiBold", size: 14, relativeTo: .body)).lineLimit(1)
             Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
         }
         .foregroundStyle(ColorToken.textPrimary)

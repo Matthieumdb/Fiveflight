@@ -157,7 +157,7 @@ struct RouteBriefingScreen: View {
                         Label("Arrivée de nuit", systemImage: "moon.stars.fill").foregroundStyle(ColorToken.warning)
                     }
                 }
-            } header: { Text("Horaires") }
+            } header: { FFHeader("Horaires") }
 
             ForEach([depAirport, destAirport].compactMap { $0 }.uniqued(), id: \.id) { a in
                 let isDep = a.id == depAirport?.id
@@ -191,7 +191,7 @@ struct RouteBriefingScreen: View {
                         }
                     }
                 }
-            } header: { Text("Vents prévus à \(model.cruiseAlt) ft (FD à l'heure de vol)") }
+            } header: { FFHeader("Vents prévus à \(model.cruiseAlt) ft (FD à l'heure de vol)") }
 
             Section {
                 if stations.isEmpty && !loading { Text("Aucune station sur le trajet").foregroundStyle(ColorToken.textTertiary) }
@@ -206,7 +206,7 @@ struct RouteBriefingScreen: View {
                             .foregroundStyle(ColorToken.textTertiary)
                     }
                 }
-            } header: { Text("Météo le long de la route (±10 NM)") }
+            } header: { FFHeader("Météo le long de la route (±10 NM)") }
 
             Section {
                 if advisories.isEmpty { Text("Aucun AIRMET/SIGMET sur la route").foregroundStyle(ColorToken.textTertiary) }
@@ -217,17 +217,17 @@ struct RouteBriefingScreen: View {
                         if !a.rawText.isEmpty { Text(a.rawText).font(TypographyToken.monoXXSmall).lineLimit(4) }
                     }
                 }
-            } header: { Text("AIRMET / SIGMET") }
+            } header: { FFHeader("AIRMET / SIGMET") }
 
             Section {
                 if tfrs.isEmpty { Text("Aucune TFR traversée").foregroundStyle(ColorToken.textTertiary) }
                 ForEach(tfrs) { t in airspaceRow(t, color: ColorToken.tfr) }
-            } header: { Text("TFR") }
+            } header: { FFHeader("TFR") }
 
             Section {
                 if crossed.isEmpty { Text("Aucun espace contrôlé ou SUA à \(model.cruiseAlt) ft").foregroundStyle(ColorToken.textTertiary) }
                 ForEach(crossed) { a in airspaceRow(a, color: ColorToken.warning) }
-            } header: { Text("Espaces traversés à \(model.cruiseAlt) ft") }
+            } header: { FFHeader("Espaces traversés à \(model.cruiseAlt) ft") }
 
             Section {
                 if notams.isEmpty && notamFailed.isEmpty && !loading {
@@ -250,7 +250,7 @@ struct RouteBriefingScreen: View {
                 ForEach(notamFailed, id: \.self) { loc in
                     Link("\(loc) : NOTAM indisponibles, ouvrir FAA NOTAM Search", destination: NOTAMService.searchURL(loc))
                 }
-            } header: { Text("NOTAM") } footer: {
+            } header: { FFHeader("NOTAM") } footer: {
                 Text("Sources : aviationweather.gov, tfr.faa.gov, FAA NOTAM Search, FAA ADDS. Ce résumé ne remplace pas un briefing officiel (1800wxbrief.com).")
             }
         }

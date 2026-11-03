@@ -151,8 +151,8 @@ struct MapScreen: View {
                                 .font(TypographyToken.labelSmall)
                                 .padding(.horizontal, SpacingToken.space3)
                                 .padding(.vertical, SpacingToken.space2)
-                                .background(FF.bar.opacity(0.9), in: Capsule())
-                                .foregroundStyle(.white)
+                                .background(FF.bar.opacity(0.95), in: Capsule())
+                                .foregroundStyle(ColorToken.textPrimary)
                         }
                     }
                     .padding(.trailing, SpacingToken.space3)

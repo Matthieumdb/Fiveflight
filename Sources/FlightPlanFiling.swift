@@ -59,7 +59,7 @@ struct VFRFlightPlanFilingScreen: View {
                     .textInputAutocapitalization(.characters).autocorrectionDisabled()
                 TextField("Couleur (WHITE BLUE)", text: $color).textInputAutocapitalization(.characters)
                 LabeledContent("Vitesse propre", value: "\(Int(model.cruiseGS)) kt")
-            } header: { Text("Avion") }
+            } header: { FFHeader("Avion") }
 
             Section {
                 LabeledContent("Départ", value: dep?.id ?? "—")
@@ -73,17 +73,17 @@ struct VFRFlightPlanFilingScreen: View {
                 LabeledContent("Autonomie", value: enduranceMinutes > 0 ? hhmm(enduranceMinutes) : "Saisir le carburant au départ")
                 Stepper("Personnes à bord : \(persons)", value: $persons, in: 1...9)
                 TextField("Remarques", text: $remarks)
-            } header: { Text("Vol") }
+            } header: { FFHeader("Vol") }
 
             Section {
                 TextField("Nom", text: $pilotName).textContentType(.name)
                 TextField("Téléphone", text: $pilotPhone).keyboardType(.phonePad).textContentType(.telephoneNumber)
                 TextField("Base (OACI)", text: $homeBase).textInputAutocapitalization(.characters)
-            } header: { Text("Pilote") }
+            } header: { FFHeader("Pilote") }
 
             Section {
                 Text(icaoPlan).font(TypographyToken.monoXSmall).textSelection(.enabled)
-            } header: { Text("Plan de vol OACI (FAA)") } footer: {
+            } header: { FFHeader("Plan de vol OACI (FAA)") } footer: {
                 if !missing.isEmpty {
                     Text("À compléter : \(missing.joined(separator: ", ")).").foregroundStyle(ColorToken.warning)
                 }
@@ -104,7 +104,7 @@ struct VFRFlightPlanFilingScreen: View {
                     Label("Appeler Flight Service : briefing, dépôt", systemImage: "phone.fill")
                 }
                 ShareLink(item: icaoPlan) { Label("Partager le plan", systemImage: "square.and.arrow.up") }
-            } header: { Text("Briefing et dépôt Leidos") } footer: {
+            } header: { FFHeader("Briefing et dépôt Leidos") } footer: {
                 Text("Copie le plan puis colle-le dans 1800wxbrief.com > Flight Plans, ou dicte-le au téléphone (1-800-WX-BRIEF). Le dépôt direct depuis l'app demande un accès développeur Leidos, réservé aux éditeurs sous contrat.")
             }
 
@@ -115,7 +115,7 @@ struct VFRFlightPlanFilingScreen: View {
                 Link(destination: Self.flightServicePhone) {
                     Label("Clôturer le plan à l'arrivée", systemImage: "stop.circle.fill")
                 }
-            } header: { Text("En vol") } footer: {
+            } header: { FFHeader("En vol") } footer: {
                 Text("En l'air : Flight Service sur 122.2 MHz ou la fréquence RCO de la carte. Un plan VFR non clôturé déclenche les recherches 30 min après l'heure prévue.")
             }
         }

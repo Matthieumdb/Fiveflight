@@ -237,9 +237,9 @@ struct InstrumentStrip: View {
 
     private func cell(_ title: String, _ value: String, _ unit: String) -> some View {
         VStack(spacing: 0) {
-            Text(title).font(TypographyToken.labelXSmall).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
-            Text(value).font(TypographyToken.monoMedium).foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.6)
-            Text(unit).font(TypographyToken.labelXSmall).foregroundStyle(.white.opacity(0.5))
+            Text(title).font(TypographyToken.labelXSmall).foregroundStyle(ColorToken.textSecondary).lineLimit(1)
+            Text(value).font(TypographyToken.monoMedium).foregroundStyle(ColorToken.brandSecondary).lineLimit(1).minimumScaleFactor(0.6)
+            Text(unit).font(TypographyToken.labelXSmall).foregroundStyle(ColorToken.textTertiary)
         }
         .frame(maxWidth: .infinity)
     }

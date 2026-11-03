@@ -135,7 +135,7 @@ struct MapLayerSelector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("CARTE DE BASE").font(.system(size: 11, weight: .semibold)).foregroundStyle(FF.label)
+            FFHeader("CARTE DE BASE")
                 .padding(.horizontal, 12).padding(.top, 10)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -148,15 +148,15 @@ struct MapLayerSelector: View {
                                                 in: RoundedRectangle(cornerRadius: 6))
                                 Text(base.title).font(.system(size: 11, weight: .semibold))
                             }
-                            .foregroundStyle(.white)
+                            .foregroundStyle(current == base ? ColorToken.textOnBrand : ColorToken.textPrimary)
                         }
                         .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
             }
-            Divider().overlay(Color.white.opacity(0.12))
-            Text("SURCOUCHES").font(.system(size: 11, weight: .semibold)).foregroundStyle(FF.label)
+            Divider().overlay(ColorToken.borderDefault)
+            FFHeader("SURCOUCHES")
                 .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 4)
             ScrollView {
                 VStack(spacing: 0) {
@@ -175,7 +175,7 @@ struct MapLayerSelector: View {
         .padding(.bottom, 6)
         .background(FF.bar.opacity(0.97))
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: .black.opacity(0.4), radius: 12, y: 4)
+        .shadow(color: ColorToken.shadowMedium, radius: 12, y: 4)
         .frame(maxWidth: 420)
         .padding(.horizontal, 8)
         .padding(.top, 4)
@@ -185,7 +185,7 @@ struct MapLayerSelector: View {
         Button { isOn.wrappedValue.toggle() } label: {
             HStack(spacing: 10) {
                 Image(systemName: icon).frame(width: 22).foregroundStyle(isOn.wrappedValue ? FF.accent : FF.label)
-                Text(title).foregroundStyle(.white)
+                Text(title).foregroundStyle(ColorToken.textPrimary)
                 Spacer()
                 if isOn.wrappedValue {
                     Image(systemName: "checkmark").font(.system(size: 14, weight: .bold)).foregroundStyle(FF.accent)
@@ -337,7 +337,7 @@ struct RouteEditorPanel: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(ColorToken.textPrimary)
                         .frame(width: 36, height: 30)
                         .background(FF.barSecondary, in: RoundedRectangle(cornerRadius: 6))
                 }
@@ -362,7 +362,7 @@ struct RouteEditorPanel: View {
             Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
             Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(ColorToken.textPrimary)
         .padding(.horizontal, 8)
         .frame(height: 30)
         .background(FF.barSecondary, in: RoundedRectangle(cornerRadius: 6))
@@ -408,13 +408,14 @@ struct MapBottomDrawer: View {
             VStack(spacing: 0) {
                 HStack {
                     Text(current == .navlog ? "NAVLOG" : "PROFIL VERTICAL")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
+                        .font(.custom("BarlowCondensed-SemiBold", size: 13, relativeTo: .footnote))
+                        .tracking(0.8)
+                        .foregroundStyle(ColorToken.brandSecondary)
                     Spacer()
                     Button {
                         withAnimation(AnimationToken.spring) { drawer = nil }
                     } label: {
-                        Image(systemName: "xmark").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                        Image(systemName: "xmark").font(.system(size: 13, weight: .bold)).foregroundStyle(ColorToken.textPrimary)
                     }
                 }
                 .padding(.horizontal, 12)

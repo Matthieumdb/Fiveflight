@@ -28,7 +28,7 @@ struct FlightPlanSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Trajet") {
+                Section {
                     ForEach(waypoints) { wp in
                         Label {
                             VStack(alignment: .leading, spacing: 1) {
@@ -39,10 +39,10 @@ struct FlightPlanSheet: View {
                     }
                     .onDelete { waypoints.remove(atOffsets: $0) }
                     .onMove { waypoints.move(fromOffsets: $0, toOffset: $1) }
-                }
+                } header: { FFHeader("Trajet") }
 
                 if !legs.isEmpty {
-                    Section("Segments") {
+                    Section {
                         ForEach(legs) { leg in
                             HStack {
                                 Text("\(leg.from.id) → \(leg.to.id)").font(.subheadline.monospaced())
@@ -54,10 +54,10 @@ struct FlightPlanSheet: View {
                             }
                             .font(.subheadline)
                         }
-                    }
+                    } header: { FFHeader("Segments") }
                 }
 
-                Section("Performance") {
+                Section {
                     Stepper(value: $model.cruiseGS, in: 40.0...500.0, step: 5.0) {
                         Text("Vitesse propre (TAS) : \(Int(model.cruiseGS)) kt")
                     }
@@ -67,9 +67,9 @@ struct FlightPlanSheet: View {
                     Stepper(value: $model.reserveMin, in: 0.0...120.0, step: 5.0) {
                         Text("Réserve : \(Int(model.reserveMin)) min")
                     }
-                }
+                } header: { FFHeader("Performance") }
 
-                Section("Totaux") {
+                Section {
                     LabeledContent("Distance", value: "\(Int(totalNM.rounded())) NM")
                     LabeledContent("Temps en route", value: hm(enrouteMin))
                     LabeledContent("Carburant en route", value: String(format: "%.1f gal", fuelEnroute))
@@ -78,7 +78,7 @@ struct FlightPlanSheet: View {
                         Text(String(format: "%.1f gal", fuelEnroute + fuelReserve))
                             .bold().foregroundStyle(Theme.accent)
                     } label: { Text("Carburant requis").bold() }
-                }
+                } header: { FFHeader("Totaux") }
 
                 if waypoints.count >= 2 {
                     Section {

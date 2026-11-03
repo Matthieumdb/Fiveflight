@@ -1,26 +1,30 @@
 import SwiftUI
 import UIKit
 
-/// ForeFlight-style look: charcoal toolbars and tab bar, ForeFlight blue accent,
-/// grouped content lists, small grey uppercase section headers, data "boxes" with label over value.
+/// App chrome in the "Papier carte" style: paper toolbars and tab bar, magenta actions,
+/// grouped content lists, small uppercase section headers, data "boxes" with label over value.
 enum FF {
-    static let accent = Color(hex: "2D9CF0")
-    static let accentUI = UIColor(red: 0x2D / 255, green: 0x9C / 255, blue: 0xF0 / 255, alpha: 1)
-    static let bar = Color(hex: "2A2E33")
-    static let barUI = UIColor(red: 0x2A / 255, green: 0x2E / 255, blue: 0x33 / 255, alpha: 1)
-    static let barSecondary = Color(hex: "3A3F45")
-    static let magenta = Color(hex: "D63AF9")           // active route line / course, as in ForeFlight
-    static let label = Color.white.opacity(0.62)
+    static let accent = ColorToken.brandPrimary
+    static let accentUI = UIColor(ColorToken.brandPrimary)
+    static let bar = ColorToken.surfaceElevated
+    static let barUI = UIColor(ColorToken.surfaceElevated)
+    static let barSecondary = ColorToken.surfaceHover
+    static let magenta = ColorToken.brandPrimary         // active route line / course
+    static let label = ColorToken.textSecondary
 
     /// UIKit appearance for every navigation bar, tab bar and segmented control in the app.
     @MainActor
     static func applyAppearance() {
+        TypographyToken.registerFonts()
         let nav = UINavigationBarAppearance()
         nav.configureWithOpaqueBackground()
         nav.backgroundColor = barUI
-        nav.shadowColor = .clear
-        nav.titleTextAttributes = [.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 17, weight: .semibold)]
-        nav.largeTitleTextAttributes = [.foregroundColor: UIColor.white]
+        nav.shadowColor = UIColor(ColorToken.borderDefault)
+        let title = UIColor(ColorToken.brandSecondary)
+        nav.titleTextAttributes = [.foregroundColor: title,
+                                   .font: UIFont(name: "BarlowCondensed-Bold", size: 19) ?? .systemFont(ofSize: 17, weight: .semibold)]
+        nav.largeTitleTextAttributes = [.foregroundColor: title,
+                                        .font: UIFont(name: "BarlowCondensed-Bold", size: 34) ?? .systemFont(ofSize: 34, weight: .bold)]
         let button = UIBarButtonItemAppearance()
         button.normal.titleTextAttributes = [.foregroundColor: accentUI]
         nav.buttonAppearance = button
@@ -33,15 +37,20 @@ enum FF {
         let tab = UITabBarAppearance()
         tab.configureWithOpaqueBackground()
         tab.backgroundColor = barUI
-        tab.shadowColor = .clear
+        tab.shadowColor = UIColor(ColorToken.borderDefault)
+        let idle = UIColor(ColorToken.textSecondary)
         for item in [tab.stackedLayoutAppearance, tab.inlineLayoutAppearance, tab.compactInlineLayoutAppearance] {
-            item.normal.iconColor = UIColor(white: 0.62, alpha: 1)
-            item.normal.titleTextAttributes = [.foregroundColor: UIColor(white: 0.62, alpha: 1)]
+            item.normal.iconColor = idle
+            item.normal.titleTextAttributes = [.foregroundColor: idle]
             item.selected.iconColor = accentUI
             item.selected.titleTextAttributes = [.foregroundColor: accentUI]
         }
         UITabBar.appearance().standardAppearance = tab
         UITabBar.appearance().scrollEdgeAppearance = tab
+
+        // Lists sit on chart paper instead of the system grey.
+        UICollectionView.appearance().backgroundColor = UIColor(ColorToken.surfaceBase)
+        UITableView.appearance().backgroundColor = UIColor(ColorToken.surfaceBase)
 
         UISegmentedControl.appearance().selectedSegmentTintColor = accentUI
         UISegmentedControl.appearance().setTitleTextAttributes([.foregroundColor: UIColor.white], for: .selected)
@@ -52,16 +61,17 @@ enum FF {
 struct FFDataBox: View {
     let label: String
     let value: String
-    var valueColor: Color = .white
+    var valueColor: Color = ColorToken.brandSecondary
 
     var body: some View {
         VStack(spacing: 1) {
             Text(label.uppercased())
-                .font(.system(size: 10, weight: .semibold))
+                .font(.custom("BarlowCondensed-SemiBold", size: 11, relativeTo: .caption2))
+                .tracking(0.8)
                 .foregroundStyle(FF.label)
                 .lineLimit(1)
             Text(value)
-                .font(.system(size: 17, weight: .bold).monospacedDigit())
+                .font(.custom("BarlowCondensed-SemiBold", size: 19, relativeTo: .headline).monospacedDigit())
                 .foregroundStyle(valueColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
@@ -80,7 +90,7 @@ struct FFDataStrip: View {
         HStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.offset) { i, item in
                 // Fixed height: a bare Rectangle is greedy and used to stretch the strip to fill the screen.
-                if i > 0 { Rectangle().fill(Color.white.opacity(0.12)).frame(width: 0.5, height: 26) }
+                if i > 0 { Rectangle().fill(ColorToken.borderDefault).frame(width: 0.5, height: 26) }
                 FFDataBox(label: item.0, value: item.1)
             }
         }
@@ -89,7 +99,7 @@ struct FFDataStrip: View {
     }
 }
 
-/// ForeFlight toolbar button: white text/icon on the charcoal bar, blue when active.
+/// Toolbar button: ink on paper, white on magenta when active.
 struct FFBarButton: View {
     let title: String?
     let icon: String?
@@ -100,26 +110,27 @@ struct FFBarButton: View {
         Button(action: action) {
             HStack(spacing: 4) {
                 if let icon { Image(systemName: icon).font(.system(size: 15, weight: .semibold)) }
-                if let title { Text(title).font(.system(size: 14, weight: .semibold)) }
+                if let title { Text(title).font(.custom("Barlow-SemiBold", size: 14, relativeTo: .subheadline)) }
             }
-            .foregroundStyle(active ? .white : .white.opacity(0.92))
+            .foregroundStyle(active ? ColorToken.textOnBrand : ColorToken.textPrimary)
             .lineLimit(1)
             .padding(.horizontal, 9)
             .frame(height: 30)
-            .background(active ? FF.accent : FF.barSecondary, in: RoundedRectangle(cornerRadius: 6))
+            .background(active ? FF.accent : FF.barSecondary, in: RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
     }
 }
 
-/// Small grey uppercase section header used across ForeFlight lists.
+/// The one section header used across lists: small condensed caps in chart blue.
 struct FFHeader: View {
     let text: String
     init(_ text: String) { self.text = text }
     var body: some View {
         Text(text.uppercased())
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.secondary)
+            .font(.custom("BarlowCondensed-SemiBold", size: 13, relativeTo: .footnote))
+            .tracking(0.8)
+            .foregroundStyle(ColorToken.brandSecondary)
     }
 }
 

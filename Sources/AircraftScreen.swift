@@ -57,22 +57,22 @@ private struct AircraftEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Identification") {
+                Section {
                     TextField("Nom", text: $profile.name)
                     TextField("Type (ex. C172)", text: $profile.type)
-                }
-                Section("Performances") {
+                } header: { FFHeader("Identification") }
+                Section {
                     number("Vitesse propre (kt)", $profile.cruiseSpeed)
                     number("Consommation (gal/h)", $profile.fuelBurn)
                     number("Capacité carburant (gal)", $profile.capacityGal)
-                }
+                } header: { FFHeader("Performances") }
                 Section {
                     number("Vitesse de montée (kt)", $profile.climbSpeed)
                     number("Taux de montée (ft/min)", $profile.climbRate)
                     number("Conso en montée (gal/h)", $profile.climbBurn)
                     number("Vitesse de descente (kt)", $profile.descentSpeed)
                     number("Taux de descente (ft/min)", $profile.descentRate)
-                } header: { Text("Montée et descente") } footer: {
+                } header: { FFHeader("Montée et descente") } footer: {
                     Text("Utilisés par le navlog pour le haut de montée (TOC) et le début de descente (TOD).")
                 }
                 Section {
@@ -80,14 +80,14 @@ private struct AircraftEditor: View {
                     number("Décollage, passage 50 ft (ft)", $profile.takeoff50ft)
                     number("Atterrissage, roulage (ft)", $profile.landingRoll)
                     number("Atterrissage, depuis 50 ft (ft)", $profile.landing50ft)
-                } header: { Text("Distances POH") } footer: {
+                } header: { FFHeader("Distances POH") } footer: {
                     Text("Niveau de la mer, 15 °C, masse max, sans vent, piste en dur. Corrigées par aérodrome dans l'onglet Pistes.")
                 }
-                Section("Masse et centrage") {
+                Section {
                     number("Masse max (lb)", $profile.maxWeight)
                     number("Centrage avant (in)", $profile.cgForward)
                     number("Centrage arrière (in)", $profile.cgAft)
-                }
+                } header: { FFHeader("Masse et centrage") }
             }
             .navigationTitle(profile.name)
             .navigationBarTitleDisplayMode(.inline)

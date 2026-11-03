@@ -59,6 +59,13 @@ final class FlightMonitor: ObservableObject {
                 found.append("Obstacle \(o.amslFt) ft MSL à \(String(format: "%.1f", Haversine.nauticalMiles(position, o.coordinate))) NM")
             }
         }
+        // Traffic: within 2 NM and 500 ft.
+        for t in ADSBReceiver.shared.traffic
+            where Haversine.nauticalMiles(position, t.coordinate) < 2 && abs(t.altitudeFt - altitudeFt) < 500 {
+            found.append(String(format: "Trafic %@ à %.1f NM, %+d ft",
+                                t.callsign.isEmpty ? "?" : t.callsign, Haversine.nauticalMiles(position, t.coordinate),
+                                t.altitudeFt - altitudeFt))
+        }
         if let left = fuelRemaining(model: model), model.fuelBurn > 0 {
             let reserve = model.reserveMin / 60 * model.fuelBurn
             let needed = remainingMinutes(position: position, groundSpeed: groundSpeed, model: model) / 60 * model.fuelBurn

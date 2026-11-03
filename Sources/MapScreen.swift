@@ -16,6 +16,7 @@ struct MapScreen: View {
     @State private var showNearbyPanel = false
     @State private var showSearch = false
     @State private var showNearest = false
+    @ObservedObject private var adsb = ADSBReceiver.shared
     /// Radar loop: index in `VFRMapView.radarFrames` (last = live), animating while `radarPlaying`.
     @State private var radarFrame = VFRMapView.radarFrames.count - 1
     @State private var radarPlaying = false
@@ -68,7 +69,8 @@ struct MapScreen: View {
                 showTFRs: model.showAirspace,
                 chart: model.mapChart,
                 satellite: model.showSatellite,
-                weatherLayers: weatherLayers
+                weatherLayers: weatherLayers,
+                traffic: adsb.traffic
             )
             .ignoresSafeArea()
 

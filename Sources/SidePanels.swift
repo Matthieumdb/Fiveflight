@@ -779,6 +779,8 @@ struct LayersSidePanel: View {
                         .textCase(.uppercase)
                 }
 
+                ADSBSection()
+
                 OfflineChartsSection()
 
                 Section {
@@ -1001,5 +1003,28 @@ struct NearbyAirportRow: View {
         guard let loc = model.userLocation else { return "—" }
         let bearing = Haversine.trueCourse(loc, airport.coordinate)
         return String(format: "%03d°", bearing)
+    }
+}
+
+/// ADS-B receiver toggle and live status.
+struct ADSBSection: View {
+    @EnvironmentObject private var model: AppModel
+    @ObservedObject private var adsb = ADSBReceiver.shared
+
+    var body: some View {
+        Section {
+            Toggle("Récepteur ADS-B (GDL 90)", isOn: $model.adsbEnabled)
+            if model.adsbEnabled {
+                TimelineView(.periodic(from: .now, by: 2)) { _ in
+                    Label(adsb.connected ? "Connecté · \(adsb.traffic.count) trafic(s)" : "En attente du récepteur…",
+                          systemImage: adsb.connected ? "dot.radiowaves.left.and.right" : "wifi.exclamationmark")
+                        .foregroundStyle(adsb.connected ? ColorToken.success : ColorToken.textTertiary)
+                }
+            }
+        } header: {
+            Text("Trafic")
+        } footer: {
+            Text("Connecte l'iPhone au Wi-Fi du récepteur (Stratux, Sentry, SkyEcho). Le trafic s'affiche en orange sur la carte.")
+        }
     }
 }

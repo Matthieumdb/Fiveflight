@@ -167,6 +167,13 @@ final class AppModel: ObservableObject {
     @Published var showSatellite: Bool = false { didSet { defaults.set(showSatellite, forKey: "showSatellite") } }
     /// GOES infrared cloud imagery over the map.
     @Published var showIR: Bool = false { didSet { defaults.set(showIR, forKey: "showIR") } }
+    /// Listen for a GDL 90 ADS-B receiver (Stratux, Sentry…) on UDP 4000.
+    @Published var adsbEnabled: Bool = false {
+        didSet {
+            defaults.set(adsbEnabled, forKey: "adsbEnabled")
+            if adsbEnabled { ADSBReceiver.shared.start() } else { ADSBReceiver.shared.stop() }
+        }
+    }
     @Published var showAirspace: Bool = true { didSet { defaults.set(showAirspace, forKey: "showAirspace") } }
 
     // Appearance (persisted): 0 = System, 1 = Light, 2 = Dark
@@ -330,6 +337,7 @@ final class AppModel: ObservableObject {
         mapChart = defaults.string(forKey: "mapChart") ?? MapChart.sectional.rawValue
         showSatellite = defaults.bool(forKey: "showSatellite")
         showIR = defaults.bool(forKey: "showIR")
+        adsbEnabled = defaults.bool(forKey: "adsbEnabled")
         fuelOnBoard = defaults.double(forKey: "fuelOnBoard")
         showInstruments = defaults.bool(forKey: "showInstruments")
         showAirspace = defaults.object(forKey: "showAirspace") as? Bool ?? true

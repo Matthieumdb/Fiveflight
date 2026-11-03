@@ -450,6 +450,31 @@ final class FiveflightTests: XCTestCase {
         XCTAssertEqual(SUAStatus.of("APR - AUG, 0800 - 1700, DAILY", at: at(2, 9), near: p), .inactive)
     }
 
+    func testGDL90Traffic() {
+        // Traffic report: N123AB, 27.2N 80.3W, 3500 ft, 110 kt, track 180, with 0x7E inside the payload escaped.
+        func i24(_ v: Double) -> [UInt8] { let x = Int(v.rounded()) & 0xFFFFFF; return [UInt8(x >> 16), UInt8(x >> 8 & 0xFF), UInt8(x & 0xFF)] }
+        let alt = (3500 + 1000) / 25
+        var body: [UInt8] = [0x14, 0x00, 0xA1, 0x7E, 0xC3] + i24(27.2 / 180 * 8_388_608) + i24(-80.3 / 180 * 8_388_608)
+        body += [UInt8(alt >> 4), UInt8((alt & 0xF) << 4 | 0x9), 0x88, UInt8(110 >> 4), UInt8((110 & 0xF) << 4), 0x00, 128, 0x01]
+        body += Array("N123AB  ".utf8) + [0x00]
+        let crc = GDL90.crc(body[...])
+        var framed: [UInt8] = [0x7E]
+        for b in body + [UInt8(crc & 0xFF), UInt8(crc >> 8)] {
+            if b == 0x7E || b == 0x7D { framed += [0x7D, b ^ 0x20] } else { framed.append(b) }
+        }
+        framed.append(0x7E)
+        guard case .traffic(let t)? = GDL90.decode(Data(framed)).first else { return XCTFail("no traffic decoded") }
+        XCTAssertEqual(t.id, 0xA17EC3)
+        XCTAssertEqual(t.callsign, "N123AB")
+        XCTAssertEqual(t.altitudeFt, 3500)
+        XCTAssertEqual(t.speedKt, 110)
+        XCTAssertEqual(t.trackDeg, 180)
+        XCTAssertEqual(t.coordinate.latitude, 27.2, accuracy: 0.0001)
+        XCTAssertEqual(t.coordinate.longitude, -80.3, accuracy: 0.0001)
+        framed[framed.count - 3] ^= 0xFF                      // corrupt the CRC
+        XCTAssertTrue(GDL90.decode(Data(framed)).isEmpty)
+    }
+
     func testWindTriangle() {
         let head = Navlog.solve(trueCourse: 360, tas: 100, windFrom: 360, windSpeed: 20)
         XCTAssertEqual(head.wca, 0, accuracy: 0.01)

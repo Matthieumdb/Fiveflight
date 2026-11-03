@@ -113,6 +113,8 @@ struct VFRMapView: UIViewRepresentable {
     /// Iowa Environmental Mesonet weather layers drawn over the chart, e.g. "nexrad-n0q-900913" (radar,
     /// "-m30m" for 30 min ago) or "goes-east-ir-4km-900913" (GOES infrared). Takes over from `showWeather`.
     var weatherLayers: [String] = []
+    /// ADS-B targets from a GDL 90 receiver.
+    var traffic: [TrafficTarget] = []
 
     static let radarFrames = ["-m50m", "-m40m", "-m30m", "-m20m", "-m10m", ""]
 
@@ -159,6 +161,7 @@ struct VFRMapView: UIViewRepresentable {
         c.updateAirspacePolygons(on: mv, airspaces: airspaces, showAirspace: showAirspace, showTFRs: showTFRs,
                                  colorFor: airspaceColor, isTFR: airspaceTypeIsTFR)
         c.updateAnnotations(on: mv, nearest: nearest, waypoints: waypoints)
+        c.updateTraffic(on: mv, traffic: traffic)
         c.updateCategoryColors(on: mv, categories: categories)
 
         // Recenter only when SwiftUI bumps the version.
@@ -350,6 +353,21 @@ struct VFRMapView: UIViewRepresentable {
             if !added.isEmpty { mv.addAnnotations(added) }
         }
 
+        private var trafficByID: [UInt32: TrafficAnnotation] = [:]
+
+        func updateTraffic(on mv: MKMapView, traffic: [TrafficTarget]) {
+            let wanted = Dictionary(uniqueKeysWithValues: traffic.map { ($0.id, $0) })
+            for (id, a) in trafficByID where wanted[id] == nil || wanted[id] != a.target {
+                mv.removeAnnotation(a)
+                trafficByID[id] = nil
+            }
+            for (id, t) in wanted where trafficByID[id] == nil {
+                let a = TrafficAnnotation(t)
+                trafficByID[id] = a
+                mv.addAnnotation(a)
+            }
+        }
+
         /// Recolours visible markers when new METARs arrive, without re-adding them.
         func updateCategoryColors(on mv: MKMapView, categories: [String: String]) {
             guard categories != lastCategories else { return }
@@ -419,6 +437,17 @@ struct VFRMapView: UIViewRepresentable {
         }
 
         func mapView(_ mv: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            if let t = annotation as? TrafficAnnotation {
+                let v = MKAnnotationView(annotation: t, reuseIdentifier: nil)
+                let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .bold)
+                    .applying(UIImage.SymbolConfiguration(paletteColors: [.systemOrange]))
+                v.image = UIImage(systemName: "airplane", withConfiguration: config)
+                // SF "airplane" points east; rotate to the target's track.
+                v.transform = CGAffineTransform(rotationAngle: CGFloat(Double(t.target.trackDeg - 90) * .pi / 180))
+                v.canShowCallout = true
+                v.displayPriority = .required
+                return v
+            }
             guard let a = annotation as? AirportAnnotation else { return nil }
             let id = "airport"
             let v = (mv.dequeueReusableAnnotationView(withIdentifier: id) as? MKMarkerAnnotationView)
@@ -431,7 +460,7 @@ struct VFRMapView: UIViewRepresentable {
         }
 
         func mapView(_ mv: MKMapView, didSelect view: MKAnnotationView) {
-            guard let a = view.annotation as? AirportAnnotation else { return }
+            guard let a = view.annotation as? AirportAnnotation else { return }   // traffic shows its callout
             mv.deselectAnnotation(a, animated: false)
             parent.onSelect(a.airport)
         }

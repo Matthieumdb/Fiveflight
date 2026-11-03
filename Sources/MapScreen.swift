@@ -16,6 +16,14 @@ struct MapScreen: View {
     @State private var showNearbyPanel = false
     @State private var showSearch = false
     @State private var showNearest = false
+    /// Radar loop: index in `VFRMapView.radarFrames` (last = live), animating while `radarPlaying`.
+    @State private var radarFrame = VFRMapView.radarFrames.count - 1
+    @State private var radarPlaying = false
+
+    private var weatherLayers: [String] {
+        (model.showIR ? ["goes-east-ir-4km-900913"] : [])
+            + (model.showRadar ? ["nexrad-n0q-900913" + VFRMapView.radarFrames[radarFrame]] : [])
+    }
     @State private var selectedAirport: Airport?
     @State private var routePolyline: [CLLocationCoordinate2D] = []
     @State private var routeWarnings: [RouteWarning] = []
@@ -39,7 +47,6 @@ struct MapScreen: View {
             // MARK: - Full Screen Map (VFRMapView with MKTileOverlay)
             VFRMapView(
                 showSectional: model.showSectional,
-                showWeather: model.showRadar,
                 nearest: visibleAirports,
                 waypoints: model.waypoints,
                 route: routePolyline,
@@ -60,7 +67,8 @@ struct MapScreen: View {
                 showAirspace: model.showAirspace,
                 showTFRs: model.showAirspace,
                 chart: model.mapChart,
-                satellite: model.showSatellite
+                satellite: model.showSatellite,
+                weatherLayers: weatherLayers
             )
             .ignoresSafeArea()
 
@@ -95,6 +103,28 @@ struct MapScreen: View {
                     .zIndex(10)
             }
 
+            // MARK: - Radar loop control
+            if model.showRadar {
+                HStack {
+                    Spacer()
+                    Button {
+                        radarPlaying.toggle()
+                        if !radarPlaying { radarFrame = VFRMapView.radarFrames.count - 1 }
+                    } label: {
+                        Label(radarPlaying ? "-\(10 * (VFRMapView.radarFrames.count - 1 - radarFrame)) min" : "Animer radar",
+                              systemImage: radarPlaying ? "stop.fill" : "play.fill")
+                            .font(TypographyToken.labelSmall)
+                            .padding(.horizontal, SpacingToken.space3)
+                            .padding(.vertical, SpacingToken.space2)
+                            .background(.black.opacity(0.7), in: Capsule())
+                            .foregroundStyle(.white)
+                    }
+                }
+                .padding(.top, 150)
+                .padding(.trailing, SpacingToken.space3)
+                .zIndex(4)
+            }
+
             // MARK: - GPS instruments (in flight, or on demand)
             if model.showInstruments || locationManager.speed > FlightMonitor.airborneSpeed {
                 VStack {
@@ -107,6 +137,12 @@ struct MapScreen: View {
             }
         }
         .sheet(isPresented: $showNearest) { NearestSheet() }
+        .task(id: radarPlaying) {
+            while radarPlaying, !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 900_000_000)
+                radarFrame = (radarFrame + 1) % VFRMapView.radarFrames.count
+            }
+        }
         .animation(AnimationToken.transition, value: showFlightPlanPanel)
         .animation(AnimationToken.transition, value: showLayersPanel)
         .animation(AnimationToken.transition, value: showNearbyPanel)

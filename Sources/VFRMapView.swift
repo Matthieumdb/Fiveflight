@@ -77,7 +77,6 @@ final class AirportAnnotation: NSObject, MKAnnotation {
 /// inputs changed (the previous version rebuilt every overlay and annotation each time).
 struct VFRMapView: UIViewRepresentable {
     var showSectional: Bool
-    var showWeather: Bool
     var nearest: [Airport]
     var waypoints: [Airport]
     /// Route computed by RoutingEngine (may detour around airspace); straight legs when empty.
@@ -104,9 +103,15 @@ struct VFRMapView: UIViewRepresentable {
     fileprivate static func chartURL(_ service: String) -> String {
         "https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/\(service)/MapServer/tile/{z}/{y}/{x}"
     }
-    // NEXRAD base reflectivity (Iowa Environmental Mesonet), standard {z}/{x}/{y}.
-    fileprivate static let nexradURL =
-        "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png"
+    /// Iowa Environmental Mesonet weather layers drawn over the chart, e.g. "nexrad-n0q-900913" (radar,
+    /// "-m30m" for 30 min ago) or "goes-east-ir-4km-900913" (GOES infrared). Takes over from `showWeather`.
+    var weatherLayers: [String] = []
+
+    static let radarFrames = ["-m50m", "-m40m", "-m30m", "-m20m", "-m10m", ""]
+
+    fileprivate static func mesonetURL(_ layer: String) -> String {
+        "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/\(layer)/{z}/{x}/{y}.png"
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -140,7 +145,7 @@ struct VFRMapView: UIViewRepresentable {
         let c = context.coordinator
         c.parent = self
         mv.mapType = satellite ? .hybrid : .standard
-        c.updateTileOverlays(on: mv, showSectional: showSectional, showWeather: showWeather, chart: chart, satellite: satellite)
+        c.updateTileOverlays(on: mv, showSectional: showSectional, weatherLayers: weatherLayers, chart: chart, satellite: satellite)
         c.updateRoute(on: mv, coordinates: route.count >= 2 ? route : waypoints.map(\.coordinate))
         c.updateTrack(on: mv, coordinates: track)
         c.updateUserCircles(on: mv, userCoord: waypoints.isEmpty ? userCoord : nil)
@@ -194,7 +199,7 @@ struct VFRMapView: UIViewRepresentable {
         var lastVersion = -1
         private var sectionalOverlay: SectionalTileOverlay?
         private var chartKey = ""
-        private var weatherOverlay: WeatherTileOverlay?
+        private var weatherOverlays: [String: WeatherTileOverlay] = [:]
         private var routeOverlay: MKPolyline?
         private var routeKey = ""
         private var trackOverlay: MKPolyline?
@@ -209,7 +214,7 @@ struct VFRMapView: UIViewRepresentable {
 
         init(_ parent: VFRMapView) { self.parent = parent }
 
-        func updateTileOverlays(on mv: MKMapView, showSectional: Bool, showWeather: Bool, chart: String, satellite: Bool) {
+        func updateTileOverlays(on mv: MKMapView, showSectional: Bool, weatherLayers: [String], chart: String, satellite: Bool) {
             let chartKey = "\(chart)|\(satellite)"
             if let o = sectionalOverlay, chartKey != self.chartKey || !showSectional {
                 mv.removeOverlay(o)
@@ -227,18 +232,19 @@ struct VFRMapView: UIViewRepresentable {
                 sectionalOverlay = nil
             }
 
-            if showWeather, weatherOverlay == nil {
-                let o = WeatherTileOverlay(urlTemplate: VFRMapView.nexradURL)
+            for (layer, o) in weatherOverlays where !weatherLayers.contains(layer) {
+                mv.removeOverlay(o)
+                weatherOverlays[layer] = nil
+            }
+            for layer in weatherLayers where weatherOverlays[layer] == nil {
+                let o = WeatherTileOverlay(urlTemplate: VFRMapView.mesonetURL(layer))
                 o.canReplaceMapContent = false
-                weatherOverlay = o
+                weatherOverlays[layer] = o
                 if let s = sectionalOverlay {
                     mv.insertOverlay(o, above: s)
                 } else {
                     mv.insertOverlay(o, at: 0, level: .aboveLabels)
                 }
-            } else if !showWeather, let o = weatherOverlay {
-                mv.removeOverlay(o)
-                weatherOverlay = nil
             }
         }
 

@@ -758,6 +758,14 @@ struct LayersSidePanel: View {
                     )
 
                     LayerToggleRow(
+                        title: "Satellite infrarouge",
+                        subtitle: "Nuages GOES (Iowa State)",
+                        icon: "cloud.fill",
+                        isOn: $model.showIR,
+                        color: ColorToken.textSecondary
+                    )
+
+                    LayerToggleRow(
                         title: "Airspace",
                         subtitle: "Class B/C/D/E & SUA",
                         icon: "shield.lefthalf.filled",

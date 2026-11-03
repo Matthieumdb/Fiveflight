@@ -20,7 +20,7 @@ struct AirportDetailSheet: View {
 
     /// ForeFlight airport view tabs.
     enum AirportSection: String, CaseIterable, Identifiable {
-        case info = "Info", weather = "Météo", runways = "Pistes", freqs = "Fréq.", notam = "NOTAM"
+        case info = "Info", weather = "Météo", runways = "Pistes", procedures = "Procéd.", notam = "NOTAM", fbo = "FBO"
         var id: String { rawValue }
     }
 
@@ -44,46 +44,40 @@ struct AirportDetailSheet: View {
     private var content: some View {
         List {
             Section {
-                AirportHeaderView(airport: airport, metar: metar, airportTypeDisplay: airportTypeDisplay)
-            }
-            .listRowInsets(EdgeInsets())
-            .listRowBackground(Color.clear)
-
-            Section {
-                HStack(spacing: SpacingToken.space3) {
-                    ActionButton(icon: "location.north.line.fill", label: "Direct To", color: FF.magenta) {
-                        model.directTo(airport)
-                        if !embedded { dismiss() }
-                    }
-                    ActionButton(icon: "plus.circle.fill", label: "Ajouter au vol", color: FF.accent) {
-                        model.addWaypoint(airport)
-                        if !embedded { dismiss() }
-                    }
-                    ActionButton(icon: model.isFavorite(airport.id) ? "star.fill" : "star",
-                                 label: model.isFavorite(airport.id) ? "Retirer" : "Favori",
-                                 color: ColorToken.warning) {
-                        model.toggleFavorite(airport.id)
-                    }
-                }
-            }
-            .listRowInsets(EdgeInsets(top: SpacingToken.space2, leading: SpacingToken.insetMedium, bottom: SpacingToken.space2, trailing: SpacingToken.insetMedium))
-            .listRowBackground(Color.clear)
-
-            Section {
+                FFAirportHeader(airport: airport, metar: metar, typeText: airportTypeDisplay,
+                                isFavorite: model.isFavorite(airport.id),
+                                onDirect: {
+                                    model.directTo(airport)
+                                    if !embedded { dismiss() }
+                                },
+                                onAdd: {
+                                    model.addWaypoint(airport)
+                                    if !embedded { dismiss() }
+                                },
+                                onMap: {
+                                    model.moveMap(to: airport.coordinate, span: 0.3)
+                                    FFRouter.shared.tab = .maps
+                                    if !embedded { dismiss() }
+                                },
+                                onFavorite: { model.toggleFavorite(airport.id) })
                 Picker("Section", selection: $section) {
                     ForEach(AirportSection.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(FF.barSecondary)
             }
-            .listRowInsets(EdgeInsets(top: 0, leading: SpacingToken.insetMedium, bottom: 0, trailing: SpacingToken.insetMedium))
+            .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
 
             switch section {
             case .info: infoSections
             case .weather: weatherSections
             case .runways: runwaySections
-            case .freqs: frequencySections
+            case .procedures: AirportDocumentsSection(ident: airport.id)
             case .notam: NOTAMSection(icao: airport.icao ?? airport.id)
+            case .fbo: FuelPriceSection(airport: airport, store: store)
             }
         }
         .listStyle(.insetGrouped)
@@ -115,8 +109,14 @@ struct AirportDetailSheet: View {
         if let metar {
             Section { METARCard(metar: metar) } header: { FFHeader("METAR") }
         }
-        FuelPriceSection(airport: airport, store: store)
-        AirportDocumentsSection(ident: airport.id)
+        frequencySections
+        Section {
+            HStack {
+                Label("Lever / coucher", systemImage: "sun.horizon")
+                Spacer()
+                Text(sunText).foregroundStyle(.secondary).monospacedDigit()
+            }
+        } header: { FFHeader("Soleil") }
     }
 
     @ViewBuilder private var weatherSections: some View {
@@ -171,6 +171,13 @@ struct AirportDetailSheet: View {
         }
     }
 
+    /// Local sunrise / sunset today, "06:52 – 18:31".
+    private var sunText: String {
+        let sun = Solar.sunriseSunset(lat: airport.coordinate.latitude, lon: airport.coordinate.longitude)
+        let f = { (d: Date?) in d?.formatted(date: .omitted, time: .shortened) ?? "—" }
+        return "\(f(sun.sunrise)) – \(f(sun.sunset))"
+    }
+
     private var coordinateString: String {
         let lat = airport.coordinate.latitude
         let lon = airport.coordinate.longitude
@@ -179,6 +186,56 @@ struct AirportDetailSheet: View {
         return String(format: "%02d°%02d'%@ %03d°%02d'%@",
                       Int(abs(lat)), Int((abs(lat).truncatingRemainder(dividingBy: 1)) * 60), latDir,
                       Int(abs(lon)), Int((abs(lon).truncatingRemainder(dividingBy: 1)) * 60), lonDir)
+    }
+}
+
+// MARK: - ForeFlight airport header
+
+/// Charcoal band: identifier, flight category, name and city, then Direct · Ajouter · Carte · ☆.
+struct FFAirportHeader: View {
+    let airport: Airport
+    let metar: METAR?
+    let typeText: String
+    let isFavorite: Bool
+    let onDirect: () -> Void
+    let onAdd: () -> Void
+    let onMap: () -> Void
+    let onFavorite: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(airport.id)
+                    .font(.system(size: 30, weight: .heavy))
+                    .foregroundStyle(.white)
+                if let metar, metar.flightCategory != .unknown {
+                    Text(metar.flightCategory.rawValue)
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(metar.flightCategory.color, in: RoundedRectangle(cornerRadius: 4))
+                }
+                Spacer()
+                Text(airport.elevationFt.map { "\($0) ft" } ?? "")
+                    .font(.system(size: 14, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(FF.label)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(airport.name).font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).lineLimit(2)
+                Text([airport.municipality, typeText].compactMap { $0 }.joined(separator: " · "))
+                    .font(.system(size: 13)).foregroundStyle(FF.label)
+            }
+            HStack(spacing: 8) {
+                FFBarButton(title: "Direct", icon: "location.north.line.fill", action: onDirect)
+                FFBarButton(title: "Ajouter", icon: "plus", action: onAdd)
+                FFBarButton(title: "Carte", icon: "map", action: onMap)
+                Spacer(minLength: 0)
+                FFBarButton(title: nil, icon: isFavorite ? "star.fill" : "star", active: isFavorite, action: onFavorite)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(FF.bar)
     }
 }
 

@@ -13,6 +13,8 @@ struct MapScreen: View {
 
     @State private var showFlightPlanPanel = false
     @State private var showLayersPanel = false
+    @State private var showMapSettings = false
+    @State private var drawer: MapDrawer?
     @State private var showNearbyPanel = false
     @State private var showSearch = false
     @State private var showNearest = false
@@ -107,72 +109,72 @@ struct MapScreen: View {
             // MARK: - Full Screen Map (VFRMapView with MKTileOverlay)
             mapLayer
 
-            // MARK: - Top Bar
-            TopMapBar(
-                showFlightPlanPanel: $showFlightPlanPanel,
-                showLayersPanel: $showLayersPanel,
-                showNearbyPanel: $showNearbyPanel,
-                showSearch: $showSearch
-            )
-            .zIndex(20)   // ForeFlight: the toolbar stays on top of the panels it opens
-
-            // MARK: - Side Panels
-            if showFlightPlanPanel {
-                FlightPlanSidePanel(
-                    isPresented: $showFlightPlanPanel,
-                    routePolyline: $routePolyline,
-                    routeWarnings: $routeWarnings
+            // MARK: - ForeFlight chrome: toolbar, route editor, instruments, selector, drawer
+            VStack(spacing: 0) {
+                FFMapToolbar(
+                    showLayers: $showLayersPanel,
+                    showRouteEditor: $showFlightPlanPanel,
+                    showNearby: $showNearbyPanel,
+                    showSettings: $showMapSettings,
+                    showSearch: $showSearch
                 )
-                .padding(.top, 48)
-                .transition(.move(edge: .leading).combined(with: .opacity))
-                .zIndex(10)
+                if showFlightPlanPanel {
+                    RouteEditorPanel(drawer: $drawer)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                } else if model.waypoints.count >= 2 {
+                    RouteInfoBar(showChips: true)
+                        .onTapGesture {
+                            withAnimation(AnimationToken.spring) { showFlightPlanPanel = true }
+                        }
+                }
+                if model.showInstruments || locationManager.speed > FlightMonitor.airborneSpeed {
+                    InstrumentStrip(showNearest: $showNearest)
+                        .padding(.horizontal, SpacingToken.space2)
+                        .padding(.top, SpacingToken.space1)
+                }
+                if showLayersPanel {
+                    HStack {
+                        MapLayerSelector(isPresented: $showLayersPanel)
+                        Spacer(minLength: 0)
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                Spacer(minLength: 0)
+                if model.showRadar {
+                    HStack {
+                        Spacer()
+                        Button {
+                            radarPlaying.toggle()
+                            if !radarPlaying { radarFrame = VFRMapView.radarFrames.count - 1 }
+                        } label: {
+                            Label(radarButtonTitle, systemImage: radarPlaying ? "stop.fill" : "play.fill")
+                                .font(TypographyToken.labelSmall)
+                                .padding(.horizontal, SpacingToken.space3)
+                                .padding(.vertical, SpacingToken.space2)
+                                .background(FF.bar.opacity(0.9), in: Capsule())
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .padding(.trailing, SpacingToken.space3)
+                    .padding(.bottom, SpacingToken.space2)
+                }
+                MapBottomDrawer(drawer: $drawer)
             }
-
-            if showLayersPanel {
-                LayersSidePanel(isPresented: $showLayersPanel)
-                    .padding(.top, 48)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                    .zIndex(10)
-            }
+            .zIndex(20)
 
             if showNearbyPanel {
-                NearbySidePanel(isPresented: $showNearbyPanel)
-                    .padding(.top, 48)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                    .zIndex(10)
-            }
-
-            // MARK: - Radar loop control
-            if model.showRadar {
                 HStack {
-                    Spacer()
-                    Button {
-                        radarPlaying.toggle()
-                        if !radarPlaying { radarFrame = VFRMapView.radarFrames.count - 1 }
-                    } label: {
-                        Label(radarButtonTitle, systemImage: radarPlaying ? "stop.fill" : "play.fill")
-                            .font(TypographyToken.labelSmall)
-                            .padding(.horizontal, SpacingToken.space3)
-                            .padding(.vertical, SpacingToken.space2)
-                            .background(.black.opacity(0.7), in: Capsule())
-                            .foregroundStyle(.white)
-                    }
+                    Spacer(minLength: 0)
+                    NearbySidePanel(isPresented: $showNearbyPanel)
                 }
-                .padding(.top, 150)
-                .padding(.trailing, SpacingToken.space3)
-                .zIndex(4)
+                .padding(.top, 52)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .zIndex(10)
             }
-
-            // MARK: - GPS instruments (in flight, or on demand)
-            if model.showInstruments || locationManager.speed > FlightMonitor.airborneSpeed {
-                VStack {
-                    Spacer()
-                    InstrumentStrip(showNearest: $showNearest)
-                        .padding(.horizontal, SpacingToken.space3)
-                        .padding(.bottom, 8)
-                }
-                .zIndex(5)
-            }
+        }
+        .sheet(isPresented: $showMapSettings) { MapSettingsSheet() }
+        .onChange(of: model.waypoints.count) { _, count in
+            if count < 2 { drawer = nil }
         }
         .sheet(isPresented: $showNearest) { NearestSheet() }
         .modifier(MapPointActions(pressedPoint: $pressedPoint, selectedWaypoint: $selectedWaypoint))
@@ -185,6 +187,7 @@ struct MapScreen: View {
         .animation(AnimationToken.transition, value: showFlightPlanPanel)
         .animation(AnimationToken.transition, value: showLayersPanel)
         .animation(AnimationToken.transition, value: showNearbyPanel)
+        .animation(AnimationToken.spring, value: drawer)
         // A real sheet: swipe down or "Done" closes it (it used to be an overlay that could not be dismissed).
         .sheet(item: $selectedAirport) { airport in
             AirportDetailSheet(airport: airport, store: store)
@@ -311,82 +314,31 @@ struct MapScreen: View {
     }
 }
 
-// MARK: - Top Map Bar
-
-struct TopMapBar: View {
-    @EnvironmentObject private var model: AppModel
-    @EnvironmentObject private var locationManager: LocationManager
-    @Binding var showFlightPlanPanel: Bool
-    @Binding var showLayersPanel: Bool
-    @Binding var showNearbyPanel: Bool
-    @Binding var showSearch: Bool
-
-    private var chartLabel: String {
-        MapChart(rawValue: model.mapChart)?.label ?? "Carte"
-    }
-
-    /// ForeFlight map toolbar: one charcoal bar with the layer selector, FPL and the map tools.
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                FFBarButton(title: chartLabel, icon: "chevron.down", active: showLayersPanel) {
-                    withAnimation(AnimationToken.spring) { showLayersPanel.toggle() }
-                    showFlightPlanPanel = false
-                    showNearbyPanel = false
-                }
-                FFBarButton(title: "FPL", icon: nil, active: showFlightPlanPanel) {
-                    withAnimation(AnimationToken.spring) { showFlightPlanPanel.toggle() }
-                    showLayersPanel = false
-                    showNearbyPanel = false
-                }
-                Spacer(minLength: 0)
-                FFBarButton(title: nil, icon: "magnifyingglass") { showSearch = true }
-                FFBarButton(title: "Proches", icon: nil, active: showNearbyPanel) {
-                    withAnimation(AnimationToken.spring) { showNearbyPanel.toggle() }
-                    showFlightPlanPanel = false
-                    showLayersPanel = false
-                }
-                FFBarButton(title: nil, icon: model.followUser ? "location.fill" : "location", active: model.followUser) {
-                    if let loc = model.userLocation ?? locationManager.location {
-                        model.moveMap(to: loc)
-                    } else {
-                        locationManager.start()
-                    }
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(FF.bar.ignoresSafeArea(edges: .top))
-
-            if model.waypoints.count >= 2 {
-                RouteInfoBar()
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-    }
-}
-
 /// ForeFlight route strip under the toolbar: the route string, then Dist · ETE · ETA · Carb.
 struct RouteInfoBar: View {
     @EnvironmentObject private var model: AppModel
+    /// The route identifiers above the numbers (hidden under the route editor, which shows them as text).
+    var showChips = true
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(Array(model.waypoints.enumerated()), id: \.element.id) { i, w in
-                        Text(w.id)
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(i == 0 || i == model.waypoints.count - 1 ? FF.accent : FF.magenta.opacity(0.85),
-                                        in: RoundedRectangle(cornerRadius: 4))
+            if showChips {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(Array(model.waypoints.enumerated()), id: \.element.id) { i, w in
+                            Text(w.id)
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .background(i == 0 || i == model.waypoints.count - 1 ? FF.accent : FF.magenta.opacity(0.85),
+                                            in: RoundedRectangle(cornerRadius: 4))
+                        }
                     }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
+                .background(FF.barSecondary)
             }
-            .background(FF.barSecondary)
             FFDataStrip(items: [
                 ("Dist", String(format: "%.0f nm", model.totalDistanceNM)),
                 ("ETE", ffDuration(model.totalTimeMinutes)),

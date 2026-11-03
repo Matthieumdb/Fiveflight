@@ -9,28 +9,19 @@ struct RootView: View {
     @EnvironmentObject private var model: AppModel
 
     @EnvironmentObject private var weather: WeatherService
-    /// ForeFlight layout: Airports, Maps, Flights, Imagery (weather), More. Opens on the map.
-    @State private var tab = 1
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    /// ForeFlight layout: the map is the home view.
+    @ObservedObject private var router = FFRouter.shared
 
     var body: some View {
         ZStack {
             if store.ready {
-                TabView(selection: $tab) {
-                    AirportsScreen()
-                        .tabItem { Label("Aéroports", systemImage: "airplane.circle") }
-                        .tag(0)
-                    MapScreen()
-                        .tabItem { Label("Cartes", systemImage: "map") }
-                        .tag(1)
-                    FlightPlanScreen()
-                        .tabItem { Label("Vols", systemImage: "airplane.departure") }
-                        .tag(2)
-                    WeatherScreen()
-                        .tabItem { Label("Météo", systemImage: "cloud.sun") }
-                        .tag(3)
-                    MoreScreen()
-                        .tabItem { Label("Plus", systemImage: "ellipsis") }
-                        .tag(4)
+                TabView(selection: $router.tab) {
+                    ForEach(FFTab.visible(regular: sizeClass == .regular)) { item in
+                        item.screen
+                            .tabItem { Label(item.title, systemImage: item.icon) }
+                            .tag(item)
+                    }
                 }
                 .tint(FF.accent)
             } else {
@@ -55,31 +46,6 @@ struct RootView: View {
         .task {
             location.start()
             await store.load()
-        }
-    }
-}
-
-/// Secondary tools, grouped like the system "More" pattern but with a single navigation stack.
-struct MoreScreen: View {
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    NavigationLink { FavoritesScreen() } label: { Label("Favoris", systemImage: "star.fill") }
-                    NavigationLink { AircraftScreen() } label: { Label("Avions", systemImage: "airplane") }
-                    NavigationLink { LogbookScreen() } label: { Label("Carnet de vol", systemImage: "book.fill") }
-                    NavigationLink { ChecklistScreen() } label: { Label("Checklists", systemImage: "checklist") }
-                    NavigationLink { CalculatorsScreen() } label: { Label("Calculateurs", systemImage: "function") }
-                    NavigationLink { AttitudeScreen() } label: { Label("Horizon artificiel (AHRS)", systemImage: "gyroscope") }
-                }
-                Section {
-                    NavigationLink { AirspaceScreen() } label: { Label("Espaces aériens & SUA", systemImage: "shield.lefthalf.filled") }
-                }
-                Section {
-                    NavigationLink { SettingsScreen() } label: { Label("Réglages", systemImage: "gearshape.fill") }
-                }
-            }
-            .navigationTitle("Plus")
         }
     }
 }

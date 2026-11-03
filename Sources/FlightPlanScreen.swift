@@ -9,6 +9,11 @@ struct FlightPlanScreen: View {
     @EnvironmentObject private var airspaceManager: AirspaceDataManager
     @EnvironmentObject private var store: AirportStore
     @State private var showFlightPlanSheet = false
+    @State private var showSavedPlans = false
+
+    private var exportPoints: [FlightExport.Point] {
+        model.waypoints.map { FlightExport.Point(name: $0.id, coordinate: $0.coordinate) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -39,6 +44,25 @@ struct FlightPlanScreen: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button("Enregistrer ce plan", systemImage: "square.and.arrow.down") { model.savePlan() }
+                            .disabled(model.waypoints.count < 2)
+                        Button("Plans enregistrés", systemImage: "folder") { showSavedPlans = true }
+                        if model.waypoints.count >= 2 {
+                            let name = model.waypoints.map(\.id).joined(separator: "-")
+                            if let gpx = FlightExport.gpx(name: name, route: exportPoints, track: model.track) {
+                                ShareLink("Exporter en GPX", item: gpx)
+                            }
+                            if let kml = FlightExport.kml(name: name, route: exportPoints, track: model.track) {
+                                ShareLink("Exporter en KML", item: kml)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 18, weight: .medium))
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showFlightPlanSheet = true
                     } label: {
@@ -47,6 +71,7 @@ struct FlightPlanScreen: View {
                     }
                 }
             }
+            .sheet(isPresented: $showSavedPlans) { SavedPlansSheet() }
             .sheet(isPresented: $showFlightPlanSheet) {
                 SearchSheet(nearest: store.nearest(to: model.userLocation ?? AppModel.homeCoordinate, limit: 20), onSelect: { airport in
                     model.addWaypoint(airport)
@@ -288,5 +313,32 @@ private struct NavLogRow: View {
             .foregroundStyle(ColorToken.textTertiary)
         }
         .padding(.vertical, SpacingToken.space1)
+    }
+}
+
+/// Saved plans: tap to load, swipe to delete.
+private struct SavedPlansSheet: View {
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var store: AirportStore
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if model.savedPlans.isEmpty {
+                    Text("Aucun plan enregistré. Menu ⋯ > « Enregistrer ce plan ».").foregroundStyle(ColorToken.textTertiary)
+                }
+                ForEach(model.savedPlans) { plan in
+                    Button(plan.name) {
+                        model.waypoints = plan.waypointIDs.compactMap { store.airport($0) }
+                        dismiss()
+                    }
+                }
+                .onDelete { model.savedPlans.remove(atOffsets: $0) }
+            }
+            .navigationTitle("Plans enregistrés")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Fermer") { dismiss() } } }
+        }
     }
 }

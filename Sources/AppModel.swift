@@ -3,13 +3,27 @@ import MapKit
 import CoreLocation
 import SwiftUI
 
-struct LogEntry: Codable, Identifiable {
+struct LogEntry: Codable, Identifiable, Equatable {
     var id = UUID()
     var date: Date
     var from: String
     var to: String
     var nm: Int
     var eteMinutes: Int
+    // Added in 1.0.45 (optional so older logbooks still decode).
+    var aircraft: String?
+    var landingsDay: Int?
+    var landingsNight: Int?
+    var remarks: String?
+    /// Flown GPS track, downsampled, for replay and GPX/KML export.
+    var track: [Coordinate2D]?
+}
+
+/// A flight plan kept for later: name and waypoint idents.
+struct SavedPlan: Codable, Identifiable, Hashable {
+    var id = UUID()
+    var name: String
+    var waypointIDs: [String]
 }
 
 struct AircraftProfile: Codable, Identifiable, Hashable {
@@ -233,11 +247,38 @@ final class AppModel: ObservableObject {
     }
 
     // Logbook
+    /// Logs the flight with the aircraft, one day landing and the GPS track. When the GPS saw the takeoff,
+    /// the real flight time replaces the planned ETE.
     func logFlight(from: String, to: String, nm: Int, eteMinutes: Int) {
-        logbook.insert(LogEntry(date: .now, from: from, to: to, nm: nm, eteMinutes: eteMinutes), at: 0)
+        let step = max(1, track.count / 2000)
+        let flown = FlightMonitor.shared.airborneSince.map { Int(Date.now.timeIntervalSince($0) / 60) }.flatMap { $0 >= 5 ? $0 : nil }
+        logbook.insert(LogEntry(date: .now, from: from, to: to, nm: nm, eteMinutes: flown ?? eteMinutes,
+                                aircraft: selectedAircraft?.name, landingsDay: 1, landingsNight: 0, remarks: nil,
+                                track: track.isEmpty ? nil : stride(from: 0, to: track.count, by: step).map { Coordinate2D(track[$0]) }),
+                        at: 0)
         Haptics.success()
         save()
     }
+    func updateLog(_ entry: LogEntry) {
+        guard let i = logbook.firstIndex(where: { $0.id == entry.id }) else { return }
+        logbook[i] = entry
+        save()
+    }
+
+    // Saved plans
+    @Published var savedPlans: [SavedPlan] = [] {
+        didSet { defaults.set(try? JSONEncoder().encode(savedPlans), forKey: "savedPlans") }
+    }
+    func savePlan() {
+        let ids = waypoints.map(\.id).filter { $0 != Self.gpsWaypointID }
+        guard ids.count >= 2 else { return }
+        savedPlans.insert(SavedPlan(name: ids.joined(separator: " → "), waypointIDs: ids), at: 0)
+        Haptics.success()
+    }
+
+    // Pilot currency (dates stored as seconds since 1970; 0 = not entered)
+    @Published var medicalExpiry: Double = 0 { didSet { defaults.set(medicalExpiry, forKey: "medicalExpiry") } }
+    @Published var flightReviewDate: Double = 0 { didSet { defaults.set(flightReviewDate, forKey: "flightReviewDate") } }
     func deleteLog(_ offsets: IndexSet) { logbook.remove(atOffsets: offsets); save() }
 
     // Checklists
@@ -266,6 +307,10 @@ final class AppModel: ObservableObject {
         if let d = defaults.data(forKey: "aircraftProfiles"),
            let v = try? JSONDecoder().decode([AircraftProfile].self, from: d), !v.isEmpty { aircraftProfiles = v }
         let selectedID = defaults.string(forKey: "selectedAircraft")
+        if let d = defaults.data(forKey: "savedPlans"),
+           let v = try? JSONDecoder().decode([SavedPlan].self, from: d) { savedPlans = v }
+        medicalExpiry = defaults.double(forKey: "medicalExpiry")
+        flightReviewDate = defaults.double(forKey: "flightReviewDate")
         selectedAircraft = aircraftProfiles.first { $0.id.uuidString == selectedID }
         recents = defaults.stringArray(forKey: "recents") ?? []
         nightMode = defaults.bool(forKey: "nightMode")

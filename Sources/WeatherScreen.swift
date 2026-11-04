@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreLocation
 
 // MARK: - Weather Screen
 
@@ -90,7 +91,7 @@ struct WeatherOverviewTab: View {
                     Section {
                         RouteWeatherSummary()
                     } header: {
-                        SectionHeader(title: "Route Weather")
+                        SectionHeader(title: "Météo de la route")
                     }
                 }
 
@@ -104,14 +105,14 @@ struct WeatherOverviewTab: View {
                         }
                     }
                 } header: {
-                    SectionHeader(title: "Waypoint Weather")
+                    SectionHeader(title: "Météo des points")
                 }
 
                 // Nearby weather
                 Section {
                     NearbyWeatherList()
                 } header: {
-                    SectionHeader(title: "Nearby Airports")
+                    SectionHeader(title: "Aéroports proches")
                 }
             }
             .padding(.horizontal, SpacingToken.insetMedium)
@@ -171,7 +172,7 @@ struct RouteWeatherSummary: View {
     var body: some View {
         HStack(spacing: SpacingToken.space4) {
             VStack(alignment: .leading, spacing: SpacingToken.space2) {
-                Text("Route Category")
+                Text("Catégorie route")
                     .font(TypographyToken.labelSmall)
                     .foregroundStyle(ColorToken.textTertiary)
                 Text(worstCategory)
@@ -182,7 +183,7 @@ struct RouteWeatherSummary: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: SpacingToken.space2) {
-                Text("Waypoints")
+                Text("Points")
                     .font(TypographyToken.labelSmall)
                     .foregroundStyle(ColorToken.textTertiary)
                 Text("\(model.waypoints.count)")
@@ -191,7 +192,7 @@ struct RouteWeatherSummary: View {
             }
 
             VStack(alignment: .trailing, spacing: SpacingToken.space2) {
-                Text("With WX")
+                Text("Avec météo")
                     .font(TypographyToken.labelSmall)
                     .foregroundStyle(ColorToken.textTertiary)
                 Text("\(model.waypoints.filter { weatherService.metars[$0.id] != nil }.count)")
@@ -235,19 +236,24 @@ struct WaypointWeatherCard: View {
                         .padding(.vertical, SpacingToken.space1)
                         .background(categoryColor(metar.flightCategory.rawValue), in: Capsule())
 
-                    Text(metar.observationTime.formatted(date: .omitted, time: .shortened))
+                    let stale = Date.now.timeIntervalSince(metar.observationTime) > 75 * 60
+                    Text("\(metar.observationTime.formatted(date: .omitted, time: .shortened)) · \(metar.observationTime.zulu)")
                         .font(TypographyToken.monoXSmall)
-                        .foregroundStyle(ColorToken.textTertiary)
+                        .foregroundStyle(stale ? ColorToken.warning : ColorToken.textTertiary)
+                    if stale {
+                        Text("METAR ancien").font(TypographyToken.labelXSmall).foregroundStyle(ColorToken.warning)
+                    }
                 }
             }
 
             if let decoded = metar.decoded {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: SpacingToken.space3) {
-                    WeatherDetailItem(label: "Wind", value: decoded.wind ?? "—", icon: "wind")
-                    WeatherDetailItem(label: "Vis", value: decoded.visibility.map { String(format: "%.1f SM", $0) } ?? "—", icon: "eye")
-                    WeatherDetailItem(label: "Ceiling", value: decoded.ceiling.map { "\($0) ft" } ?? "—", icon: "cloud")
-                    WeatherDetailItem(label: "Temp", value: decoded.temperature.map { "\($0)°C" } ?? "—", icon: "thermometer")
-                    WeatherDetailItem(label: "Altimeter", value: decoded.altimeter.map { String(format: "%.2f inHg", $0) } ?? "—", icon: "gauge")
+                LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)],
+                          spacing: SpacingToken.space3) {
+                    WeatherDetailItem(label: "Vent", value: decoded.wind ?? "—", icon: "wind")
+                    WeatherDetailItem(label: "Visibilité", value: decoded.visibility.map { String(format: "%.1f SM", $0) } ?? "—", icon: "eye")
+                    WeatherDetailItem(label: "Plafond", value: decoded.ceiling.map { "\($0) ft" } ?? "—", icon: "cloud")
+                    WeatherDetailItem(label: "Température", value: decoded.temperature.map { "\($0)°C" } ?? "—", icon: "thermometer")
+                    WeatherDetailItem(label: "Altimètre", value: decoded.altimeter.map { String(format: "%.2f inHg", $0) } ?? "—", icon: "gauge")
                 }
             }
 
@@ -294,7 +300,9 @@ struct WeatherDetailItem: View {
                 .font(TypographyToken.monoSmall)
                 .foregroundStyle(ColorToken.textPrimary)
                 .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -319,7 +327,7 @@ struct WaypointWeatherPlaceholder: View {
             Button {
                 Task { await weatherService.fetchMETAR(for: airport.id) }
             } label: {
-                Text("Load METAR")
+                Text("Charger le METAR")
                     .font(TypographyToken.labelSmall)
                     .foregroundStyle(ColorToken.brandPrimary)
                     .padding(.horizontal, SpacingToken.space3)
@@ -418,6 +426,26 @@ struct NearbyWeatherList: View {
 
 struct WindsAloftTab: View {
     @EnvironmentObject private var weatherService: WeatherService
+    @EnvironmentObject private var model: AppModel
+
+    /// Stations in route order (distance from the departure along the plan), else nearest first.
+    private var stations: [WindsAloft] {
+        let path = model.routePath.count >= 2 ? model.routePath : model.waypoints.map(\.coordinate)
+        guard let start = path.first ?? model.userLocation else { return weatherService.windsAloft }
+        func key(_ w: WindsAloft) -> Double {
+            let c = CLLocationCoordinate2D(latitude: w.latitude, longitude: w.longitude)
+            guard path.count >= 2 else { return Haversine.nauticalMiles(start, c) }
+            // Projection on the route: distance from the start to the nearest route point.
+            var best = Double.infinity, along = 0.0, run = 0.0
+            for i in path.indices {
+                if i > 0 { run += Haversine.nauticalMiles(path[i - 1], path[i]) }
+                let d = Haversine.nauticalMiles(path[i], c)
+                if d < best { best = d; along = run }
+            }
+            return best > 60 ? 10_000 + best : along
+        }
+        return weatherService.windsAloft.sorted { key($0) < key($1) }
+    }
 
     var body: some View {
         ScrollView {
@@ -429,7 +457,7 @@ struct WindsAloftTab: View {
                 )
             } else {
                 LazyVStack(spacing: SpacingToken.space3) {
-                    ForEach(weatherService.windsAloft) { wind in
+                    ForEach(stations) { wind in
                         WindsAloftCard(wind: wind)
                     }
                 }
@@ -454,12 +482,12 @@ struct WindsAloftCard: View {
                     .font(TypographyToken.monoMedium)
                     .foregroundStyle(ColorToken.textPrimary)
                 Spacer()
-                Text("Valid: \(wind.validTime)")
+                Text("Valide \(wind.validTime)")
                     .font(TypographyToken.monoSmall)
                     .foregroundStyle(ColorToken.textTertiary)
             }
 
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: SpacingToken.space3) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .topLeading), count: 4), spacing: SpacingToken.space3) {
                 ForEach(wind.levels) { level in
                     WindLevelView(level: level)
                 }
@@ -483,22 +511,28 @@ struct WindLevelView: View {
                 .font(TypographyToken.labelXSmall)
                 .foregroundStyle(ColorToken.textTertiary)
 
-            HStack(spacing: SpacingToken.space1) {
-                // FD direction is where the wind comes FROM; the arrow shows where it blows.
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 10))
-                    .rotationEffect(.degrees(Double(level.direction) + 180))
-                Text(String(format: "%03d° %d kt", level.direction, level.speed))
-                    .font(TypographyToken.monoSmall)
+            if (level.direction == 0 && level.speed == 0) || level.direction >= 990 {
+                Text("Variable").font(TypographyToken.monoSmall).foregroundStyle(ColorToken.textPrimary)
+            } else {
+                HStack(spacing: SpacingToken.space1) {
+                    // FD direction is where the wind comes FROM; the arrow shows where it blows.
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 10))
+                        .rotationEffect(.degrees(Double(level.direction) + 180))
+                    Text(String(format: "%03d° %d kt", level.direction, level.speed))
+                        .font(TypographyToken.monoSmall)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+                .foregroundStyle(ColorToken.textPrimary)
             }
-            .foregroundStyle(ColorToken.textPrimary)
 
-            if let temp = level.temperature {
-                Text("\(temp)°C")
-                    .font(TypographyToken.monoXSmall)
-                    .foregroundStyle(ColorToken.textSecondary)
-            }
+            // Placeholder keeps every column the same height (FD has no temperature at 3 000 ft).
+            Text(level.temperature.map { "\($0)°C" } ?? " ")
+                .font(TypographyToken.monoXSmall)
+                .foregroundStyle(ColorToken.textSecondary)
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
 

@@ -146,13 +146,24 @@ struct RouteBriefingScreen: View {
     }
 
     var body: some View {
+        // Embedded in Flights: keep the parent's title (route name) instead of blanking it.
+        if embedded {
+            content
+        } else {
+            content
+                .navigationTitle("Briefing de route")
+                .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private var content: some View {
         List {
             summarySection
             Section {
                 DatePicker("Départ (ETD)", selection: $model.departureTime)
                 LabeledContent("Arrivée estimée (ETA)", value: "\(eta.formatted(date: .omitted, time: .shortened)) · \(eta.zulu)")
                 if let sunset {
-                    LabeledContent("Coucher du soleil (dest.)", value: sunset.formatted(date: .omitted, time: .shortened))
+                    LabeledContent("Coucher du soleil (dest.)", value: "\(sunset.formatted(date: .omitted, time: .shortened)) · \(sunset.zulu)")
                     if eta > sunset {
                         Label("Arrivée de nuit", systemImage: "moon.stars.fill").foregroundStyle(ColorToken.warning)
                     }
@@ -254,8 +265,6 @@ struct RouteBriefingScreen: View {
                 Text("Sources : aviationweather.gov, tfr.faa.gov, FAA NOTAM Search, FAA ADDS. Ce résumé ne remplace pas un briefing officiel (1800wxbrief.com).")
             }
         }
-        .navigationTitle(embedded ? "" : "Briefing de route")
-        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if !embedded {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -285,8 +294,26 @@ struct RouteBriefingScreen: View {
             if worst == .vfr { return ("VFR favorable", ColorToken.success, "checkmark.seal.fill") }
             return ("Données incomplètes", ColorToken.textTertiary, "questionmark.circle")
         }()
+        // Why: each rule that fired, so the verdict can be checked.
+        var reasons: [String] = []
+        if !tfrs.isEmpty { reasons.append("TFR traversée : " + tfrs.map(\.name).joined(separator: ", ")) }
+        let bad = stations.filter { [FlightCategory.ifr, .lifr].contains(weather.metars[$0.airport.id]?.flightCategory ?? .unknown) }.map(\.airport.id)
+        if !bad.isEmpty { reasons.append("IFR/LIFR : " + bad.joined(separator: ", ")) }
+        let marginal = stations.filter { weather.metars[$0.airport.id]?.flightCategory == .mvfr }.map(\.airport.id)
+        if !marginal.isEmpty { reasons.append("MVFR : " + marginal.joined(separator: ", ")) }
+        if convective { reasons.append("SIGMET convectif sur la route") }
+        if !advisories.isEmpty { reasons.append("\(advisories.count) AIRMET/SIGMET sur la route à l'heure de départ") }
+        if importantNOTAMs > 0 { reasons.append("\(importantNOTAMs) NOTAM important(s)") }
+        if let sunset, eta > sunset { reasons.append("Arrivée après le coucher du soleil") }
         return Section {
             Label(verdict.0, systemImage: verdict.2).font(TypographyToken.bodyLarge).foregroundStyle(verdict.1)
+            if !reasons.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(reasons, id: \.self) { Text("• " + $0) }
+                }
+                .font(TypographyToken.labelSmall)
+                .foregroundStyle(ColorToken.textSecondary)
+            }
             HStack(spacing: SpacingToken.space3) {
                 badge("Météo", worst == .unknown ? "—" : worst.rawValue, worst.color)
                 badge("AIRMET/SIG", "\(advisories.count)", advisories.isEmpty ? ColorToken.success : ColorToken.warning)
@@ -403,7 +430,7 @@ struct RouteBriefingScreen: View {
     /// Plain-text briefing to share (Messages, mail, notes).
     private var summaryText: String {
         var lines = ["Briefing Fiveflight \(model.waypoints.map(\.id).joined(separator: " → "))",
-                     "Départ \(departure.formatted(date: .abbreviated, time: .shortened)) · ETE \(model.formattedTotalTime) · \(model.cruiseAlt) ft"]
+                     "Départ \(departure.frDateTime) · ETE \(model.formattedTotalTime) · \(model.cruiseAlt) ft"]
         for s in stations {
             lines.append("\(s.airport.id): \(weather.metars[s.airport.id]?.rawText ?? "pas de METAR")")
         }

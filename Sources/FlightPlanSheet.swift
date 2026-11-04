@@ -94,7 +94,7 @@ struct FlightPlanSheet: View {
             .navigationTitle("Plan de vol")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { EditButton() }
+                ToolbarItem(placement: .topBarLeading) { FREditButton() }
                 ToolbarItem(placement: .topBarTrailing) { Button("OK") { dismiss() } }
             }
         }

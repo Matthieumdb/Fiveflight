@@ -38,12 +38,16 @@ struct AirportDetailSheet: View {
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
+            // Opaque: the map no longer shows through the card.
+            .presentationBackground(Color(.systemGroupedBackground))
         }
     }
 
     private var content: some View {
         List {
             Section {
+                // One row: header and tabs together, so the list draws no separator line between them.
+                VStack(spacing: 0) {
                 FFAirportHeader(airport: airport, metar: metar, typeText: airportTypeDisplay,
                                 isFavorite: model.isFavorite(airport.id),
                                 onDirect: {
@@ -67,6 +71,8 @@ struct AirportDetailSheet: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 .background(FF.barSecondary)
+                }
+                .listRowSeparator(.hidden)
             }
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
@@ -161,12 +167,13 @@ struct AirportDetailSheet: View {
 
     private var airportTypeDisplay: String {
         switch airport.type {
-        case "large_airport": return "Large Airport"
-        case "medium_airport": return "Medium Airport"
-        case "small_airport": return "Small Airport"
-        case "heliport": return "Heliport"
-        case "seaplane_base": return "Seaplane Base"
-        case "balloonport": return "Balloonport"
+        case "large_airport": return "Grand aéroport"
+        case "medium_airport": return "Aéroport moyen"
+        case "small_airport": return "Petit aérodrome"
+        case "heliport": return "Héliport"
+        case "seaplane_base": return "Hydrobase"
+        case "balloonport": return "Aire de ballons"
+        case "closed": return "Fermé"
         default: return airport.type.capitalized
         }
     }
@@ -362,9 +369,11 @@ struct METARCard: View {
                     .font(TypographyToken.monoMedium)
                     .foregroundStyle(ColorToken.textPrimary)
                 Spacer()
-                Text(metar.observationTime.formatted(date: .omitted, time: .shortened))
+                // Local and Zulu time; orange past 75 min (a METAR is normally renewed every hour).
+                let stale = Date.now.timeIntervalSince(metar.observationTime) > 75 * 60
+                Text("\(metar.observationTime.formatted(date: .omitted, time: .shortened)) · \(metar.observationTime.zulu)\(stale ? " · ancien" : "")")
                     .font(TypographyToken.monoSmall)
-                    .foregroundStyle(ColorToken.textTertiary)
+                    .foregroundStyle(stale ? ColorToken.warning : ColorToken.textTertiary)
             }
 
             Text(metar.rawText)
@@ -375,12 +384,12 @@ struct METARCard: View {
             // Decoded info
             if let decoded = metar.decoded {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: SpacingToken.space2) {
-                    DecodedMETARRow(label: "Wind", value: decoded.wind)
-                    DecodedMETARRow(label: "Visibility", value: decoded.visibilityStr.isEmpty ? nil : decoded.visibilityStr)
-                    DecodedMETARRow(label: "Ceiling", value: decoded.ceilingStr.isEmpty ? nil : decoded.ceilingStr)
-                    DecodedMETARRow(label: "Temp/Dew", value: decoded.temperatureStr.isEmpty ? nil : decoded.temperatureStr)
-                    DecodedMETARRow(label: "Altimeter", value: decoded.altimeterStr.isEmpty ? nil : decoded.altimeterStr)
-                    DecodedMETARRow(label: "Flight Cat", value: metar.flightCategory.rawValue)
+                    DecodedMETARRow(label: "Vent", value: decoded.wind)
+                    DecodedMETARRow(label: "Visibilité", value: decoded.visibilityStr.isEmpty ? nil : decoded.visibilityStr)
+                    DecodedMETARRow(label: "Plafond", value: decoded.ceilingStr.isEmpty ? nil : decoded.ceilingStr)
+                    DecodedMETARRow(label: "Temp./rosée", value: decoded.temperatureStr.isEmpty ? nil : decoded.temperatureStr)
+                    DecodedMETARRow(label: "Altimètre", value: decoded.altimeterStr.isEmpty ? nil : decoded.altimeterStr)
+                    DecodedMETARRow(label: "Catégorie", value: metar.flightCategory.rawValue)
                 }
             }
         }
@@ -405,7 +414,11 @@ struct DecodedMETARRow: View {
             Text(value ?? "—")
                 .font(TypographyToken.monoSmall)
                 .foregroundStyle(ColorToken.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
+        // Same left edge in both grid columns.
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -421,7 +434,7 @@ struct TAFCard: View {
                     .font(TypographyToken.monoMedium)
                     .foregroundStyle(ColorToken.textPrimary)
                 Spacer()
-                Text("Valid: \(taf.validFrom.formatted(date: .omitted, time: .shortened)) – \(taf.validTo.formatted(date: .omitted, time: .shortened))")
+                Text("Valide \(taf.validFrom.zulu) – \(taf.validTo.zulu)")
                     .font(TypographyToken.monoSmall)
                     .foregroundStyle(ColorToken.textTertiary)
             }
@@ -462,7 +475,7 @@ struct RunwayRow: View {
 
             // Surface
             VStack(alignment: .leading, spacing: SpacingToken.space0) {
-                Text("Surface")
+                Text("Revêtement")
                     .font(TypographyToken.labelXSmall)
                     .foregroundStyle(ColorToken.textTertiary)
                 Text(runway.surface ?? "—")
@@ -475,7 +488,7 @@ struct RunwayRow: View {
             // Lighting
             if runway.lighted {
                 VStack(alignment: .trailing, spacing: SpacingToken.space0) {
-                    Text("Lighting")
+                    Text("Balisage")
                         .font(TypographyToken.labelXSmall)
                         .foregroundStyle(ColorToken.textTertiary)
                     Image(systemName: "lightbulb.fill")
@@ -496,11 +509,14 @@ struct FrequencyRow: View {
     var body: some View {
         HStack(spacing: SpacingToken.space3) {
             // Type badge
+            // Fixed-width badge so every frequency starts on the same column.
             Text(frequency.type)
                 .font(TypographyToken.monoXSmall)
                 .foregroundStyle(ColorToken.textOnBrand)
-                .padding(.horizontal, SpacingToken.space2)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .padding(.vertical, SpacingToken.space0)
+                .frame(width: 64)
                 .background(frequencyTypeColor(frequency.type), in: Capsule())
 
             // Frequency value

@@ -61,7 +61,9 @@ class WeatherTileOverlay: MKTileOverlay {}
 struct AirspaceStyle {
     let color: UIColor
     let isTFR: Bool
-    var fillAlpha: CGFloat { isTFR ? 0.2 : 0.15 }
+    /// Large SUA (MOA, warning areas) gets a lighter fill so it does not paint the whole state when zoomed out.
+    var isLargeSUA = false
+    var fillAlpha: CGFloat { isTFR ? 0.2 : isLargeSUA ? 0.05 : 0.15 }
     var lineWidth: CGFloat { isTFR ? 2 : 1.5 }
     var dashPattern: [NSNumber] { isTFR ? [4, 4] : [8, 4] }
 }
@@ -284,8 +286,9 @@ struct VFRMapView: UIViewRepresentable {
             self.chartKey = chartKey
             if showSectional, sectionalOverlay == nil {
                 let o = SectionalTileOverlay(urlTemplate: VFRMapView.chartURL(chart))
-                // TAC only exists around big airports: keep the base map visible elsewhere (and under satellite).
-                o.canReplaceMapContent = !satellite && chart != MapChart.terminal.rawValue
+                // Keep Apple's base map underneath: FAA tiles are missing when zoomed far out (empty beige map)
+                // and TAC only exists around big airports.
+                o.canReplaceMapContent = false
                 sectionalOverlay = o
                 mv.insertOverlay(o, at: 0, level: .aboveLabels)
             } else if !showSectional, let o = sectionalOverlay {
@@ -305,6 +308,8 @@ struct VFRMapView: UIViewRepresentable {
                     o = LightningTileOverlay(urlTemplate: nil)      // NOAA nowCOAST, Blitzortung fallback
                 } else {
                     o = WeatherTileOverlay(urlTemplate: VFRMapView.mesonetURL(layer))
+                    // Not past the product's resolution (1 km radar, 4 km infrared): no blocky pixels, no grey squares.
+                    o.maximumZ = layer.hasPrefix("goes") ? 8 : 10
                 }
                 o.canReplaceMapContent = false
                 weatherOverlays[layer] = o
@@ -383,7 +388,9 @@ struct VFRMapView: UIViewRepresentable {
                 for polygon in airspace.polygons where polygon.count >= 3 {
                     let coords = polygon.map(\.clCoordinate)
                     let overlay = MKPolygon(coordinates: coords, count: coords.count)
-                    airspaceStyles[ObjectIdentifier(overlay)] = AirspaceStyle(color: color, isTFR: tf)
+                    var large = false
+                    if case .sua(let kind) = airspace.type, kind == .moa || kind == .warning || kind == .alert { large = true }
+                    airspaceStyles[ObjectIdentifier(overlay)] = AirspaceStyle(color: color, isTFR: tf, isLargeSUA: large)
                     airspaceOverlays.append(overlay)
                 }
             }
@@ -462,6 +469,8 @@ struct VFRMapView: UIViewRepresentable {
                     ? .defaultHigh : .defaultLow
             }
             if a.role != .waypoint { v.isDraggable = false }
+            // Airports group into one numbered marker instead of overlapping; route points never do.
+            v.clusteringIdentifier = a.role == .nearest ? "airports" : nil
         }
 
         func mapView(_ mv: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
@@ -494,7 +503,7 @@ struct VFRMapView: UIViewRepresentable {
             }
             if let weather = overlay as? WeatherTileOverlay {
                 let r = MKTileOverlayRenderer(tileOverlay: weather)
-                r.alpha = weather is LightningTileOverlay ? 0.9 : weather is FISBRadarOverlay ? 0.8 : 0.55
+                r.alpha = weather is LightningTileOverlay ? 0.9 : weather is FISBRadarOverlay ? 0.7 : 0.4
                 return r
             }
             if let tile = overlay as? MKTileOverlay {
@@ -524,6 +533,17 @@ struct VFRMapView: UIViewRepresentable {
                 v.displayPriority = .required
                 return v
             }
+            if let cluster = annotation as? MKClusterAnnotation {
+                let v = (mv.dequeueReusableAnnotationView(withIdentifier: "cluster") as? MKMarkerAnnotationView)
+                    ?? MKMarkerAnnotationView(annotation: cluster, reuseIdentifier: "cluster")
+                v.annotation = cluster
+                v.markerTintColor = .systemTeal
+                v.glyphText = "\(cluster.memberAnnotations.count)"
+                v.titleVisibility = .hidden
+                v.subtitleVisibility = .hidden
+                v.displayPriority = .defaultHigh
+                return v
+            }
             guard let a = annotation as? AirportAnnotation else { return nil }
             let id = "airport"
             let v = (mv.dequeueReusableAnnotationView(withIdentifier: id) as? MKMarkerAnnotationView)
@@ -536,6 +556,11 @@ struct VFRMapView: UIViewRepresentable {
         }
 
         func mapView(_ mv: MKMapView, didSelect view: MKAnnotationView) {
+            if let cluster = view.annotation as? MKClusterAnnotation {
+                mv.deselectAnnotation(cluster, animated: false)
+                mv.showAnnotations(cluster.memberAnnotations, animated: true)
+                return
+            }
             guard let a = view.annotation as? AirportAnnotation else { return }   // traffic shows its callout
             mv.deselectAnnotation(a, animated: false)
             parent.onSelect(a.airport)

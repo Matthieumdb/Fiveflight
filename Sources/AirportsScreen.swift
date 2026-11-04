@@ -19,20 +19,11 @@ struct AirportsScreen: View {
 
     private var airports: [Airport] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        if !q.isEmpty {
-            var out: [Airport] = []
-            for a in store.airports where a.id.uppercased().contains(q)
-                || (a.iata?.uppercased().contains(q) ?? false) || a.name.uppercased().contains(q) {
-                out.append(a)
-                if out.count >= 60 { break }
-            }
-            let first = { (a: Airport) in a.id.uppercased().hasPrefix(q) || a.iata?.uppercased() == q }
-            return out.filter(first) + out.filter { !first($0) }
-        }
+        if !q.isEmpty { return AirportSearch.rank(store.airports, query: q, limit: 60) }
         switch list {
         case .recent: return model.recents.compactMap { store.airport($0) }
         case .favorites: return model.favorites.sorted().compactMap { store.airport($0) }
-        case .nearby: return store.nearest(to: here, limit: 30)
+        case .nearby: return store.nearest(to: here, limit: 30, matching: ["large_airport", "medium_airport", "small_airport", "seaplane_base"])
         }
     }
 
@@ -71,6 +62,21 @@ struct AirportsScreen: View {
                     }
                 } header: {
                     FFHeader(query.isEmpty ? list.rawValue : "Résultats")
+                } footer: {
+                    // Legend of the flight-category dots.
+                    HStack(spacing: 12) {
+                        ForEach([FlightCategory.vfr, .mvfr, .ifr, .lifr], id: \.self) { c in
+                            HStack(spacing: 4) {
+                                Circle().fill(c.color).frame(width: 8, height: 8)
+                                Text(c.rawValue)
+                            }
+                        }
+                        HStack(spacing: 4) {
+                            Circle().fill(Color.gray.opacity(0.5)).frame(width: 8, height: 8)
+                            Text("pas de METAR")
+                        }
+                    }
+                    .font(.caption2)
                 }
             }
             .listStyle(.insetGrouped)
@@ -103,9 +109,12 @@ struct AirportListRow: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 1) {
-                Text("\(Int(airport.distanceNM(to: from).rounded())) nm").font(.subheadline.monospacedDigit())
-                Text(String(format: "%03d°", Haversine.trueCourse(from, airport.coordinate)))
-                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Text("\(Int(airport.distanceNM(to: from).rounded())) NM").font(.subheadline.monospacedDigit())
+                // No bearing to the airport you are on.
+                if airport.distanceNM(to: from) >= 0.5 {
+                    Text(String(format: "%03d°", Haversine.trueCourse(from, airport.coordinate)))
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
             }
         }
     }

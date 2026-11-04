@@ -142,6 +142,11 @@ extension Date {
         let c = cal.dateComponents([.hour, .minute], from: self)
         return String(format: "%02d%02dZ", c.hour ?? 0, c.minute ?? 0)
     }
+
+    /// "3 nov. 2026 à 16:42", in French whatever the device language.
+    var frDateTime: String {
+        formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(Locale(identifier: "fr_FR")))
+    }
 }
 
 /// "1:05" style durations.

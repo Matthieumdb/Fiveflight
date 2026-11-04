@@ -40,14 +40,14 @@ struct CalculatorsScreen: View {
     @State private var selectedCalculator = 0
 
     private let calculators = [
-        ("Weight & Balance", "scalemass"),
-        ("Density Altitude", "thermometer"),
-        ("Crosswind", "wind"),
-        ("True Airspeed", "speedometer"),
-        ("Time/Speed/Dist", "clock"),
-        ("Fuel Planning", "fuelpump"),
-        ("Climb Gradient", "arrow.up.right"),
-        ("Glide Range", "arrow.down.right")
+        ("Masse et centrage", "scalemass"),
+        ("Altitude densité", "thermometer"),
+        ("Vent traversier", "wind"),
+        ("Vitesse propre", "speedometer"),
+        ("Temps/vitesse/dist.", "clock"),
+        ("Carburant", "fuelpump"),
+        ("Pente de montée", "arrow.up.right"),
+        ("Finesse", "arrow.down.right")
     ]
 
     var body: some View {
@@ -110,7 +110,7 @@ struct CalculatorsScreen: View {
                 .tabViewStyle(.page(indexDisplayMode: .never))
             }
             .background(ColorToken.surfaceBase)
-            .navigationTitle("Calculators")
+            .navigationTitle("Calculateurs")
             .navigationBarTitleDisplayMode(.inline)
         }
     }
@@ -119,14 +119,18 @@ struct CalculatorsScreen: View {
 // MARK: - Weight & Balance Calculator
 
 struct WeightBalanceCalculator: View {
+    @EnvironmentObject private var model: AppModel
     @StateObject private var wbModel = WeightBalanceModel()
+
+    private var aircraft: AircraftProfile? { model.selectedAircraft ?? model.aircraftProfiles.first }
+    private var aircraftHeader: String { "Limites · \(aircraft?.name ?? "avion")" }
 
     var body: some View {
         List {
             Section {
                 AircraftLimitCard(model: wbModel)
             } header: {
-                Text("Aircraft Limits")
+                Text(aircraftHeader)
                     .font(TypographyToken.labelSmall)
                     .foregroundStyle(ColorToken.textTertiary)
                     .textCase(.uppercase)
@@ -140,33 +144,33 @@ struct WeightBalanceCalculator: View {
                 .onMove { wbModel.items.move(fromOffsets: $0, toOffset: $1) }
 
                 Button {
-                    wbModel.items.append(WeightBalanceItem(name: "New Item", weight: 0, arm: 0))
+                    wbModel.items.append(WeightBalanceItem(name: "New Item", weight: 0, arm: wbModel.items.last?.arm ?? 0))
                 } label: {
-                    Label("Add Item", systemImage: "plus.circle.fill")
+                    Label("Ajouter un élément", systemImage: "plus.circle.fill")
                         .font(TypographyToken.labelMedium)
                         .foregroundStyle(ColorToken.brandPrimary)
                 }
             } header: {
                 HStack {
-                    Text("Loading")
+                    Text("Chargement")
                         .font(TypographyToken.labelSmall)
                         .foregroundStyle(ColorToken.textTertiary)
                         .textCase(.uppercase)
                     Spacer()
-                    EditButton().font(TypographyToken.labelSmall)
+                    FREditButton().font(TypographyToken.labelSmall)
                 }
             }
 
             Section {
-                ResultRow(title: "Total Weight", value: String(format: "%.0f lb", wbModel.totalWeight), color: wbModel.totalWeight > wbModel.maxWeight ? ColorToken.danger : ColorToken.textPrimary)
-                ResultRow(title: "Total Moment", value: String(format: "%.0f lb-in", wbModel.totalMoment))
-                ResultRow(title: "CG Location", value: String(format: "%.1f in", wbModel.cg), color: wbModel.isWithinLimits ? ColorToken.success : ColorToken.danger)
+                ResultRow(title: "Masse totale", value: String(format: "%.0f lb", wbModel.totalWeight), color: wbModel.totalWeight > wbModel.maxWeight ? ColorToken.danger : ColorToken.textPrimary)
+                ResultRow(title: "Moment total", value: String(format: "%.0f lb-in", wbModel.totalMoment))
+                ResultRow(title: "Centrage", value: String(format: "%.1f in", wbModel.cg), color: wbModel.isWithinLimits ? ColorToken.success : ColorToken.danger)
 
-                ResultRow(title: "CG Range", value: String(format: "%.0f–%.0f in", wbModel.cgForward, wbModel.cgAft))
-                ResultRow(title: "Useful Load Remaining", value: String(format: "%.0f lb", wbModel.usefulLoad))
+                ResultRow(title: "Plage de centrage", value: String(format: "%.0f–%.0f in", wbModel.cgForward, wbModel.cgAft))
+                ResultRow(title: "Charge restante", value: String(format: "%.0f lb", wbModel.maxWeight - wbModel.totalWeight), color: wbModel.totalWeight > wbModel.maxWeight ? ColorToken.danger : ColorToken.textPrimary)
                 WeightBalanceChart(model: wbModel)
             } header: {
-                Text("Results")
+                Text("Résultats")
                     .font(TypographyToken.labelSmall)
                     .foregroundStyle(ColorToken.textTertiary)
                     .textCase(.uppercase)
@@ -175,6 +179,7 @@ struct WeightBalanceCalculator: View {
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(ColorToken.surfaceBase)
+        .onAppear { if let aircraft { wbModel.sync(with: aircraft) } }
     }
 }
 
@@ -185,7 +190,7 @@ struct WBItemRow: View {
         HStack(spacing: SpacingToken.space3) {
             if item.name == "Fuel (gal)" {
                 VStack(alignment: .leading, spacing: SpacingToken.space1) {
-                    Text(item.name)
+                    Text(item.displayName)
                         .font(TypographyToken.bodySmall)
                         .foregroundStyle(ColorToken.textSecondary)
                     Stepper("", value: Binding(
@@ -199,11 +204,11 @@ struct WBItemRow: View {
                 }
             } else {
                 VStack(alignment: .leading, spacing: SpacingToken.space1) {
-                    Text(item.name)
+                    Text(item.displayName)
                         .font(TypographyToken.bodySmall)
                         .foregroundStyle(ColorToken.textSecondary)
                     HStack {
-                        Stepper("", value: $item.weight, in: 0...1000, step: 10)
+                        Stepper("", value: $item.weight, in: 0...(item.name == WeightBalanceItem.emptyName ? 10000 : 1000), step: item.name == WeightBalanceItem.emptyName ? 1 : 10)
                             .labelsHidden()
                         Text("\(Int(item.weight)) lb")
                             .font(TypographyToken.monoSmall)
@@ -216,10 +221,10 @@ struct WBItemRow: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: SpacingToken.space1) {
-                Text("Arm: \(Int(item.arm)) in")
+                Text("Bras : \(Int(item.arm)) in")
                     .font(TypographyToken.monoXSmall)
                     .foregroundStyle(ColorToken.textTertiary)
-                Text("Mom: \(Int(item.weight * item.arm))")
+                Text("Moment : \(Int(item.weight * item.arm))")
                     .font(TypographyToken.monoXSmall)
                     .foregroundStyle(ColorToken.textTertiary)
             }
@@ -234,7 +239,7 @@ struct AircraftLimitCard: View {
     var body: some View {
         HStack(spacing: SpacingToken.space4) {
             VStack(alignment: .leading, spacing: SpacingToken.space1) {
-                Text("Weight")
+                Text("Masse")
                     .font(TypographyToken.labelSmall)
                     .foregroundStyle(ColorToken.textTertiary)
                 Text(String(format: "%.0f / %.0f lb", model.totalWeight, model.maxWeight))
@@ -245,7 +250,7 @@ struct AircraftLimitCard: View {
             Divider().frame(height: 40)
 
             VStack(alignment: .leading, spacing: SpacingToken.space1) {
-                Text("CG")
+                Text("Centrage")
                     .font(TypographyToken.labelSmall)
                     .foregroundStyle(ColorToken.textTertiary)
                 Text(String(format: "%.1f in (%.0f–%.0f)", model.cg, model.cgForward, model.cgAft))
@@ -269,10 +274,10 @@ struct DensityAltitudeCalculator: View {
     @State private var temperature = 15.0
 
     var body: some View {
-        CalculatorCard(title: "Density Altitude", icon: "thermometer") {
+        CalculatorCard(title: "Altitude densité", icon: "thermometer") {
             VStack(spacing: SpacingToken.space4) {
-                ProfileSliderRow(title: "Pressure Altitude", value: $pressureAltitude, range: -1000...15000, step: 100, unit: "ft", icon: "altitude")
-                ProfileSliderRow(title: "Temperature (OAT)", value: $temperature, range: -40...50, step: 1, unit: "°C", icon: "thermometer")
+                ProfileSliderRow(title: "Altitude pression", value: $pressureAltitude, range: -1000...15000, step: 100, unit: "ft", icon: "altitude")
+                ProfileSliderRow(title: "Température extérieure", value: $temperature, range: -40...50, step: 1, unit: "°C", icon: "thermometer")
 
                 let da = DensityAltitude.calculate(pressureAltitude: pressureAltitude, tempC: temperature)
                 let isaTemp = 15.0 - (pressureAltitude / 1000.0 * 2.0)
@@ -282,7 +287,7 @@ struct DensityAltitudeCalculator: View {
 
                 HStack {
                     VStack(alignment: .leading, spacing: SpacingToken.space1) {
-                        Text("Density Altitude")
+                        Text("Altitude densité")
                             .font(TypographyToken.labelSmall)
                             .foregroundStyle(ColorToken.textTertiary)
                         Text("\(da) ft")
@@ -291,7 +296,7 @@ struct DensityAltitudeCalculator: View {
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: SpacingToken.space1) {
-                        Text("ISA Deviation")
+                        Text("Écart ISA")
                             .font(TypographyToken.labelSmall)
                             .foregroundStyle(ColorToken.textTertiary)
                         Text("\(deviation >= 0 ? "+" : "")\(String(format: "%.1f", deviation))°C")
@@ -312,11 +317,11 @@ struct CrosswindCalculator: View {
     @State private var runwayHeading = 0.0
 
     var body: some View {
-        CalculatorCard(title: "Crosswind Component", icon: "wind") {
+        CalculatorCard(title: "Composantes du vent", icon: "wind") {
             VStack(spacing: SpacingToken.space4) {
-                ProfileSliderRow(title: "Wind Direction", value: $windDirection, range: 0...359, step: 1, unit: "°", icon: "wind")
-                ProfileSliderRow(title: "Wind Speed", value: $windSpeed, range: 0...50, step: 1, unit: "kt", icon: "wind")
-                ProfileSliderRow(title: "Runway Heading", value: $runwayHeading, range: 0...359, step: 1, unit: "°", icon: "number")
+                ProfileSliderRow(title: "Direction du vent", value: $windDirection, range: 0...359, step: 1, unit: "°", icon: "wind")
+                ProfileSliderRow(title: "Force du vent", value: $windSpeed, range: 0...50, step: 1, unit: "kt", icon: "wind")
+                ProfileSliderRow(title: "Cap de la piste", value: $runwayHeading, range: 0...359, step: 1, unit: "°", icon: "number")
 
                 let (headwind, crosswind, side) = Crosswind.components(
                     windDir: Int(windDirection),
@@ -328,19 +333,19 @@ struct CrosswindCalculator: View {
 
                 HStack {
                     VStack(alignment: .leading, spacing: SpacingToken.space1) {
-                        Text("Headwind")
+                        Text(headwind >= 0 ? "Vent de face" : "Vent arrière")
                             .font(TypographyToken.labelSmall)
                             .foregroundStyle(ColorToken.textTertiary)
-                        Text("\(headwind) kt")
+                        Text("\(abs(headwind)) kt")
                             .font(TypographyToken.numberMedium)
                             .foregroundStyle(headwind >= 0 ? ColorToken.success : ColorToken.danger)
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: SpacingToken.space1) {
-                        Text("Crosswind")
+                        Text("Vent traversier")
                             .font(TypographyToken.labelSmall)
                             .foregroundStyle(ColorToken.textTertiary)
-                        Text("\(crosswind) kt \(side)")
+                        Text("\(crosswind) kt \(side == "R" ? "D" : "G")")
                             .font(TypographyToken.numberMedium)
                             .foregroundStyle(crosswind > 15 ? ColorToken.danger : (crosswind > 10 ? ColorToken.warning : ColorToken.success))
                     }
@@ -358,11 +363,11 @@ struct TrueAirspeedCalculator: View {
     @State private var temperature = 15.0
 
     var body: some View {
-        CalculatorCard(title: "True Airspeed", icon: "speedometer") {
+        CalculatorCard(title: "Vitesse propre", icon: "speedometer") {
             VStack(spacing: SpacingToken.space4) {
-                ProfileSliderRow(title: "Indicated Airspeed", value: $ias, range: 40...300, step: 1, unit: "kt", icon: "speedometer")
-                ProfileSliderRow(title: "Pressure Altitude", value: $pressureAltitude, range: -1000...25000, step: 100, unit: "ft", icon: "altitude")
-                ProfileSliderRow(title: "Temperature (OAT)", value: $temperature, range: -40...50, step: 1, unit: "°C", icon: "thermometer")
+                ProfileSliderRow(title: "Vitesse indiquée", value: $ias, range: 40...300, step: 1, unit: "kt", icon: "speedometer")
+                ProfileSliderRow(title: "Altitude pression", value: $pressureAltitude, range: -1000...25000, step: 100, unit: "ft", icon: "altitude")
+                ProfileSliderRow(title: "Température extérieure", value: $temperature, range: -40...50, step: 1, unit: "°C", icon: "thermometer")
 
                 let tas = TrueAirspeed.calculate(ias: ias, pressureAltitude: pressureAltitude, tempC: temperature)
 
@@ -370,7 +375,7 @@ struct TrueAirspeedCalculator: View {
 
                 HStack {
                     VStack(alignment: .leading, spacing: SpacingToken.space1) {
-                        Text("True Airspeed")
+                        Text("Vitesse propre (TAS)")
                             .font(TypographyToken.labelSmall)
                             .foregroundStyle(ColorToken.textTertiary)
                         Text("\(Int(tas.rounded())) kt")
@@ -392,21 +397,21 @@ struct TimeSpeedDistanceCalculator: View {
     @State private var time = 0.0
     @State private var solvingFor: SolveFor = .time
 
-    enum SolveFor: String, CaseIterable { case time = "Time", speed = "Speed", distance = "Distance" }
+    enum SolveFor: String, CaseIterable { case time = "Temps", speed = "Vitesse", distance = "Distance" }
 
     var body: some View {
         CalculatorCard(title: "Time / Speed / Distance", icon: "clock") {
             VStack(spacing: SpacingToken.space4) {
-                Picker("Solve For", selection: $solvingFor) {
+                Picker("Calculer", selection: $solvingFor) {
                     ForEach(SolveFor.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
 
                 if solvingFor != .time {
-                    ProfileSliderRow(title: "Time", value: $time, range: 0...600, step: 1, unit: "min", icon: "clock")
+                    ProfileSliderRow(title: "Temps", value: $time, range: 0...600, step: 1, unit: "min", icon: "clock")
                 }
                 if solvingFor != .speed {
-                    ProfileSliderRow(title: "Speed", value: $speed, range: 1...500, step: 1, unit: "kt", icon: "speedometer")
+                    ProfileSliderRow(title: "Vitesse", value: $speed, range: 1...500, step: 1, unit: "kt", icon: "speedometer")
                 }
                 if solvingFor != .distance {
                     ProfileSliderRow(title: "Distance", value: $distance, range: 0...5000, step: 1, unit: "NM", icon: "point.topleft.down.curvedto.point.bottomright.forward")
@@ -454,13 +459,13 @@ struct FuelPlanningCalculator: View {
     @State private var taxiFuel = 1.0
 
     var body: some View {
-        CalculatorCard(title: "Fuel Planning", icon: "fuelpump") {
+        CalculatorCard(title: "Carburant", icon: "fuelpump") {
             VStack(spacing: SpacingToken.space4) {
                 ProfileSliderRow(title: "Distance", value: $distance, range: 0...2000, step: 10, unit: "NM", icon: "point.topleft.down.curvedto.point.bottomright.forward")
-                ProfileSliderRow(title: "Ground Speed", value: $speed, range: 40...500, step: 5, unit: "kt", icon: "speedometer")
-                ProfileSliderRow(title: "Fuel Burn", value: $fuelBurn, range: 1...100, step: 0.5, unit: "gal/h", icon: "fuelpump")
+                ProfileSliderRow(title: "Vitesse sol", value: $speed, range: 40...500, step: 5, unit: "kt", icon: "speedometer")
+                ProfileSliderRow(title: "Consommation", value: $fuelBurn, range: 1...100, step: 0.5, unit: "gal/h", icon: "fuelpump")
                 ProfileSliderRow(title: "Reserve", value: $reserveMin, range: 0...180, step: 5, unit: "min", icon: "timer")
-                ProfileSliderRow(title: "Taxi Fuel", value: $taxiFuel, range: 0...10, step: 0.5, unit: "gal", icon: "fuelpump.fill")
+                ProfileSliderRow(title: "Roulage", value: $taxiFuel, range: 0...10, step: 0.5, unit: "gal", icon: "fuelpump.fill")
 
                 let enrouteTime = distance / speed
                 let enrouteFuel = enrouteTime * fuelBurn
@@ -470,11 +475,11 @@ struct FuelPlanningCalculator: View {
                 Divider()
 
                 VStack(spacing: SpacingToken.space2) {
-                    ResultRow(title: "Enroute Time", value: String(format: "%dh%02dm", Int(enrouteTime), Int((enrouteTime.truncatingRemainder(dividingBy: 1)) * 60)))
-                    ResultRow(title: "Enroute Fuel", value: String(format: "%.1f gal", enrouteFuel))
-                    ResultRow(title: "Reserve Fuel", value: String(format: "%.1f gal", reserveFuel))
-                    ResultRow(title: "Taxi Fuel", value: String(format: "%.1f gal", taxiFuel))
-                    ResultRow(title: "TOTAL REQUIRED", value: String(format: "%.1f gal", totalFuel), color: ColorToken.brandPrimary)
+                    ResultRow(title: "Temps en route", value: String(format: "%dh%02dm", Int(enrouteTime), Int((enrouteTime.truncatingRemainder(dividingBy: 1)) * 60)))
+                    ResultRow(title: "Carburant en route", value: String(format: "%.1f gal", enrouteFuel))
+                    ResultRow(title: "Réserve", value: String(format: "%.1f gal", reserveFuel))
+                    ResultRow(title: "Roulage", value: String(format: "%.1f gal", taxiFuel))
+                    ResultRow(title: "TOTAL NÉCESSAIRE", value: String(format: "%.1f gal", totalFuel), color: ColorToken.brandPrimary)
                 }
             }
         }
@@ -489,11 +494,11 @@ struct ClimbGradientCalculator: View {
     @State private var requiredGradient = 200.0
 
     var body: some View {
-        CalculatorCard(title: "Climb Gradient", icon: "arrow.up.right") {
+        CalculatorCard(title: "Pente de montée", icon: "arrow.up.right") {
             VStack(spacing: SpacingToken.space4) {
-                ProfileSliderRow(title: "Ground Speed", value: $groundSpeed, range: 40...200, step: 1, unit: "kt", icon: "speedometer")
-                ProfileSliderRow(title: "Climb Rate", value: $climbRate, range: 0...3000, step: 50, unit: "ft/min", icon: "arrow.up")
-                ProfileSliderRow(title: "Required Gradient", value: $requiredGradient, range: 0...1000, step: 50, unit: "ft/NM", icon: "arrow.up.right")
+                ProfileSliderRow(title: "Vitesse sol", value: $groundSpeed, range: 40...200, step: 1, unit: "kt", icon: "speedometer")
+                ProfileSliderRow(title: "Taux de montée", value: $climbRate, range: 0...3000, step: 50, unit: "ft/min", icon: "arrow.up")
+                ProfileSliderRow(title: "Pente requise", value: $requiredGradient, range: 0...1000, step: 50, unit: "ft/NM", icon: "arrow.up.right")
 
                 let actualGradient = (climbRate / groundSpeed) * 60.0
                 let meets = actualGradient >= requiredGradient
@@ -502,7 +507,7 @@ struct ClimbGradientCalculator: View {
 
                 HStack {
                     VStack(alignment: .leading, spacing: SpacingToken.space1) {
-                        Text("Actual Gradient")
+                        Text("Pente obtenue")
                             .font(TypographyToken.labelSmall)
                             .foregroundStyle(ColorToken.textTertiary)
                         Text("\(Int(actualGradient.rounded())) ft/NM")
@@ -511,7 +516,7 @@ struct ClimbGradientCalculator: View {
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: SpacingToken.space1) {
-                        Text("Required")
+                        Text("Requise")
                             .font(TypographyToken.labelSmall)
                             .foregroundStyle(ColorToken.textTertiary)
                         Text("\(Int(requiredGradient)) ft/NM")
@@ -520,7 +525,7 @@ struct ClimbGradientCalculator: View {
                     }
                 }
 
-                Text(meets ? "✓ Meets requirement" : "✗ Does not meet requirement")
+                Text(meets ? "✓ Pente requise atteinte" : "✗ Pente requise non atteinte")
                     .font(TypographyToken.labelMedium)
                     .foregroundStyle(meets ? ColorToken.success : ColorToken.danger)
                     .frame(maxWidth: .infinity)
@@ -537,11 +542,11 @@ struct GlideRangeCalculator: View {
     @State private var windComponent = 0.0
 
     var body: some View {
-        CalculatorCard(title: "Emergency Glide Range", icon: "arrow.down.right") {
+        CalculatorCard(title: "Distance de plané", icon: "arrow.down.right") {
             VStack(spacing: SpacingToken.space4) {
-                ProfileSliderRow(title: "Altitude AGL", value: $altitudeAGL, range: 0...20000, step: 100, unit: "ft", icon: "altitude")
-                ProfileSliderRow(title: "Glide Ratio", value: $glideRatio, range: 5...20, step: 0.5, unit: ":1", icon: "arrow.down.right")
-                ProfileSliderRow(title: "Wind Component", value: $windComponent, range: -50...50, step: 1, unit: "kt", icon: "wind")
+                ProfileSliderRow(title: "Hauteur sol", value: $altitudeAGL, range: 0...20000, step: 100, unit: "ft", icon: "altitude")
+                ProfileSliderRow(title: "Finesse", value: $glideRatio, range: 5...20, step: 0.5, unit: ":1", icon: "arrow.down.right")
+                ProfileSliderRow(title: "Vent (+ arrière)", value: $windComponent, range: -50...50, step: 1, unit: "kt", icon: "wind")
 
                 let nmPer1000ft = glideRatio * 6076.0 / 5280.0 // Convert to NM per 1000ft
                 let stillAirRange = (altitudeAGL / 1000.0) * nmPer1000ft
@@ -552,7 +557,7 @@ struct GlideRangeCalculator: View {
 
                 HStack {
                     VStack(alignment: .leading, spacing: SpacingToken.space1) {
-                        Text("Still Air Range")
+                        Text("Sans vent")
                             .font(TypographyToken.labelSmall)
                             .foregroundStyle(ColorToken.textTertiary)
                         Text(String(format: "%.1f NM", stillAirRange))
@@ -561,7 +566,7 @@ struct GlideRangeCalculator: View {
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: SpacingToken.space1) {
-                        Text("With Wind")
+                        Text("Avec le vent")
                             .font(TypographyToken.labelSmall)
                             .foregroundStyle(ColorToken.textTertiary)
                         Text(String(format: "%.1f NM", totalRange))
@@ -570,7 +575,7 @@ struct GlideRangeCalculator: View {
                     }
                 }
 
-                Text("Glide speed: ~\(Int(70 * sqrt(altitudeAGL / 3000))) kt (adjust per POH)")
+                Text("Vitesse de plané : voir le manuel de vol (POH)")
                     .font(TypographyToken.bodySmall)
                     .foregroundStyle(ColorToken.textTertiary)
                     .frame(maxWidth: .infinity)

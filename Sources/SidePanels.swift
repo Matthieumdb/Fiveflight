@@ -33,7 +33,7 @@ struct FlightPlanSidePanel: View {
                         ContentUnavailableView(
                             "No Waypoints",
                             systemImage: "mappin.slash",
-                            description: Text("Add airports to build your flight plan")
+                            description: Text("Ajoute des aéroports pour construire ton plan de vol")
                         )
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
@@ -59,7 +59,7 @@ struct FlightPlanSidePanel: View {
                     Button {
                         showingEditor = true
                     } label: {
-                        Label("Add Waypoint", systemImage: "plus.circle.fill")
+                        Label("Ajouter un point", systemImage: "plus.circle.fill")
                             .font(TypographyToken.labelMedium)
                             .foregroundStyle(ColorToken.brandPrimary)
                             .frame(maxWidth: .infinity, alignment: .center)
@@ -75,7 +75,7 @@ struct FlightPlanSidePanel: View {
                             .textCase(.uppercase)
                         Spacer()
                         if !model.waypoints.isEmpty {
-                            EditButton()
+                            FREditButton()
                                 .font(TypographyToken.labelSmall)
                         }
                     }
@@ -86,10 +86,7 @@ struct FlightPlanSidePanel: View {
                     Section {
                         PerformanceCard()
                     } header: {
-                        Text("Performance")
-                            .font(TypographyToken.labelSmall)
-                            .foregroundStyle(ColorToken.textTertiary)
-                            .textCase(.uppercase)
+                        FFHeader("Performance")
                     }
                 }
 
@@ -97,10 +94,7 @@ struct FlightPlanSidePanel: View {
                 Section {
                     RouteOptionsCard()
                 } header: {
-                    Text("Route Options")
-                        .font(TypographyToken.labelSmall)
-                        .foregroundStyle(ColorToken.textTertiary)
-                        .textCase(.uppercase)
+                    FFHeader("Options de route")
                 }
 
                 // Warnings
@@ -110,10 +104,7 @@ struct FlightPlanSidePanel: View {
                             RouteWarningRow(warning: warning)
                         }
                     } header: {
-                        Text("Airspace Warnings")
-                            .font(TypographyToken.labelSmall)
-                            .foregroundStyle(ColorToken.textTertiary)
-                            .textCase(.uppercase)
+                        FFHeader("Alertes espaces aériens")
                     }
                 }
 
@@ -123,7 +114,7 @@ struct FlightPlanSidePanel: View {
                         Button {
                             Task { await calculateRoute() }
                         } label: {
-                            Label("Calculate Route", systemImage: "arrow.triangle.turn.up.right.circle")
+                            Label("Calculer la route", systemImage: "arrow.triangle.turn.up.right.circle")
                                 .frame(maxWidth: .infinity)
                         }
                         .primaryButton(size: .regular)
@@ -140,7 +131,7 @@ struct FlightPlanSidePanel: View {
                                 arrival: model.waypoints.last?.coordinate
                             )
                         } label: {
-                            Label("Log Flight", systemImage: "book.fill")
+                            Label("Ajouter au carnet", systemImage: "book.fill")
                                 .frame(maxWidth: .infinity)
                         }
                         .secondaryButton()
@@ -150,7 +141,7 @@ struct FlightPlanSidePanel: View {
                         Button(role: .destructive) {
                             withAnimation { model.clearFlightPlan() }
                         } label: {
-                            Label("Clear Flight Plan", systemImage: "trash")
+                            Label("Effacer le plan de vol", systemImage: "trash")
                                 .frame(maxWidth: .infinity)
                         }
                         .destructiveButton(filled: false)
@@ -162,7 +153,7 @@ struct FlightPlanSidePanel: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(ColorToken.surfaceBase)
-            .navigationTitle("Flight Plan")
+            .navigationTitle("Plan de vol")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -278,7 +269,7 @@ struct ActiveRouteCard: View {
             // Routing mode picker
             VStack(alignment: .leading, spacing: SpacingToken.space2) {
                 HStack {
-                    Text("Routing Mode")
+                    Text("Mode de routage")
                         .font(TypographyToken.labelSmall)
                         .foregroundStyle(ColorToken.textTertiary)
                     Spacer()
@@ -521,7 +512,7 @@ struct PerformanceCard: View {
             // Summary
             HStack {
                 VStack(alignment: .leading, spacing: SpacingToken.space1) {
-                    Text("Total Fuel Required")
+                    Text("Carburant total nécessaire")
                         .font(TypographyToken.labelMedium)
                         .foregroundStyle(ColorToken.textSecondary)
                     Text(String(format: "%.1f gal", model.totalFuelGallons))
@@ -669,17 +660,14 @@ struct FlightPlanEditorSheet: View {
                     .onDelete { model.waypoints.remove(atOffsets: $0) }
                     .onMove { model.waypoints.move(fromOffsets: $0, toOffset: $1) }
                 } header: {
-                    Text("Waypoints (drag to reorder)")
-                        .font(TypographyToken.labelSmall)
-                        .foregroundStyle(ColorToken.textTertiary)
-                        .textCase(.uppercase)
+                    FFHeader("Points (glisser pour réordonner)")
                 }
 
                 Section {
                     Button {
                         showSearch = true
                     } label: {
-                        Label("Add Waypoint", systemImage: "plus.circle.fill")
+                        Label("Ajouter un point", systemImage: "plus.circle.fill")
                             .font(TypographyToken.labelMedium)
                             .foregroundStyle(ColorToken.brandPrimary)
                             .frame(maxWidth: .infinity)
@@ -692,14 +680,14 @@ struct FlightPlanEditorSheet: View {
                     model.addWaypoint($0)
                 }
             }
-            .navigationTitle("Edit Flight Plan")
+            .navigationTitle("Modifier le plan de vol")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button("Annuler") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
+                    Button("OK") {
                         Task {
                             _ = await routingEngine.calculateRoute(
                                 waypoints: model.waypoints,
@@ -798,10 +786,7 @@ struct LayersSidePanel: View {
                         color: ColorToken.classB
                     )
                 } header: {
-                    Text("Map Layers")
-                        .font(TypographyToken.labelSmall)
-                        .foregroundStyle(ColorToken.textTertiary)
-                        .textCase(.uppercase)
+                    FFHeader("Couches de la carte")
                 }
 
                 ADSBSection()
@@ -813,7 +798,7 @@ struct LayersSidePanel: View {
                         Task { await AirspaceDataManager.shared.refresh() }
                     } label: {
                         HStack {
-                            Label("Refresh Airspace Data", systemImage: "arrow.clockwise")
+                            Label("Actualiser les espaces aériens", systemImage: "arrow.clockwise")
                                 .font(TypographyToken.labelMedium)
                                 .foregroundStyle(ColorToken.brandPrimary)
                             Spacer()
@@ -827,26 +812,23 @@ struct LayersSidePanel: View {
 
                     if let lastUpdate = AirspaceDataManager.shared.lastUpdate {
                         HStack {
-                            Text("Last Updated")
+                            Text("Mise à jour")
                                 .font(TypographyToken.bodySmall)
                                 .foregroundStyle(ColorToken.textSecondary)
                             Spacer()
-                            Text(lastUpdate.formatted(date: .abbreviated, time: .shortened))
+                            Text(lastUpdate.frDateTime)
                                 .font(TypographyToken.monoSmall)
                                 .foregroundStyle(ColorToken.textTertiary)
                         }
                     }
                 } header: {
-                    Text("Data")
-                        .font(TypographyToken.labelSmall)
-                        .foregroundStyle(ColorToken.textTertiary)
-                        .textCase(.uppercase)
+                    FFHeader("Données")
                 }
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .background(ColorToken.surfaceBase)
-            .navigationTitle("Layers")
+            .navigationTitle("Couches")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -917,7 +899,7 @@ struct NearbySidePanel: View {
                     ContentUnavailableView(
                         "No Location",
                         systemImage: "location.slash",
-                        description: Text("Enable location services to see nearby airports")
+                        description: Text("Active la localisation pour voir les aéroports proches")
                     )
                     .listRowBackground(Color.clear)
                 } else {
@@ -929,7 +911,7 @@ struct NearbySidePanel: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(ColorToken.surfaceBase)
-            .navigationTitle("Nearby Airports")
+            .navigationTitle("Aéroports proches")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -1054,7 +1036,7 @@ struct ADSBSection: View {
                 NavigationLink("Météo ADS-B (FIS-B)") { FISBWeatherScreen() }
             }
         } header: {
-            Text("Trafic")
+            FFHeader("Trafic")
         } footer: {
             Text("Connecte l'iPhone au Wi-Fi du récepteur (Stratux, Sentry, SkyEcho). Le trafic s'affiche en orange sur la carte, la météo FIS-B (METAR, TAF, NOTAM, radar) est utilisée sans internet.")
         }

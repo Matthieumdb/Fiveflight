@@ -15,7 +15,7 @@ struct LogbookScreen: View {
                 CurrencySection()
                 if model.logbook.isEmpty {
                     Section {
-                        Text("Trace une route puis touche « Log Flight » pour enregistrer le vol.")
+                        Text("Trace une route puis touche « Ajouter au carnet de vol » dans Vols pour enregistrer le vol.")
                             .foregroundStyle(ColorToken.textTertiary)
                     }
                 } else {
@@ -44,7 +44,7 @@ struct LogbookScreen: View {
             .navigationTitle("Carnet de vol")
             .toolbar {
                 if !model.logbook.isEmpty {
-                    ToolbarItem(placement: .topBarLeading) { EditButton() }
+                    ToolbarItem(placement: .topBarLeading) { FREditButton() }
                     ToolbarItem(placement: .topBarTrailing) {
                         if let url = csvURL() {
                             ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }
@@ -115,16 +115,17 @@ private struct CurrencySection: View {
         Section {
             status("Passagers de jour", ok: day >= 3, detail: "\(day)/3 atterrissages en 90 j")
             status("Passagers de nuit", ok: night >= 3, detail: "\(night)/3 atterrissages de nuit en 90 j")
-            dateRow("Visite médicale valide jusqu'au", $model.medicalExpiry, ok: { $0 > Date.now })
-            dateRow("Dernier flight review", $model.flightReviewDate,
+            dateRow("Visite médicale", "valide jusqu'au", $model.medicalExpiry, ok: { $0 > Date.now })
+            dateRow("Flight review", "dernier contrôle (24 mois)", $model.flightReviewDate,
                     ok: { Calendar.current.date(byAdding: .month, value: 24, to: $0)! > Date.now })
         } header: { FFHeader("Qualifications") }
     }
 
     private func status(_ title: String, ok: Bool, detail: String) -> some View {
-        HStack {
+        HStack(spacing: 12) {
             Image(systemName: ok ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                 .foregroundStyle(ok ? ColorToken.success : ColorToken.warning)
+                .frame(width: 22)
             VStack(alignment: .leading) {
                 Text(title)
                 Text(detail).font(.caption).foregroundStyle(.secondary)
@@ -132,14 +133,28 @@ private struct CurrencySection: View {
         }
     }
 
-    private func dateRow(_ title: String, _ seconds: Binding<Double>, ok: (Date) -> Bool) -> some View {
-        let date = Binding<Date>(get: { seconds.wrappedValue > 0 ? Date(timeIntervalSince1970: seconds.wrappedValue) : .now },
+    /// A date that may not be entered yet: then "Renseigner", never today's date pretending to be filled in.
+    private func dateRow(_ title: String, _ detail: String, _ seconds: Binding<Double>, ok: (Date) -> Bool) -> some View {
+        let date = Binding<Date>(get: { Date(timeIntervalSince1970: seconds.wrappedValue) },
                                  set: { seconds.wrappedValue = $0.timeIntervalSince1970 })
         let entered = seconds.wrappedValue > 0
-        return HStack {
+        return HStack(alignment: .center, spacing: 12) {
             Image(systemName: !entered ? "questionmark.circle" : ok(date.wrappedValue) ? "checkmark.seal.fill" : "xmark.octagon.fill")
                 .foregroundStyle(!entered ? ColorToken.textTertiary : ok(date.wrappedValue) ? ColorToken.success : ColorToken.danger)
-            DatePicker(title, selection: date, displayedComponents: .date)
+                .frame(width: 22)
+            VStack(alignment: .leading) {
+                Text(title).lineLimit(1)
+                Text(entered ? detail : "non renseigné").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            if entered {
+                DatePicker(title, selection: date, displayedComponents: .date).labelsHidden()
+                Button { seconds.wrappedValue = 0 } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.borderless).foregroundStyle(ColorToken.textTertiary)
+            } else {
+                Button("Renseigner") { seconds.wrappedValue = Date.now.timeIntervalSince1970 }
+                    .buttonStyle(.borderless)
+            }
         }
     }
 }

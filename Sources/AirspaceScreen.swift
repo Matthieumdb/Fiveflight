@@ -434,7 +434,7 @@ struct AirspaceDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button("OK") { dismiss() }
                 }
             }
         }

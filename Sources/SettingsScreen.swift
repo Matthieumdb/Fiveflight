@@ -20,7 +20,7 @@ struct SettingsScreen: View {
                         Text(model.fuelOnBoard > 0 ? "Carburant au départ : \(Int(model.fuelOnBoard)) gal" : "Carburant au départ : non saisi")
                     }
                 } header: {
-                    Text("Profil avion")
+                    FFHeader("Profil avion")
                 } footer: {
                     Text("Utilisé par le calculateur de vol et le plan.")
                 }
@@ -37,7 +37,7 @@ struct SettingsScreen: View {
                         Text("Finesse : \(model.glideRatio, specifier: "%.1f"):1")
                     }
                 } header: {
-                    Text("Alertes en vol")
+                    FFHeader("Alertes en vol")
                 } footer: {
                     Text("Annonce espaces aériens, obstacles, trafic ADS-B et carburant, tant que l'app est au premier plan. L'anneau vert montre la distance de plané sans vent depuis la hauteur GPS.")
                 }
@@ -60,7 +60,7 @@ struct SettingsScreen: View {
                         Label("Radar NEXRAD (Iowa State)", systemImage: "cloud.rain")
                     }
                 } header: {
-                    Text("Couches carte")
+                    FFHeader("Couches carte")
                 } footer: {
                     Text("Activation immédiate sur la carte principale.")
                 }
@@ -73,7 +73,7 @@ struct SettingsScreen: View {
                     }
                     .pickerStyle(.segmented)
                 } header: {
-                    Text("Affichage")
+                    FFHeader("Affichage")
                 } footer: {
                     Text("Respecte le mode système par défaut.")
                 }
@@ -90,7 +90,7 @@ struct SettingsScreen: View {
                     LabeledContent("Version", value: Self.appVersion)
                     LabeledContent("Zone", value: "US · VFR")
                 } header: {
-                    Text("À propos")
+                    FFHeader("À propos")
                 } footer: {
                     Text("Démo — ne pas utiliser pour la navigation réelle. Données de services publics tiers, non certifiées.")
                 }

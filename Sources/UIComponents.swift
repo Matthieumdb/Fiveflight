@@ -713,3 +713,15 @@ extension View {
     .padding()
     .background(ColorToken.surfaceBase)
 }
+
+/// French Edit/OK button for lists (the system EditButton followed the bundle language and showed "Edit").
+struct FREditButton: View {
+    @Environment(\.editMode) private var editMode
+    private var editing: Bool { editMode?.wrappedValue.isEditing == true }
+
+    var body: some View {
+        Button(editing ? "OK" : "Modifier") {
+            withAnimation { editMode?.wrappedValue = editing ? .inactive : .active }
+        }
+    }
+}

@@ -428,7 +428,8 @@ struct MapBottomDrawer: View {
                         NavlogTable()
                     case .profile:
                         VerticalProfileView(path: model.routePath, cruiseAlt: model.cruiseAlt,
-                                            airspaces: airspaceManager.allAirspaces)
+                                            airspaces: airspaceManager.allAirspaces,
+                                            vertical: model.verticalProfile, departureElevation: model.waypoints.first?.elevationFt ?? 0)
                             .padding(8)
                     }
                 }

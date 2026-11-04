@@ -212,7 +212,8 @@ private struct FlightEditPage: View {
 
                 Section {
                     VerticalProfileView(path: model.routePath, cruiseAlt: model.cruiseAlt,
-                                        airspaces: airspaceManager.allAirspaces)
+                                        airspaces: airspaceManager.allAirspaces,
+                                        vertical: model.verticalProfile, departureElevation: model.waypoints.first?.elevationFt ?? 0)
                     if let p = model.verticalProfile {
                         LabeledContent("Fin de montée (TOC)",
                                        value: String(format: "%.0f NM après %@ · %@", p.tocNM, model.waypoints.first?.id ?? "", ffDuration(p.climbMinutes)))
@@ -337,8 +338,13 @@ struct NavlogTable: View {
                 .font(.system(size: 10, weight: .bold))
                 .background(FF.bar)
             line(startCells, fixed: fixed)
-            ForEach(Array(model.navlog.enumerated()), id: \.element.id) { i, leg in
-                line(cells(leg), fixed: fixed).background(i.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.05))
+            ForEach(Array(rows.enumerated()), id: \.offset) { i, row in
+                switch row {
+                case .leg(let leg):
+                    line(cells(leg), fixed: fixed).background(i.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.05))
+                case .marker(let name, let nm, let minutes):
+                    line(markerCells(name, nm: nm, minutes: minutes), fixed: fixed).background(FF.magenta.opacity(0.08))
+                }
             }
             line(totalCells, fixed: fixed).background(FF.accent.opacity(0.15))
         }
@@ -377,6 +383,42 @@ struct NavlogTable: View {
         .foregroundStyle(.secondary)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+    }
+
+    private enum Row { case leg(NavLogLeg), marker(String, nm: Double, minutes: Double) }
+
+    /// Legs in order, with the top of climb and top of descent slotted in where they fall.
+    private var rows: [Row] {
+        let legs = model.navlog
+        let total = legs.reduce(0) { $0 + $1.distanceNM }
+        var markers: [(String, Double, Double)] = []
+        if let v = model.verticalProfile {
+            markers = [("TOC", v.tocNM, v.climbMinutes),
+                       ("TOD", total - v.todNM, model.totalTimeMinutes - v.descentMinutes)]
+        }
+        var out: [Row] = []
+        for leg in legs {
+            let end = total - leg.remainingNM
+            while let m = markers.first, m.1 <= end {
+                out.append(.marker(m.0, nm: m.1, minutes: m.2)); markers.removeFirst()
+            }
+            out.append(.leg(leg))
+        }
+        return out
+    }
+
+    /// TOC / TOD line: cruise altitude, remaining distance, time and ETA at that point.
+    private func markerCells(_ name: String, nm: Double, minutes: Double) -> [Cell] {
+        let total = model.navlog.reduce(0) { $0 + $1.distanceNM }
+        var c = [Cell(name, color: FF.magenta, bold: true), Cell("\(model.cruiseAlt / 100)")]
+        c += Array(repeating: Cell(""), count: 8)
+        c.append(Cell(String(format: "%.1f", nm), color: FF.label))
+        c.append(Cell(String(format: "%.0f", max(0, total - nm))))
+        c.append(Cell(""))
+        c.append(Cell(ffDuration(minutes)))
+        c.append(Cell(model.departureTime.addingTimeInterval(minutes * 60).zulu))
+        c += [Cell(""), Cell("")]
+        return c
     }
 
     private var startCells: [Cell] {

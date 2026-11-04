@@ -121,6 +121,9 @@ struct VerticalProfileView: View {
     let path: [CLLocationCoordinate2D]
     let cruiseAlt: Int
     let airspaces: [Airspace]
+    /// Planned climb and descent; without it the chart shows a flat cruise line.
+    var vertical: VerticalProfile? = nil
+    var departureElevation = 0
 
     @State private var samples: [TerrainProfile.Sample] = []
     @State private var obstacles: [(Obstacle, Double)] = []
@@ -168,9 +171,29 @@ struct VerticalProfileView: View {
                                  yEnd: .value("Sommet", obstacles[i].0.amslFt))
                             .foregroundStyle(ColorToken.danger)
                     }
-                    RuleMark(y: .value("Croisière", cruiseAlt))
-                        .foregroundStyle(ColorToken.brandPrimary)
-                        .lineStyle(StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                    if let v = vertical, let total = samples.last?.distanceNM, total > 0 {
+                        // Planned path: climb to the top of climb, cruise, descent from the top of descent.
+                        let path: [(String, Double, Int)] = [("Départ", 0, departureElevation),
+                                                             ("TOC", v.tocNM, cruiseAlt),
+                                                             ("TOD", max(v.tocNM, total - v.todNM), cruiseAlt),
+                                                             ("Arrivée", total, v.patternAltitude)]
+                        ForEach(path, id: \.0) { p in
+                            LineMark(x: .value("NM", p.1), y: .value("Altitude", p.2), series: .value("Trajet", "vol"))
+                                .foregroundStyle(ColorToken.brandPrimary)
+                                .lineStyle(StrokeStyle(lineWidth: 2.5))
+                        }
+                        ForEach(path.filter { $0.0 == "TOC" || $0.0 == "TOD" }, id: \.0) { p in
+                            PointMark(x: .value("NM", p.1), y: .value("Altitude", p.2))
+                                .foregroundStyle(ColorToken.brandPrimary)
+                                .annotation(position: .top) {
+                                    Text(p.0).font(TypographyToken.labelXSmall).foregroundStyle(ColorToken.brandPrimary)
+                                }
+                        }
+                    } else {
+                        RuleMark(y: .value("Croisière", cruiseAlt))
+                            .foregroundStyle(ColorToken.brandPrimary)
+                            .lineStyle(StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                    }
                 }
                 .chartYScale(domain: 0...max(Double(cruiseAlt) * 1.4, highest + 1000))
                 .chartXAxisLabel("NM")

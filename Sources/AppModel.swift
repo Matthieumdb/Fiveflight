@@ -501,6 +501,8 @@ final class AppModel: ObservableObject {
             aircraftProfiles = v + AircraftProfile.defaultProfiles.filter { !knownTypes.contains($0.type) }
         }
         defaults.set(AircraftProfile.defaultProfiles.map(\.type), forKey: "knownDefaultAircraft")
+        // Save the list now: unsaved default profiles get new ids on every launch, which lost the chosen aircraft.
+        defaults.set(try? JSONEncoder().encode(aircraftProfiles), forKey: "aircraftProfiles")
         let selectedID = defaults.string(forKey: "selectedAircraft")
         if let d = defaults.data(forKey: "savedPlans"),
            let v = try? JSONDecoder().decode([SavedPlan].self, from: d) { savedPlans = v }
@@ -515,9 +517,15 @@ final class AppModel: ObservableObject {
         selectedAircraft = aircraftProfiles.first { $0.id.uuidString == selectedID } ?? aircraftProfiles.first
         recents = defaults.stringArray(forKey: "recents") ?? []
         nightMode = defaults.bool(forKey: "nightMode")
-        if defaults.object(forKey: "cruiseGS") != nil { cruiseGS = defaults.double(forKey: "cruiseGS") }
-        if defaults.object(forKey: "fuelBurn") != nil { fuelBurn = defaults.double(forKey: "fuelBurn") }
-        if defaults.object(forKey: "reserveMin") != nil { reserveMin = defaults.double(forKey: "reserveMin") }
+        // Speed and burn edited by hand stay with the aircraft they were set for; otherwise they follow the profile.
+        // Both are read before either is set: setting one saves the other's current (default) value.
+        let restored = selectedAircraft?.id.uuidString == selectedID
+        let savedGS = defaults.object(forKey: "cruiseGS") as? Double, savedBurn = defaults.object(forKey: "fuelBurn") as? Double
+        let savedReserve = defaults.object(forKey: "reserveMin") as? Double
+        if restored, let savedGS { cruiseGS = savedGS } else if let a = selectedAircraft { cruiseGS = a.cruiseSpeed }
+        if restored, let savedBurn { fuelBurn = savedBurn } else if let a = selectedAircraft { fuelBurn = a.fuelBurn }
+        defaults.set(selectedAircraft?.id.uuidString, forKey: "selectedAircraft")
+        if let savedReserve { reserveMin = savedReserve }
         if defaults.object(forKey: "cruiseAlt") != nil { cruiseAlt = defaults.integer(forKey: "cruiseAlt") }
         if let data = defaults.data(forKey: "mapRegion"),
            let region = try? JSONDecoder().decode(MKCoordinateRegionCodable.self, from: data) {

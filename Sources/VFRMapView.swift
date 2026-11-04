@@ -91,6 +91,8 @@ struct VFRMapView: UIViewRepresentable {
     var waypoints: [Airport]
     /// Route computed by RoutingEngine (may detour around airspace); straight legs when empty.
     var route: [CLLocationCoordinate2D] = []
+    /// Top of climb / top of descent, as (label, NM from departure along the route).
+    var profileMarks: [(String, Double)] = []
     /// Flown GPS track, drawn as a solid magenta line.
     var track: [CLLocationCoordinate2D] = []
     var categories: [String: String]
@@ -172,6 +174,7 @@ struct VFRMapView: UIViewRepresentable {
         mv.mapType = satellite ? .hybrid : .standard
         c.updateTileOverlays(on: mv, showSectional: showSectional, weatherLayers: weatherLayers, chart: chart, satellite: satellite)
         c.updateRoute(on: mv, coordinates: route.count >= 2 ? route : waypoints.map(\.coordinate))
+        c.updateProfileMarks(on: mv, path: route.count >= 2 ? route : waypoints.map(\.coordinate), marks: profileMarks)
         c.updateTrack(on: mv, coordinates: track)
         c.updateUserCircles(on: mv, userCoord: waypoints.isEmpty ? userCoord : nil)
         c.updateGlideRing(on: mv, center: userCoord, radiusNM: glideRadiusNM)
@@ -333,6 +336,38 @@ struct VFRMapView: UIViewRepresentable {
             let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
             routeOverlay = polyline
             mv.addOverlay(polyline, level: .aboveLabels)
+        }
+
+        private var profileAnnotations: [MKPointAnnotation] = []
+        private var profileKey = ""
+
+        /// Puts TOC / TOD pins at their distance along the route.
+        func updateProfileMarks(on mv: MKMapView, path: [CLLocationCoordinate2D], marks: [(String, Double)]) {
+            let key = routeKey + marks.map { String(format: "%@%.1f", $0.0, $0.1) }.joined()
+            guard key != profileKey else { return }
+            profileKey = key
+            mv.removeAnnotations(profileAnnotations)
+            profileAnnotations = marks.compactMap { name, nm in
+                guard let coord = Self.point(along: path, atNM: nm) else { return nil }
+                let pin = MKPointAnnotation()
+                pin.coordinate = coord
+                pin.title = name
+                return pin
+            }
+            mv.addAnnotations(profileAnnotations)
+        }
+
+        static func point(along path: [CLLocationCoordinate2D], atNM target: Double) -> CLLocationCoordinate2D? {
+            guard path.count >= 2, target >= 0 else { return nil }
+            var done = 0.0
+            for i in 1..<path.count {
+                let leg = Haversine.nauticalMiles(path[i - 1], path[i])
+                if done + leg >= target, leg > 0 {
+                    return Haversine.interpolate(path[i - 1], path[i], fraction: (target - done) / leg)
+                }
+                done += leg
+            }
+            return path.last
         }
 
         func updateTrack(on mv: MKMapView, coordinates: [CLLocationCoordinate2D]) {
@@ -522,6 +557,14 @@ struct VFRMapView: UIViewRepresentable {
         }
 
         func mapView(_ mv: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            if let pin = annotation as? MKPointAnnotation, profileAnnotations.contains(pin) {
+                let v = MKMarkerAnnotationView(annotation: pin, reuseIdentifier: nil)
+                v.markerTintColor = UIColor(ColorToken.brandPrimary)
+                v.glyphText = pin.title
+                v.titleVisibility = .hidden
+                v.displayPriority = .required
+                return v
+            }
             if let t = annotation as? TrafficAnnotation {
                 let v = MKAnnotationView(annotation: t, reuseIdentifier: nil)
                 let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .bold)

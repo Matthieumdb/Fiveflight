@@ -78,13 +78,13 @@ struct SettingsScreen: View {
                     Text("Respecte le mode système par défaut.")
                 }
 
-                Section("Sources de données") {
+                Section {
                     LabeledContent("Aéroports", value: "OurAirports")
                     LabeledContent("Carte VFR", value: "FAA sectionnelles")
                     LabeledContent("Météo", value: "NOAA + Iowa Mesonet")
                     LabeledContent("Espaces aériens", value: "FAA ArcGIS")
                     LabeledContent("NOTAM", value: "FAA NOTAM Search (sans clé)")
-                }
+                } header: { FFHeader("Sources de données") }
 
                 Section {
                     LabeledContent("Version", value: Self.appVersion)

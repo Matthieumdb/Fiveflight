@@ -104,7 +104,7 @@ struct AirportListRow: View {
                 .fill(category.map { $0 == .unknown ? Color.gray.opacity(0.5) : $0.color } ?? Color.gray.opacity(0.5))
                 .frame(width: 12, height: 12)
             VStack(alignment: .leading, spacing: 1) {
-                Text(airport.id).font(.system(size: 17, weight: .bold))
+                Text(airport.id).font(.custom("BarlowCondensed-Bold", size: 17, relativeTo: .body))
                 Text(airport.name).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()

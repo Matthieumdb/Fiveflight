@@ -41,7 +41,7 @@ struct AirportDetailView: View {
                     LabeledContent("Type", value: airport.type.replacingOccurrences(of: "_", with: " "))
                 }
 
-                Section("Pistes (\(runways.count))") {
+                Section {
                     if runways.isEmpty {
                         Text("Aucune donnée").foregroundStyle(.secondary)
                     }
@@ -66,9 +66,9 @@ struct AirportDetailView: View {
                             }
                         }
                     }
-                }
+                } header: { FFHeader("Pistes (\(runways.count))") }
 
-                Section("Fréquences (\(frequencies.count))") {
+                Section {
                     if frequencies.isEmpty {
                         Text("Aucune donnée").foregroundStyle(.secondary)
                     }
@@ -84,7 +84,7 @@ struct AirportDetailView: View {
                             Text(f.mhz).font(.subheadline.monospacedDigit())
                         }
                     }
-                }
+                } header: { FFHeader("Fréquences (\(frequencies.count))") }
             }
             .navigationTitle(airport.name)
             .navigationBarTitleDisplayMode(.inline)
@@ -107,7 +107,7 @@ struct AirportDetailView: View {
     }
 
     @ViewBuilder private var weatherSection: some View {
-        Section("Météo") {
+        Section {
             if wxLoading {
                 HStack(spacing: 10) {
                     ProgressView()
@@ -146,7 +146,7 @@ struct AirportDetailView: View {
             } else {
                 Text("Météo indisponible").foregroundStyle(.secondary)
             }
-        }
+        } header: { FFHeader("Météo") }
     }
 
     private var sunText: String? {

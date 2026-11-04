@@ -451,19 +451,19 @@ struct VFRMapView: UIViewRepresentable {
         private func style(_ v: MKMarkerAnnotationView, for a: AirportAnnotation) {
             switch a.role {
             case .waypoint:
-                v.markerTintColor = a.airport.type == "user" ? .systemPurple : .systemGreen
+                v.markerTintColor = UIColor(a.airport.type == "user" ? ColorToken.critical : ColorToken.brandPrimary)
                 v.glyphImage = UIImage(systemName: a.airport.isAirport ? "airplane" : a.airport.symbolName)
                 v.displayPriority = .required
                 v.isDraggable = true
             case .navaid:
-                v.markerTintColor = a.airport.type == "vor" ? .systemIndigo
-                    : a.airport.type == "vfr_wp" ? .systemOrange : .systemGray
+                v.markerTintColor = a.airport.type == "vor" ? UIColor(ColorToken.brandTertiary)
+                    : a.airport.type == "vfr_wp" ? UIColor(ColorToken.warning) : UIColor(ColorToken.textTertiary)
                 v.glyphImage = UIImage(systemName: a.airport.symbolName)
                 v.displayPriority = a.airport.type == "vor" ? .defaultHigh : .defaultLow
             case .nearest:
                 let category = parent.categories[a.airport.id]
                 v.markerTintColor = Self.categoryColor(category)
-                    ?? (a.airport.type == "large_airport" ? .systemBlue : .systemTeal)
+                    ?? UIColor(a.airport.type == "large_airport" ? ColorToken.brandSecondary : ColorToken.textSecondary)
                 v.glyphImage = UIImage(systemName: a.airport.type == "heliport" ? "h.circle" : "airplane")
                 v.displayPriority = a.airport.type == "large_airport" || a.airport.type == "medium_airport"
                     ? .defaultHigh : .defaultLow
@@ -583,10 +583,10 @@ struct VFRMapView: UIViewRepresentable {
 
         static func categoryColor(_ cat: String?) -> UIColor? {
             switch cat {
-            case "VFR":  return UIColor(red: 0.19, green: 0.82, blue: 0.35, alpha: 1)
-            case "MVFR": return UIColor(red: 0.18, green: 0.63, blue: 1.0, alpha: 1)
-            case "IFR":  return UIColor(red: 1.0, green: 0.27, blue: 0.23, alpha: 1)
-            case "LIFR": return UIColor(red: 0.75, green: 0.35, blue: 0.95, alpha: 1)
+            case "VFR":  return UIColor(ColorToken.vfr)
+            case "MVFR": return UIColor(ColorToken.mvfr)
+            case "IFR":  return UIColor(ColorToken.ifr)
+            case "LIFR": return UIColor(ColorToken.lifr)
             default:     return nil
             }
         }

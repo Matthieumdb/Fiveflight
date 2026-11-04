@@ -19,7 +19,7 @@ struct LogbookScreen: View {
                             .foregroundStyle(ColorToken.textTertiary)
                     }
                 } else {
-                    Section("Totaux") {
+                    Section {
                         let totalNM = model.logbook.reduce(0) { $0 + $1.nm }
                         let totalMin = model.logbook.reduce(0) { $0 + $1.eteMinutes }
                         let landings = model.logbook.reduce(0) { $0 + ($1.landingsDay ?? 0) + ($1.landingsNight ?? 0) }
@@ -32,13 +32,13 @@ struct LogbookScreen: View {
                             let m = model.logbook.reduce(0) { $0 + (cat.minutes($1) ?? 0) }
                             if m > 0 { LabeledContent(cat.title, value: LogbookScreen.hhmm(m)) }
                         }
-                    }
-                    Section("Vols") {
+                    } header: { FFHeader("Totaux") }
+                    Section {
                         ForEach(model.logbook) { e in
                             NavigationLink { LogEntryScreen(entry: e) } label: { LogRow(entry: e) }
                         }
                         .onDelete(perform: model.deleteLog)
-                    }
+                    } header: { FFHeader("Vols") }
                 }
             }
             .navigationTitle("Carnet de vol")
@@ -112,13 +112,13 @@ private struct CurrencySection: View {
         let recent = model.logbook.filter { $0.date >= since }
         let day = recent.reduce(0) { $0 + ($1.landingsDay ?? 0) + ($1.landingsNight ?? 0) }
         let night = recent.reduce(0) { $0 + ($1.landingsNight ?? 0) }
-        Section("Qualifications") {
+        Section {
             status("Passagers de jour", ok: day >= 3, detail: "\(day)/3 atterrissages en 90 j")
             status("Passagers de nuit", ok: night >= 3, detail: "\(night)/3 atterrissages de nuit en 90 j")
             dateRow("Visite médicale", "valide jusqu'au", $model.medicalExpiry, ok: { $0 > Date.now })
             dateRow("Flight review", "dernier contrôle (24 mois)", $model.flightReviewDate,
                     ok: { Calendar.current.date(byAdding: .month, value: 24, to: $0)! > Date.now })
-        }
+        } header: { FFHeader("Qualifications") }
     }
 
     private func status(_ title: String, ok: Bool, detail: String) -> some View {
@@ -172,7 +172,7 @@ struct LogEntryScreen: View {
     var body: some View {
         Form {
             if track.count >= 2 {
-                Section("Rejouer la trace") {
+                Section {
                     let shown = Array(track.prefix(max(2, Int(Double(track.count) * progress))))
                     Map {
                         MapPolyline(coordinates: track).stroke(.gray.opacity(0.4), lineWidth: 3)
@@ -190,9 +190,9 @@ struct LogEntryScreen: View {
                         .buttonStyle(.borderless)
                         Slider(value: $progress, in: 0...1)
                     }
-                }
+                } header: { FFHeader("Rejouer la trace") }
             }
-            Section("Vol") {
+            Section {
                 LabeledContent("Trajet", value: "\(entry.from) → \(entry.to)")
                 LabeledContent("Date", value: LogbookScreen.df.string(from: entry.date))
                 TextField("Avion", text: Binding(get: { entry.aircraft ?? "" }, set: { entry.aircraft = $0 }))
@@ -203,7 +203,7 @@ struct LogEntryScreen: View {
                 Stepper("Atterrissages de nuit : \(entry.landingsNight ?? 0)",
                         value: Binding(get: { entry.landingsNight ?? 0 }, set: { entry.landingsNight = $0 }), in: 0...50)
                 TextField("Remarques", text: Binding(get: { entry.remarks ?? "" }, set: { entry.remarks = $0 }), axis: .vertical)
-            }
+            } header: { FFHeader("Vol") }
             Section {
                 minutes("Commandant de bord (PIC)", \.picMinutes)
                 minutes("Double commande reçue", \.dualMinutes)
@@ -218,11 +218,11 @@ struct LogEntryScreen: View {
                 Text("Nuit et navigation sont remplis automatiquement à l'enregistrement (crépuscule civil, distance directe > 50 NM).")
             }
             if !track.isEmpty {
-                Section("Exporter la trace") {
+                Section {
                     let name = "\(entry.from)-\(entry.to)"
                     if let gpx = FlightExport.gpx(name: name, route: [], track: track) { ShareLink("GPX", item: gpx) }
                     if let kml = FlightExport.kml(name: name, route: [], track: track) { ShareLink("KML (Google Earth)", item: kml) }
-                }
+                } header: { FFHeader("Exporter la trace") }
             }
         }
         .navigationTitle("\(entry.from) → \(entry.to)")

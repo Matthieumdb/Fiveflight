@@ -1,51 +1,53 @@
 import SwiftUI
+import UIKit
+import CoreText
 
 // MARK: - Design Tokens
 // Professional token-based design system for aviation apps
 // Based on industry best practices: 4/8pt grid, semantic colors, Dynamic Type, material elevation
 
-/// Color Tokens - Semantic colors with full light/dark/high-contrast support
+/// Color Tokens - "Papier carte" palette: chart paper, chart blue, route magenta. Each token has a day and a night value.
 enum ColorToken {
     // MARK: Brand
-    static let brandPrimary = Color(hex: "007AFF")      // ForeFlight blue
-    static let brandSecondary = Color(hex: "0056CC")
-    static let brandTertiary = Color(hex: "003D99")
+    static let brandPrimary = Color(day: "B0257E", night: "E36BB9")    // route magenta: actions, selection
+    static let brandSecondary = Color(day: "173A6B", night: "8DB4EA")  // chart blue: headings, data
+    static let brandTertiary = Color(day: "2F6BB3", night: "5B93D6")   // airspace blue
 
-    // MARK: Surfaces (Aviation dark theme - optimized for cockpit)
-    static let surfaceBase = Color(hex: "0A0F1A")       // Deep navy base
-    static let surfaceElevated = Color(hex: "121A2A")   // Raised panels
-    static let surfaceCard = Color(hex: "1A2434")       // Card backgrounds
-    static let surfaceHover = Color(hex: "223044")      // Hover/pressed
-    static let surfaceSelected = Color(hex: "2A3A50")   // Selected state
-    static let surfaceModal = Color(hex: "0E1624")      // Modal/sheet backgrounds
+    // MARK: Surfaces (chart paper by day, blue-black by night)
+    static let surfaceBase = Color(day: "F6F4EC", night: "11161D")
+    static let surfaceElevated = Color(day: "FFFDF6", night: "18202A")
+    static let surfaceCard = Color(day: "FFFDF6", night: "1C2531")
+    static let surfaceHover = Color(day: "EBE6D6", night: "243040")
+    static let surfaceSelected = Color(day: "E3DCC8", night: "2C3A4D")
+    static let surfaceModal = Color(day: "F6F4EC", night: "141A22")
 
     // MARK: Borders & Dividers
-    static let borderSubtle = Color.white.opacity(0.06)
-    static let borderDefault = Color.white.opacity(0.10)
-    static let borderStrong = Color.white.opacity(0.16)
+    static let borderSubtle = Color(day: "1D2A3A14", night: "FFFFFF12")
+    static let borderDefault = Color(day: "1D2A3A24", night: "FFFFFF1C")
+    static let borderStrong = Color(day: "1D2A3A38", night: "FFFFFF2B")
     static let borderFocus = brandPrimary.opacity(0.5)
 
-    // MARK: Text (Semantic - auto adapts to light/dark)
-    static let textPrimary = Color.primary
-    static let textSecondary = Color.secondary
-    static let textTertiary = Color(.tertiaryLabel)
-    static let textQuaternary = Color(.quaternaryLabel)
+    // MARK: Text
+    static let textPrimary = Color(day: "1D2A3A", night: "ECEFF3")
+    static let textSecondary = Color(day: "5F6A76", night: "9AA5B2")
+    static let textTertiary = Color(day: "8A8676", night: "6E7987")
+    static let textQuaternary = Color(day: "B5B0A0", night: "4A5462")
     static let textInverse = Color.white
     static let textOnBrand = Color.white
 
     // MARK: Status/Semantic (Aviation standard)
-    static let success = Color(hex: "30D158")      // VFR Green
-    static let warning = Color(hex: "FFB020")      // Caution Amber
-    static let danger = Color(hex: "FF453A")       // IFR/LIFR Red
-    static let info = Color(hex: "5AC8FA")         // Info Cyan
-    static let critical = Color(hex: "BF5AF2")     // LIFR Purple
+    static let success = Color(day: "1D8A4A", night: "39C673")
+    static let warning = Color(day: "C77700", night: "FFB020")
+    static let danger = Color(day: "C8322B", night: "FF5A4F")
+    static let info = Color(day: "2F6BB3", night: "5AC8FA")
+    static let critical = Color(day: "9B2FAE", night: "D070E8")
 
     // MARK: Flight Categories (Standard aviation colors)
-    static let vfr = Color(hex: "30D158")          // Green
-    static let mvfr = Color(hex: "007AFF")         // Blue
-    static let ifr = Color(hex: "FF453A")          // Red
-    static let lifr = Color(hex: "BF5AF2")         // Purple
-    static let unknown = Color(.tertiaryLabel)
+    static let vfr = success
+    static let mvfr = Color(day: "2F6BB3", night: "5B9BEB")
+    static let ifr = danger
+    static let lifr = critical
+    static let unknown = textTertiary
 
     // MARK: Airspace Colors (Matching FAA Sectional Charts)
     static let classA = Color(hex: "8B0000")       // Dark red
@@ -124,49 +126,64 @@ enum RadiusToken {
     static let full: CGFloat = 9999  // Pill/capsule
 
     // Semantic
-    static let button = lg        // 16pt
-    static let card = lg          // 16pt
+    static let button = full      // pill, as on the chart legend
+    static let card = md          // 12pt
     static let cardSmall = md     // 12pt
     static let pill = full        // Capsule
-    static let modal = xxl        // 28pt
+    static let modal = xl         // 20pt
     static let overlay = lg       // 16pt
 }
 
-/// Typography Tokens - Dynamic Type compatible type ramp
+/// Typography Tokens - Barlow for text, Barlow Condensed for titles and figures; all scale with Dynamic Type.
 enum TypographyToken {
+    private static func barlow(_ weight: String, _ size: CGFloat, _ style: Font.TextStyle) -> Font {
+        .custom("Barlow-\(weight)", size: size, relativeTo: style)
+    }
+    private static func condensed(_ weight: String, _ size: CGFloat, _ style: Font.TextStyle) -> Font {
+        .custom("BarlowCondensed-\(weight)", size: size, relativeTo: style)
+    }
+
     // Display
-    static let displayLarge = Font.system(.largeTitle, design: .rounded).weight(.bold)      // 34pt
-    static let displayMedium = Font.system(.title, design: .rounded).weight(.bold)          // 28pt
-    static let displaySmall = Font.system(.title2, design: .rounded).weight(.semibold)      // 22pt
+    static let displayLarge = condensed("Bold", 36, .largeTitle)
+    static let displayMedium = condensed("Bold", 30, .title)
+    static let displaySmall = condensed("SemiBold", 24, .title2)
 
     // Headlines
-    static let headlineLarge = Font.system(.title3, design: .rounded).weight(.semibold)     // 20pt
-    static let headlineMedium = Font.system(.headline, design: .rounded).weight(.semibold)  // 17pt
-    static let headlineSmall = Font.system(.subheadline, design: .rounded).weight(.semibold) // 15pt
+    static let headlineLarge = condensed("SemiBold", 22, .title3)
+    static let headlineMedium = barlow("SemiBold", 17, .headline)
+    static let headlineSmall = barlow("SemiBold", 15, .subheadline)
 
     // Body
-    static let bodyLarge = Font.system(.body, design: .rounded).weight(.medium)             // 17pt
-    static let bodyMedium = Font.system(.callout, design: .rounded).weight(.medium)         // 16pt
-    static let bodySmall = Font.system(.subheadline, design: .rounded).weight(.regular)     // 15pt
-    static let bodyXSmall = Font.system(.footnote, design: .rounded).weight(.regular)       // 13pt
+    static let bodyLarge = barlow("Medium", 17, .body)
+    static let bodyMedium = barlow("Medium", 16, .callout)
+    static let bodySmall = barlow("Regular", 15, .subheadline)
+    static let bodyXSmall = barlow("Regular", 13, .footnote)
 
     // Labels
-    static let labelLarge = Font.system(.subheadline, design: .rounded).weight(.medium)     // 15pt
-    static let labelMedium = Font.system(.footnote, design: .rounded).weight(.medium)       // 13pt
-    static let labelSmall = Font.system(.caption, design: .rounded).weight(.medium)         // 12pt
-    static let labelXSmall = Font.system(.caption2, design: .rounded).weight(.medium)       // 11pt
+    static let labelLarge = barlow("Medium", 15, .subheadline)
+    static let labelMedium = barlow("Medium", 13, .footnote)
+    static let labelSmall = barlow("Medium", 12, .caption)
+    static let labelXSmall = barlow("Medium", 11, .caption2)
 
-    // Monospace (for aviation data)
-    static let monoLarge = Font.system(.title3, design: .monospaced).weight(.medium)        // 20pt
-    static let monoMedium = Font.system(.callout, design: .monospaced).weight(.medium)      // 16pt
-    static let monoSmall = Font.system(.footnote, design: .monospaced).weight(.medium)      // 13pt
-    static let monoXSmall = Font.system(.caption, design: .monospaced).weight(.medium)      // 12pt
-    static let monoXXSmall = Font.system(.caption2, design: .monospaced).weight(.medium)    // 11pt
+    // Figures (frequencies, distances, times): condensed with tabular digits
+    static let monoLarge = condensed("SemiBold", 22, .title3).monospacedDigit()
+    static let monoMedium = condensed("SemiBold", 18, .callout).monospacedDigit()
+    // Raw METAR/TAF/NOTAM text keeps a true monospace so columns line up
+    static let monoSmall = Font.system(.footnote, design: .monospaced).weight(.medium)
+    static let monoXSmall = Font.system(.caption, design: .monospaced).weight(.medium)
+    static let monoXXSmall = Font.system(.caption2, design: .monospaced).weight(.medium)
 
     // Numbers
-    static let numberLarge = Font.system(.title, design: .monospaced).weight(.bold)         // 28pt
-    static let numberMedium = Font.system(.title3, design: .monospaced).weight(.semibold)   // 20pt
-    static let numberSmall = Font.system(.body, design: .monospaced).weight(.medium)        // 17pt
+    static let numberLarge = condensed("Bold", 30, .title).monospacedDigit()
+    static let numberMedium = condensed("SemiBold", 22, .title3).monospacedDigit()
+    static let numberSmall = condensed("SemiBold", 18, .body).monospacedDigit()
+
+    /// Registers the bundled Barlow faces (Resources/Fonts) once at launch.
+    static func registerFonts() {
+        for url in Bundle.main.urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? [] {
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
+    }
 }
 
 /// Shadow Tokens - Elevation system
@@ -242,7 +259,22 @@ enum LayoutToken {
 }
 
 // MARK: - Color Extension for Hex Support
+extension UIColor {
+    convenience init(hex: String) {
+        var v: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&v)
+        let rgba = hex.count == 8 ? v : (v << 8 | 0xFF)   // RRGGBB or RRGGBBAA
+        self.init(red: CGFloat(rgba >> 24 & 0xFF) / 255, green: CGFloat(rgba >> 16 & 0xFF) / 255,
+                  blue: CGFloat(rgba >> 8 & 0xFF) / 255, alpha: CGFloat(rgba & 0xFF) / 255)
+    }
+}
+
 extension Color {
+    /// A colour that follows the light (day) / dark (night) appearance.
+    init(day: String, night: String) {
+        self.init(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: night) : UIColor(hex: day) })
+    }
+
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0

@@ -213,8 +213,8 @@ struct FFAirportHeader: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(airport.id)
-                    .font(.system(size: 30, weight: .heavy))
-                    .foregroundStyle(.white)
+                    .font(TypographyToken.displayMedium)
+                    .foregroundStyle(ColorToken.brandSecondary)
                 if let metar, metar.flightCategory != .unknown {
                     Text(metar.flightCategory.rawValue)
                         .font(.system(size: 13, weight: .heavy))
@@ -228,7 +228,7 @@ struct FFAirportHeader: View {
                     .foregroundStyle(FF.label)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(airport.name).font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).lineLimit(2)
+                Text(airport.name).font(TypographyToken.headlineMedium).foregroundStyle(ColorToken.textPrimary).lineLimit(2)
                 Text([airport.municipality, typeText].compactMap { $0 }.joined(separator: " · "))
                     .font(.system(size: 13)).foregroundStyle(FF.label)
             }

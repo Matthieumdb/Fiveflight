@@ -71,6 +71,9 @@ struct MapScreen: View {
                 nearest: visibleAirports,
                 waypoints: model.waypoints,
                 route: routePolyline,
+                profileMarks: model.verticalProfile.map { v in
+                    [("TOC", v.tocNM), ("TOD", model.totalDistanceNM - v.todNM)]
+                } ?? [],
                 track: model.track,
                 categories: weatherService.categories,
                 userCoord: model.userLocation,

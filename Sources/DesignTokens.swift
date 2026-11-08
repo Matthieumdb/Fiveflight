@@ -210,21 +210,25 @@ enum ShadowToken {
 
 /// Animation Tokens
 enum AnimationToken {
-    static let instant = Animation.linear(duration: 0.05)
-    static let fast = Animation.snappy(duration: 0.15)
-    static let normal = Animation.snappy(duration: 0.25)
-    static let slow = Animation.smooth(duration: 0.35)
-    static let spring = Animation.spring(response: 0.4, dampingFraction: 0.85)
-    static let springFast = Animation.spring(response: 0.3, dampingFraction: 0.8)
-    static let springSlow = Animation.spring(response: 0.5, dampingFraction: 0.9)
+    /// iOS "Reduce Motion": springs and slides become a short, flat fade.
+    private static var reduced: Bool { UIAccessibility.isReduceMotionEnabled }
+    private static func motion(_ a: Animation) -> Animation { reduced ? .easeInOut(duration: 0.12) : a }
+
+    static var instant: Animation { .linear(duration: 0.05) }
+    static var fast: Animation { motion(.snappy(duration: 0.15)) }
+    static var normal: Animation { motion(.snappy(duration: 0.25)) }
+    static var slow: Animation { motion(.smooth(duration: 0.35)) }
+    static var spring: Animation { motion(.spring(response: 0.4, dampingFraction: 0.85)) }
+    static var springFast: Animation { motion(.spring(response: 0.3, dampingFraction: 0.8)) }
+    static var springSlow: Animation { motion(.spring(response: 0.5, dampingFraction: 0.9)) }
 
     // Semantic
-    static let tap = fast
-    static let hover = fast
-    static let transition = normal
-    static let sheet = spring
-    static let tabSwitch = springFast
-    static let map = springSlow
+    static var tap: Animation { fast }
+    static var hover: Animation { fast }
+    static var transition: Animation { normal }
+    static var sheet: Animation { spring }
+    static var tabSwitch: Animation { springFast }
+    static var map: Animation { springSlow }
 }
 
 /// Layout Tokens
